@@ -181,18 +181,34 @@ function drawDrops() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   for (const drop of drops) {
-    ctx.strokeStyle = "rgba(125, 211, 252, 0.75)";
-    ctx.lineWidth = 3;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(drop.x, drop.y - 26);
-    ctx.lineTo(drop.x, drop.y + 8);
-    ctx.stroke();
+    const dropTop = drop.y - 26;
+    const dropBottom = drop.y + 22;
+    const dropRadius = 22;
 
-    ctx.fillStyle = "rgba(125, 211, 252, 0.95)";
+    ctx.fillStyle = "rgba(125, 211, 252, 0.92)";
+    ctx.strokeStyle = "rgba(186, 230, 253, 0.9)";
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.ellipse(drop.x, drop.y + 16, 7, 10, 0, 0, Math.PI * 2);
+    ctx.moveTo(drop.x, dropTop);
+    ctx.bezierCurveTo(
+      drop.x - dropRadius,
+      drop.y - 12,
+      drop.x - dropRadius,
+      drop.y + 6,
+      drop.x,
+      dropBottom
+    );
+    ctx.bezierCurveTo(
+      drop.x + dropRadius,
+      drop.y + 6,
+      drop.x + dropRadius,
+      drop.y - 12,
+      drop.x,
+      dropTop
+    );
+    ctx.closePath();
     ctx.fill();
+    ctx.stroke();
 
     ctx.font = "600 16px Space Grotesk";
     ctx.textAlign = "center";
@@ -200,8 +216,8 @@ function drawDrops() {
     ctx.lineWidth = 3;
     ctx.strokeStyle = "rgba(11, 18, 32, 0.75)";
     ctx.fillStyle = "#e2e8f0";
-    ctx.strokeText(drop.text, drop.x, drop.y - 4);
-    ctx.fillText(drop.text, drop.x, drop.y - 4);
+    ctx.strokeText(drop.text, drop.x, drop.y + 2);
+    ctx.fillText(drop.text, drop.x, drop.y + 2);
   }
 }
 
