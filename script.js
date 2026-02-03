@@ -11,12 +11,14 @@ const restartBtn = document.getElementById("restartBtn");
 const setupOverlay = document.getElementById("setup");
 const startBtn = document.getElementById("startBtn");
 const rangeInput = document.getElementById("range");
+const versionEl = document.getElementById("version");
 
 const levelButtons = document.querySelectorAll("#levelSelect button");
 const eloButtons = document.querySelectorAll("#eloSelect button");
 
 const GAME_HEIGHT = 520;
 const GAME_WIDTH = 900;
+const VERSION = "2026-02-03.3";
 
 let drops = [];
 let score = 0;
@@ -64,6 +66,7 @@ function updateStats() {
   scoreEl.textContent = score;
   levelEl.textContent = level;
   eloEl.textContent = Math.round(elo);
+  if (versionEl) versionEl.textContent = VERSION;
 }
 
 function pickSettings() {
@@ -191,10 +194,13 @@ function drawDrops() {
     ctx.ellipse(drop.x, drop.y + 16, 7, 10, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "#0b1220";
     ctx.font = "600 16px Space Grotesk";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(11, 18, 32, 0.75)";
+    ctx.fillStyle = "#e2e8f0";
+    ctx.strokeText(drop.text, drop.x, drop.y - 4);
     ctx.fillText(drop.text, drop.x, drop.y - 4);
   }
 }
