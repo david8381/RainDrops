@@ -11,9 +11,9 @@ Build a fast, friendly math game where falling drops are cleared by typing answe
 
 ## Current Desires (User Intent)
 - Drops fall from the sky and clear when the correct answer is typed.
-- Startup choices include level, operations, and number range.
-- Division range means quotient range.
-- Progressive difficulty.
+- Startup choices include level and operations.
+- Number range grows with progression (division range means quotient range).
+- Progressive difficulty with per-operation levels and ranges.
 - Per-operation ratings: drop rate and accuracy are tracked independently.
 - Overall rating is shown but not emphasized as "ELO".
 

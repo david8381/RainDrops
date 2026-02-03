@@ -22,7 +22,7 @@ body {
 }
 
 .app {
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 24px;
   display: grid;
@@ -76,6 +76,64 @@ body {
 .stats .label {
   color: var(--muted);
   margin-right: 6px;
+}
+
+.main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 20px;
+  align-items: start;
+}
+
+.play-area {
+  display: grid;
+  gap: 20px;
+}
+
+.side-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.progress-card {
+  background: var(--panel);
+  padding: 16px 20px;
+  border-radius: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.progress-header {
+  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.progress-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.progress-stats {
+  display: grid;
+  gap: 6px;
+}
+
+.progress {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  overflow: hidden;
+}
+
+.progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent-2);
+  width: 0%;
+  transition: width 0.2s ease;
 }
 
 .game {
@@ -265,12 +323,28 @@ button.primary {
 
 .elo-row {
   display: grid;
-  grid-template-columns: 90px 1fr 1fr;
-  gap: 12px;
+  grid-template-columns: 80px repeat(4, minmax(0, 1fr));
+  gap: 10px;
   align-items: center;
   background: #0f172a;
   padding: 10px 12px;
   border-radius: 12px;
+}
+
+.elo-progress {
+  grid-column: 1 / -1;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+  overflow: hidden;
+}
+
+.elo-progress span {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, rgba(125, 211, 252, 0.9), rgba(52, 211, 153, 0.85));
+  transition: width 0.2s ease;
 }
 
 .elo-tag {
@@ -297,6 +371,10 @@ button.primary {
   .top-bar {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .main-grid {
+    grid-template-columns: 1fr;
   }
 
   .controls {

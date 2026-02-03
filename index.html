@@ -18,32 +18,38 @@
         </div>
         <div class="stats">
           <div><span class="label">Score</span> <span id="score">0</span></div>
-          <div><span class="label">Level</span> <span id="level">1</span></div>
           <div><span class="label">Rating</span> <span id="elo">800</span></div>
+          <div><span class="label">Version</span> <span id="version">dev</span></div>
         </div>
       </header>
 
-      <section class="game">
-        <canvas id="canvas" width="900" height="520"></canvas>
-        <div class="ground"></div>
-      </section>
+      <section class="main-grid">
+        <div class="play-area">
+          <section class="game">
+            <canvas id="canvas" width="900" height="520"></canvas>
+            <div class="ground"></div>
+          </section>
 
-      <footer class="controls">
-        <div class="input-wrap">
-          <label for="answer">Type answer</label>
-          <input id="answer" type="text" inputmode="numeric" autocomplete="off" />
-          <div class="hint">No enter needed. Type the answer to clear a drop.</div>
+          <footer class="controls">
+            <div class="input-wrap">
+              <label for="answer">Type answer</label>
+              <input id="answer" type="text" inputmode="numeric" autocomplete="off" />
+              <div class="hint">No enter needed. Type the answer to clear a drop.</div>
+            </div>
+            <div class="buttons">
+              <button id="pauseBtn">Pause</button>
+              <button id="restartBtn">Restart</button>
+            </div>
+          </footer>
         </div>
-        <div class="buttons">
-          <button id="pauseBtn">Pause</button>
-          <button id="restartBtn">Restart</button>
-        </div>
-      </footer>
 
-      <section class="elo-board">
-        <div class="elo-header">Per-Operation Stats</div>
-        <div id="eloBoard" class="elo-rows"></div>
-        <div class="elo-note">Drop rate rises with correct answers and falls with misses. Accuracy controls number range.</div>
+        <aside class="side-panel">
+          <section class="elo-board">
+            <div class="elo-header">Per-Operation Progress</div>
+            <div id="eloBoard" class="elo-rows"></div>
+            <div class="elo-note">Each operation levels independently and triggers its own boss battle.</div>
+          </section>
+        </aside>
       </section>
     </main>
 
@@ -72,12 +78,6 @@
               <label><input type="checkbox" value="mul" checked /> Multiply</label>
               <label><input type="checkbox" value="div" /> Divide</label>
             </div>
-          </div>
-
-          <div class="field">
-            <label>Problem Range (1-12)</label>
-            <input id="range" type="number" min="1" max="12" value="12" />
-            <small>For division, range sets the maximum quotient.</small>
           </div>
 
           <div class="field">
