@@ -28,6 +28,7 @@ let spawnTimer = 0;
 let lastTime = 0;
 let isPaused = true;
 let settings = null;
+let audioCtx = null;
 
 const ELO_MIN = 400;
 const ELO_MAX = 2000;
@@ -177,16 +178,24 @@ function drawDrops() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   for (const drop of drops) {
-    ctx.fillStyle = "rgba(125, 211, 252, 0.9)";
+    ctx.strokeStyle = "rgba(125, 211, 252, 0.75)";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.ellipse(drop.x, drop.y, 30, 38, 0, 0, Math.PI * 2);
+    ctx.moveTo(drop.x, drop.y - 26);
+    ctx.lineTo(drop.x, drop.y + 8);
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(125, 211, 252, 0.95)";
+    ctx.beginPath();
+    ctx.ellipse(drop.x, drop.y + 16, 7, 10, 0, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.fillStyle = "#0b1220";
     ctx.font = "600 16px Space Grotesk";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(drop.text, drop.x, drop.y);
+    ctx.fillText(drop.text, drop.x, drop.y - 4);
   }
 }
 
@@ -215,6 +224,7 @@ function checkAnswer(inputValue) {
     score += 1;
     adjustSpeed(solved.opKey, SPEED_GAIN);
     recordAccuracy(solved.opKey, true);
+    playPop();
     answerInput.value = "";
   }
 }
@@ -242,6 +252,7 @@ function tick(timestamp) {
 }
 
 function startGame() {
+  initAudio();
   settings = pickSettings();
   settings.startLevel = getActiveValue(levelButtons, "level");
   elo = getActiveValue(eloButtons, "elo");
@@ -366,16 +377,51 @@ function updateEloBoard() {
   });
 }
 
+function initAudio() {
+  if (audioCtx) return;
+  const AudioContextRef = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextRef) return;
+  audioCtx = new AudioContextRef();
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+}
+
+function playPop() {
+  if (!audioCtx) return;
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(650, now);
+  osc.frequency.exponentialRampToValueAtTime(220, now + 0.09);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.linearRampToValueAtTime(0.22, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 0.14);
+}
+
 pickActive(levelButtons);
 pickActive(eloButtons);
 
 answerInput.addEventListener("input", (event) => {
+  initAudio();
   checkAnswer(event.target.value.trim());
 });
 
 answerInput.addEventListener("keydown", (event) => {
   if (event.key === " ") {
     event.preventDefault();
+  }
+  if (event.key === "Enter") {
+    event.preventDefault();
+    answerInput.value = "";
   }
 });
 

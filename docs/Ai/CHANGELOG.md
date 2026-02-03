@@ -15,6 +15,9 @@ This file records meaningful project changes so future collaborators (including 
 - Added per-operation ratings panel in the UI.
 - Per-operation panel now shows average drop rate instead of speed rating.
 - Each raindrop now varies more in speed around the mean.
+- Enter clears the answer box.
+- Raindrops are drawn as line-style drops.
+- Added synthesized pop sounds on correct answers.
 
 ## Notes
 - Keep entries concise and focused on player-facing or structural changes.
