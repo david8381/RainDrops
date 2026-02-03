@@ -14,5 +14,10 @@ Build a fast, friendly math game where falling drops are cleared by typing answe
 - Startup choices include level, operations, and number range.
 - Division range means quotient range.
 - Progressive difficulty.
-- Per-operation ratings: speed and accuracy are tracked independently.
+- Per-operation ratings: drop rate and accuracy are tracked independently.
 - Overall rating is shown but not emphasized as "ELO".
+
+## Repo Access
+- GitHub SSH user: `david8381`
+- Repo: `RainDrops`
+- Default branch for pushes: `main`

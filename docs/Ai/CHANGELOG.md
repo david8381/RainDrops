@@ -9,10 +9,12 @@ This file records meaningful project changes so future collaborators (including 
 - Gameplay: falling drops, type-to-clear without pressing Enter, progressive difficulty.
 - Division uses the selected range as the maximum quotient.
 - Replaced lives with per-operation ratings:
-  - Speed rating controls drop speed and spawn rate per operation.
+  - Drop rate controls drop speed and spawn rate per operation.
   - Accuracy controls number range per operation.
-  - Overall rating shown top-right computed from speed+accuracy.
+  - Overall rating shown top-right computed from drop rate + accuracy.
 - Added per-operation ratings panel in the UI.
+- Per-operation panel now shows average drop rate instead of speed rating.
+- Each raindrop now varies more in speed around the mean.
 
 ## Notes
 - Keep entries concise and focused on player-facing or structural changes.

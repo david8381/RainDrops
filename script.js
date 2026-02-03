@@ -140,7 +140,7 @@ function randInt(min, max) {
 function createDrop() {
   const problem = generateProblem();
   const x = randInt(40, 860);
-  const speed = getSpeedForOp(problem.opKey) * (0.85 + Math.random() * 0.3);
+  const speed = getSpeedForOp(problem.opKey) * (0.7 + Math.random() * 0.6);
 
   drops.push({
     id: Date.now() + Math.random(),
@@ -322,6 +322,15 @@ function getSpeedForOp(opKey) {
   return 30 + clamped * 70;
 }
 
+function getDropRateForOp(opKey) {
+  const entry = opElo[opKey];
+  if (!entry) return 60000 / baseSpawnMs;
+  const t = (entry.speed - ELO_MIN) / (ELO_MAX - ELO_MIN);
+  const clamped = clamp(0, 1, t);
+  const spawnMs = 1700 - clamped * 1200;
+  return 60000 / spawnMs;
+}
+
 function getRangeMax(opKey, selectedRange) {
   const entry = opElo[opKey];
   if (!entry) return selectedRange;
@@ -347,9 +356,10 @@ function updateEloBoard() {
     const row = document.createElement("div");
     row.className = "elo-row";
     const accuracyPct = Math.round(getAccuracy(entry) * 100);
+    const dropRate = getDropRateForOp(op);
     row.innerHTML = `
       <div class="elo-tag">${opLabels[op]}</div>
-      <div class="elo-metric"><strong>${Math.round(entry.speed)}</strong><span>Speed Rating</span></div>
+      <div class="elo-metric"><strong>${dropRate.toFixed(1)}</strong><span>Avg Drop Rate</span></div>
       <div class="elo-metric"><strong>${accuracyPct}%</strong><span>Accuracy</span></div>
     `;
     eloBoardEl.appendChild(row);
