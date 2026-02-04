@@ -3,6 +3,19 @@
 ## Purpose
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
+## 2026-02-04
+- Loaded Space Grotesk font via Google Fonts (was referenced but never loaded).
+- Cached canvas dimensions to avoid layout recalculation every frame.
+- Batched ELO board updates and switched to persistent DOM elements (no more innerHTML rebuild per frame).
+- Added Escape key to toggle pause during gameplay.
+- Added miss feedback: descending sawtooth sound and red ground flash when drops hit bottom.
+- Added visual glow highlight on drops whose answer matches the current input.
+- Added localStorage persistence: progress saves on level-up, Resume button on setup screen.
+- Added optional lives mechanic (None/3/5) with game-over overlay and Play Again button.
+- Replaced boss music setInterval with Web Audio API lookahead scheduling for drift-free playback.
+- Auto-focus answer input after boss victory.
+- Replaced drop ID generation with incrementing counter.
+
 ## 2026-02-03
 - Initial playable Math Rain game built (HTML/CSS/JS single-page app).
 - Startup settings overlay: choose starting level, operations, and number range (1-12).

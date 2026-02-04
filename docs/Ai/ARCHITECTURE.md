@@ -19,10 +19,11 @@ This is a standalone, static web game. There is no build step and no external de
 8. The overall rating is computed from average drop rate and accuracy and shown in the HUD.
 
 ## Data Model (in `script.js`)
-- `drops`: active drops with `{ id, x, y, speed, text, answer, opKey }`.
-- `settings`: chosen ops and max range.
+- `drops`: active drops with `{ id, x, y, speed, text, answer, opKey, isBoss }`.
+- `settings`: chosen ops and starting level.
 - `opElo`: per-op ratings: `{ speed, correct, total }` used to derive drop rate.
-- `opState`: per-op progression state: `{ level, progress, bossActive, bossCleared, bossQueued }`.
+- `opState`: per-op progression state: `{ level, progress, pendingProgress, bossActive, bossCleared, bossTarget, bossSpawnLocked, bossQueued, preBossBreakMs }`.
+- `lives`: optional lives counter (null when disabled).
 
 ## Extensibility Notes
 - If adding new operations, update `operators`, `opLabels`, and the setup UI.

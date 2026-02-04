@@ -9,10 +9,18 @@ const pauseBtn = document.getElementById("pauseBtn");
 const restartBtn = document.getElementById("restartBtn");
 const setupOverlay = document.getElementById("setup");
 const startBtn = document.getElementById("startBtn");
+const resumeBtn = document.getElementById("resumeBtn");
 const versionEl = document.getElementById("version");
+const livesDisplayEl = document.getElementById("livesDisplay");
+const livesCountEl = document.getElementById("livesCount");
+const gameOverEl = document.getElementById("gameOver");
+const finalScoreEl = document.getElementById("finalScore");
+const finalRatingEl = document.getElementById("finalRating");
+const playAgainBtn = document.getElementById("playAgainBtn");
 
 const levelButtons = document.querySelectorAll("#levelSelect button");
 const eloButtons = document.querySelectorAll("#eloSelect button");
+const livesButtons = document.querySelectorAll("#livesSelect button");
 
 const GAME_HEIGHT = 520;
 const GAME_WIDTH = 900;
@@ -31,6 +39,12 @@ let audioCtx = null;
 let bossMusicTimer = null;
 let splashes = [];
 let laser = null;
+let nextDropId = 0;
+let canvasW = 0;
+let canvasH = 0;
+let groundFlash = 0;
+let currentInput = "";
+let lives = null;
 
 const ELO_MIN = 400;
 const ELO_MAX = 2000;
@@ -67,12 +81,20 @@ function resizeCanvas() {
   canvas.width = rect.width * dpr;
   canvas.height = rect.height * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  canvasW = rect.width;
+  canvasH = rect.height;
 }
 
 function updateStats() {
   scoreEl.textContent = score;
   eloEl.textContent = Math.round(elo);
   if (versionEl) versionEl.textContent = VERSION;
+  if (lives !== null) {
+    livesDisplayEl.classList.remove("hidden");
+    livesCountEl.textContent = lives;
+  } else {
+    livesDisplayEl.classList.add("hidden");
+  }
 }
 
 function pickSettings() {
@@ -146,15 +168,14 @@ function randInt(min, max) {
 
 function createDrop(opKey, isBoss = false) {
   const problem = generateProblem(opKey);
-  const rect = canvas.getBoundingClientRect();
   const padding = 36;
   const left = padding;
-  const right = Math.max(padding + 20, rect.width - padding);
+  const right = Math.max(padding + 20, canvasW - padding);
   const x = randInt(left, right);
   const speed = getSpeedForOp(problem.opKey) * (0.7 + Math.random() * 0.6);
 
   drops.push({
-    id: Date.now() + Math.random(),
+    id: nextDropId++,
     x,
     y: -20,
     speed,
@@ -192,15 +213,27 @@ function updateDrops(dt) {
     drop.y += (drop.speed * dt) / 1000;
   }
 
-  const bottom = canvas.getBoundingClientRect().height - 30;
+  const bottom = canvasH - 30;
   const survived = [];
 
+  let missCount = 0;
   for (const drop of drops) {
     if (drop.y >= bottom) {
       adjustSpeed(drop.opKey, -SPEED_LOSS);
       recordAccuracy(drop.opKey, false);
+      missCount += 1;
     } else {
       survived.push(drop);
+    }
+  }
+  if (missCount > 0) {
+    groundFlash = 300;
+    playMiss();
+    if (lives !== null) {
+      lives = Math.max(0, lives - missCount);
+      if (lives === 0) {
+        triggerGameOver();
+      }
     }
   }
 
@@ -230,18 +263,32 @@ function updateLaser(dt) {
 function drawDrops() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+  if (groundFlash > 0) {
+    const alpha = Math.min(1, groundFlash / 300) * 0.35;
+    ctx.fillStyle = `rgba(248, 113, 113, ${alpha.toFixed(2)})`;
+    ctx.fillRect(0, canvasH - 36, canvasW, 36);
+  }
+
   drawSplashes();
+
+  const inputNum = currentInput !== "" ? Number(currentInput) : NaN;
+  const hasMatch = !Number.isNaN(inputNum);
 
   for (const drop of drops) {
     const dropTop = drop.y - 26;
     const dropBottom = drop.y + 22;
     const dropRadius = 22;
+    const isHighlighted = hasMatch && drop.answer === inputNum;
 
     const fillColor = drop.isBoss ? "rgba(251, 191, 36, 0.92)" : "rgba(125, 211, 252, 0.92)";
     const strokeColor = drop.isBoss ? "rgba(253, 230, 138, 0.95)" : "rgba(186, 230, 253, 0.9)";
+    if (isHighlighted) {
+      ctx.shadowColor = drop.isBoss ? "rgba(251, 191, 36, 0.8)" : "rgba(125, 211, 252, 0.8)";
+      ctx.shadowBlur = 18;
+    }
     ctx.fillStyle = fillColor;
     ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = isHighlighted ? 3 : 2;
     ctx.beginPath();
     ctx.moveTo(drop.x, dropTop);
     ctx.bezierCurveTo(
@@ -263,6 +310,10 @@ function drawDrops() {
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
+    if (isHighlighted) {
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
+    }
 
     ctx.font = "600 16px Space Grotesk";
     ctx.textAlign = "center";
@@ -300,9 +351,8 @@ function drawLaser() {
 }
 
 function drawGun() {
-  const rect = canvas.getBoundingClientRect();
-  const gunY = rect.height - 20;
-  const gunX = rect.width / 2;
+  const gunY = canvasH - 20;
+  const gunX = canvasW / 2;
   ctx.fillStyle = "#1f2937";
   ctx.beginPath();
   if (typeof ctx.roundRect === "function") {
@@ -316,9 +366,8 @@ function drawGun() {
 }
 
 function fireLaser(target) {
-  const rect = canvas.getBoundingClientRect();
-  const gunY = rect.height - 22;
-  const gunX = rect.width / 2;
+  const gunY = canvasH - 22;
+  const gunX = canvasW / 2;
   laser = {
     x1: gunX,
     y1: gunY,
@@ -396,8 +445,8 @@ function checkAnswer(inputValue) {
   playPop();
   fireLaser(match);
   answerInput.value = "";
+  currentInput = "";
   updateBossState();
-  updateEloBoard();
 }
 
 function tick(timestamp) {
@@ -432,9 +481,11 @@ function tick(timestamp) {
     updateDrops(dt);
     updateSplashes(dt);
     updateLaser(dt);
+    if (groundFlash > 0) groundFlash = Math.max(0, groundFlash - dt);
     updateBossState();
     updateDifficulty();
     updateStats();
+    updateEloBoard();
     drawDrops();
 
   }
@@ -472,9 +523,15 @@ function startGame() {
   baseSpeed = 40;
   stopBossMusic();
   laser = null;
+  groundFlash = 0;
+  const livesChoice = getActiveValue(livesButtons, "lives");
+  lives = livesChoice > 0 ? livesChoice : null;
   isPaused = false;
   pauseBtn.textContent = "Pause";
+  gameOverEl.classList.add("hidden");
+  gameOverEl.setAttribute("aria-hidden", "true");
   updateStats();
+  buildEloBoard();
   updateEloBoard();
   setupOverlay.classList.add("hidden");
   setupOverlay.setAttribute("aria-hidden", "true");
@@ -498,12 +555,95 @@ function restartGame() {
   setupOverlay.classList.remove("hidden");
   setupOverlay.setAttribute("aria-hidden", "false");
   stopBossMusic();
+  updateResumeButton();
+}
+
+function triggerGameOver() {
+  isPaused = true;
+  stopBossMusic();
+  clearSave();
+  finalScoreEl.textContent = score;
+  finalRatingEl.textContent = Math.round(elo);
+  gameOverEl.classList.remove("hidden");
+  gameOverEl.setAttribute("aria-hidden", "false");
+}
+
+const SAVE_KEY = "mathrain_save";
+
+function saveGame() {
+  try {
+    const data = {
+      score,
+      elo,
+      opElo,
+      opState,
+      settings,
+      baseSpawnMs,
+      baseSpeed,
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+  } catch (_) {}
+}
+
+function loadGame() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (_) {
+    return null;
+  }
+}
+
+function clearSave() {
+  try {
+    localStorage.removeItem(SAVE_KEY);
+  } catch (_) {}
+}
+
+function resumeGame() {
+  const data = loadGame();
+  if (!data) return;
+  initAudio();
+  settings = data.settings;
+  score = data.score;
+  elo = data.elo;
+  opElo = data.opElo;
+  opState = data.opState;
+  baseSpawnMs = data.baseSpawnMs;
+  baseSpeed = data.baseSpeed;
+  drops = [];
+  splashes = [];
+  spawnTimer = 0;
+  lastTime = 0;
+  stopBossMusic();
+  laser = null;
+  groundFlash = 0;
+  lives = null;
+  isPaused = false;
+  pauseBtn.textContent = "Pause";
+  updateStats();
+  buildEloBoard();
+  updateEloBoard();
+  setupOverlay.classList.add("hidden");
+  setupOverlay.setAttribute("aria-hidden", "true");
+  answerInput.focus();
+}
+
+function updateResumeButton() {
+  const resumeBtn = document.getElementById("resumeBtn");
+  if (!resumeBtn) return;
+  const data = loadGame();
+  if (data) {
+    resumeBtn.classList.remove("hidden");
+  } else {
+    resumeBtn.classList.add("hidden");
+  }
 }
 
 function adjustSpeed(opKey, delta) {
   if (!opElo[opKey]) return;
   opElo[opKey].speed = clamp(ELO_MIN, ELO_MAX, opElo[opKey].speed + delta);
-  updateEloBoard();
 }
 
 function clamp(min, max, value) {
@@ -533,7 +673,6 @@ function recordAccuracy(opKey, isCorrect) {
   if (!entry) return;
   entry.total += 1;
   if (isCorrect) entry.correct += 1;
-  updateEloBoard();
 }
 
 function getSpeedForOp(opKey) {
@@ -593,29 +732,77 @@ function getOpProgressPct(opKey) {
   return Math.min(100, Math.round(((count % LEVEL_STEP) / LEVEL_STEP) * 100));
 }
 
-function updateEloBoard() {
+let eloBoardRows = {};
+
+function buildEloBoard() {
   if (!eloBoardEl || !settings) return;
   eloBoardEl.innerHTML = "";
+  eloBoardRows = {};
   settings.ops.forEach((op) => {
-    const entry = opElo[op];
-    const state = opState[op];
     const row = document.createElement("div");
     row.className = "elo-row";
-    const accuracyPct = Math.round(getAccuracy(entry) * 100);
-    const dropRate = getDropRateForOp(op);
-    const progressPct = getOpProgressPct(op);
-    const rangeValue = getRangeForOp(op);
+
+    const tag = document.createElement("div");
+    tag.className = "elo-tag";
+    tag.textContent = opLabels[op];
+
+    const levelMetric = createMetric("Level");
+    const rangeMetric = createMetric("Range");
+    const rateMetric = createMetric("Avg Drop Rate");
+    const accMetric = createMetric("Accuracy");
+
+    const progressWrap = document.createElement("div");
+    progressWrap.className = "elo-progress";
+    progressWrap.setAttribute("aria-hidden", "true");
+    const progressBar = document.createElement("span");
+    progressWrap.appendChild(progressBar);
+
+    row.appendChild(tag);
+    row.appendChild(levelMetric.el);
+    row.appendChild(rangeMetric.el);
+    row.appendChild(rateMetric.el);
+    row.appendChild(accMetric.el);
+    row.appendChild(progressWrap);
+    eloBoardEl.appendChild(row);
+
+    eloBoardRows[op] = {
+      levelVal: levelMetric.val,
+      levelLabel: levelMetric.label,
+      rangeVal: rangeMetric.val,
+      rateVal: rateMetric.val,
+      accVal: accMetric.val,
+      progressBar,
+    };
+  });
+}
+
+function createMetric(labelText) {
+  const el = document.createElement("div");
+  el.className = "elo-metric";
+  const val = document.createElement("strong");
+  const label = document.createElement("span");
+  label.textContent = labelText;
+  el.appendChild(val);
+  el.appendChild(label);
+  return { el, val, label };
+}
+
+function updateEloBoard() {
+  if (!eloBoardEl || !settings) return;
+  if (Object.keys(eloBoardRows).length === 0) return;
+  settings.ops.forEach((op) => {
+    const refs = eloBoardRows[op];
+    if (!refs) return;
+    const entry = opElo[op];
+    const state = opState[op];
     const levelValue = state ? state.level : settings.startLevel;
     const bossLabel = state?.bossActive ? "Boss" : state?.bossQueued ? "Boss Soon" : "";
-    row.innerHTML = `
-      <div class="elo-tag">${opLabels[op]}</div>
-      <div class="elo-metric"><strong>Lv ${levelValue}</strong><span>${bossLabel || "Level"}</span></div>
-      <div class="elo-metric"><strong>${rangeValue}</strong><span>Range</span></div>
-      <div class="elo-metric"><strong>${dropRate.toFixed(1)}</strong><span>Avg Drop Rate</span></div>
-      <div class="elo-metric"><strong>${accuracyPct}%</strong><span>Accuracy</span></div>
-      <div class="elo-progress" aria-hidden="true"><span style="width: ${progressPct}%"></span></div>
-    `;
-    eloBoardEl.appendChild(row);
+    refs.levelVal.textContent = `Lv ${levelValue}`;
+    refs.levelLabel.textContent = bossLabel || "Level";
+    refs.rangeVal.textContent = getRangeForOp(op);
+    refs.rateVal.textContent = getDropRateForOp(op).toFixed(1);
+    refs.accVal.textContent = `${Math.round(getAccuracy(entry) * 100)}%`;
+    refs.progressBar.style.width = `${getOpProgressPct(op)}%`;
   });
 }
 
@@ -645,9 +832,6 @@ function updateBossQueues(dt) {
     if (nextBoss) startBossBattle(nextBoss);
   }
 
-  if (changed) {
-    updateEloBoard();
-  }
 }
 
 function updateBossState() {
@@ -676,7 +860,6 @@ function startBossBattle(opKey) {
   state.bossQueued = false;
   state.preBossBreakMs = 0;
   startBossMusic();
-  updateEloBoard();
 }
 
 function finishBossBattle(opKey) {
@@ -693,7 +876,8 @@ function finishBossBattle(opKey) {
   if (!getActiveBossOp()) {
     stopBossMusic();
   }
-  updateEloBoard();
+  answerInput.focus();
+  saveGame();
 }
 
 function hasBossDrops(opKey) {
@@ -772,25 +956,67 @@ function playTone(frequency, duration, gainValue = 0.18) {
   osc.stop(now + duration + 0.02);
 }
 
+function playMiss() {
+  if (!audioCtx) return;
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(180, now);
+  osc.frequency.exponentialRampToValueAtTime(80, now + 0.15);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.linearRampToValueAtTime(0.12, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 0.2);
+}
+
+function scheduleBossLoop() {
+  if (!audioCtx || !bossMusicTimer) return;
+  const pattern = [220, 262, 294, 330, 294, 262];
+  const noteLen = 0.2;
+  const loopLen = pattern.length * noteLen;
+  const now = audioCtx.currentTime;
+  const startAt = bossMusicTimer.nextLoop || now;
+  if (startAt - now > loopLen) return;
+
+  pattern.forEach((freq, i) => {
+    const t = startAt + i * noteLen;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(freq, t);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime(0.14, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + 0.2);
+  });
+
+  bossMusicTimer.nextLoop = startAt + loopLen;
+  bossMusicTimer.timerId = setTimeout(() => scheduleBossLoop(), (loopLen - 0.1) * 1000);
+}
+
 function startBossMusic() {
   if (bossMusicTimer) return;
   if (!audioCtx) return;
   if (audioCtx.state === "suspended") {
     audioCtx.resume();
   }
-  const pattern = [220, 262, 294, 330, 294, 262];
-  let step = 0;
-  bossMusicTimer = setInterval(() => {
-    if (!getActiveBossOp() || isPaused) return;
-    const freq = pattern[step % pattern.length];
-    playTone(freq, 0.18, 0.14);
-    step += 1;
-  }, 200);
+  bossMusicTimer = { nextLoop: audioCtx.currentTime, timerId: null };
+  scheduleBossLoop();
 }
 
 function stopBossMusic() {
   if (!bossMusicTimer) return;
-  clearInterval(bossMusicTimer);
+  if (bossMusicTimer.timerId) clearTimeout(bossMusicTimer.timerId);
   bossMusicTimer = null;
 }
 
@@ -807,10 +1033,12 @@ function playVictory() {
 
 pickActive(levelButtons);
 pickActive(eloButtons);
+pickActive(livesButtons);
 
 answerInput.addEventListener("input", (event) => {
   initAudio();
-  checkAnswer(event.target.value.trim());
+  currentInput = event.target.value.trim();
+  checkAnswer(currentInput);
 });
 
 answerInput.addEventListener("keydown", (event) => {
@@ -836,9 +1064,27 @@ startBtn.addEventListener("click", () => {
     selectedOps[0].checked = true;
   }
 
+  clearSave();
   startGame();
+});
+
+resumeBtn.addEventListener("click", () => {
+  resumeGame();
+});
+
+playAgainBtn.addEventListener("click", () => {
+  gameOverEl.classList.add("hidden");
+  gameOverEl.setAttribute("aria-hidden", "true");
+  restartGame();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && settings && setupOverlay.classList.contains("hidden") && gameOverEl.classList.contains("hidden")) {
+    togglePause();
+  }
 });
 
 window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
+updateResumeButton();
 requestAnimationFrame(tick);

@@ -250,6 +250,15 @@ button.primary {
   color: var(--muted);
 }
 
+.game-over-card {
+  text-align: center;
+  max-width: 400px;
+}
+
+.game-over-card .card-sub {
+  font-size: 1.1rem;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
