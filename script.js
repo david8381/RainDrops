@@ -28,7 +28,7 @@ const livesButtons = document.querySelectorAll("#livesSelect button");
 
 const GAME_HEIGHT = 520;
 const GAME_WIDTH = 900;
-const VERSION = "2026-02-05 23:03";
+const VERSION = "2026-02-05 23:06";
 
 let drops = [];
 let score = 0;
@@ -68,14 +68,15 @@ const ELO_WINDOW_MS = 30000;
 const ELO_SMOOTH = 0.2;
 const CHURN_MAX = 12;
 const ACCURACY_EMA_ALPHA = 0.02;
-const SHIP_HULL_COUNT = 3;
-const SHIP_WING_COUNT = 1;
-const SHIP_GUN_COUNT = 1;
+const SHIP_HULL_COUNT = 5;
+const SHIP_WING_COUNT = 2;
+const SHIP_GUN_COUNT = 2;
 const SHIP_WING_RANGE_BONUS = 2;
 const SHIP_GUN_RANGE_BONUS = 1;
 const SHIP_SHOT_INTERVAL_MS = 1200;
 const SHIP_SHOT_CHANCE = 0.25;
 const STUN_MS = 1200;
+const SHIP_MISSILE_SPEED_MULT = 2.4;
 
 const opLabels = {
   add: "Add",
@@ -237,7 +238,7 @@ function getActiveAnswers() {
   return dropAnswers.concat(getShipAnswers());
 }
 
-function createDrop(opKey, isBoss = false, spawnedAt = 0) {
+function createDrop(opKey, isBoss = false, spawnedAt = 0, options = {}) {
   let problem = null;
   let attempts = 0;
   while (attempts < 16) {
@@ -254,7 +255,8 @@ function createDrop(opKey, isBoss = false, spawnedAt = 0) {
   const left = padding;
   const right = Math.max(padding + 20, canvasW - padding);
   const x = randInt(left, right);
-  const speed = getSpeedForOp(problem.opKey) * (0.7 + Math.random() * 0.6);
+  const speedBase = getSpeedForOp(problem.opKey) * (0.7 + Math.random() * 0.6);
+  const speed = speedBase * (options.speedMult || 1);
 
   drops.push({
     id: nextDropId++,
@@ -265,6 +267,7 @@ function createDrop(opKey, isBoss = false, spawnedAt = 0) {
     answer: problem.answer,
     opKey: problem.opKey,
     isBoss,
+    isMissile: Boolean(options.isMissile),
     spawnedAt,
   });
   return true;
@@ -310,6 +313,9 @@ function updateDrops(dt) {
       });
       applyProgressPenalty(drop.opKey, 1);
       missCount += 1;
+      if (drop.isMissile) {
+        stunnedUntil = Math.max(stunnedUntil, gameTime + STUN_MS);
+      }
     } else {
       survived.push(drop);
     }
@@ -407,8 +413,38 @@ function updateShip(dt) {
   if (shipState.shotTimer < SHIP_SHOT_INTERVAL_MS) return;
   shipState.shotTimer = 0;
   if (Math.random() < SHIP_SHOT_CHANCE) {
-    stunnedUntil = Math.max(stunnedUntil, gameTime + STUN_MS);
+    spawnShipMissile();
   }
+}
+
+function spawnShipMissile() {
+  if (!shipState || !shipState.active) return;
+  const maxValue = clamp(2, RANGE_MAX + SHIP_GUN_RANGE_BONUS, getRangeMax(shipState.opKey) + SHIP_GUN_RANGE_BONUS);
+  let attempts = 0;
+  let problem = null;
+  while (attempts < 20) {
+    const candidate = generateProblemWithRange(shipState.opKey, maxValue);
+    if (!getActiveAnswers().includes(candidate.answer)) {
+      problem = candidate;
+      break;
+    }
+    attempts += 1;
+  }
+  if (!problem) return;
+  const x = canvasW / 2 + randInt(-120, 120);
+  const speedBase = getSpeedForOp(shipState.opKey) * 1.3;
+  drops.push({
+    id: nextDropId++,
+    x,
+    y: 120,
+    speed: speedBase * SHIP_MISSILE_SPEED_MULT,
+    text: problem.text,
+    answer: problem.answer,
+    opKey: problem.opKey,
+    isBoss: false,
+    isMissile: true,
+    spawnedAt: gameTime,
+  });
 }
 
 function findShipMatch(value) {
@@ -456,8 +492,16 @@ function drawDrops() {
     const dropRadius = 22;
     const isHighlighted = hasMatch && drop.answer === inputNum;
 
-    const fillColor = drop.isBoss ? "rgba(251, 191, 36, 0.92)" : "rgba(125, 211, 252, 0.92)";
-    const strokeColor = drop.isBoss ? "rgba(253, 230, 138, 0.95)" : "rgba(186, 230, 253, 0.9)";
+    const fillColor = drop.isMissile
+      ? "rgba(248, 113, 113, 0.92)"
+      : drop.isBoss
+        ? "rgba(251, 191, 36, 0.92)"
+        : "rgba(125, 211, 252, 0.92)";
+    const strokeColor = drop.isMissile
+      ? "rgba(254, 202, 202, 0.95)"
+      : drop.isBoss
+        ? "rgba(253, 230, 138, 0.95)"
+        : "rgba(186, 230, 253, 0.9)";
     if (isHighlighted) {
       ctx.shadowColor = drop.isBoss ? "rgba(251, 191, 36, 0.8)" : "rgba(125, 211, 252, 0.8)";
       ctx.shadowBlur = 18;
@@ -581,6 +625,7 @@ function drawShipProblems(list, x, y, highlightAnswer) {
 
 function drawStunOverlay() {
   if (!isStunned()) return;
+  const remaining = Math.max(0, Math.ceil((stunnedUntil - gameTime) / 100) / 10);
   ctx.save();
   ctx.fillStyle = "rgba(248, 113, 113, 0.15)";
   ctx.fillRect(0, 0, canvasW, canvasH);
@@ -588,7 +633,7 @@ function drawStunOverlay() {
   ctx.font = "700 24px Space Grotesk";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("STUNNED", canvasW / 2, canvasH / 2);
+  ctx.fillText(`STUNNED ${remaining.toFixed(1)}s`, canvasW / 2, canvasH / 2);
   ctx.restore();
 }
 
