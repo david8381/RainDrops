@@ -30,6 +30,7 @@ This file records meaningful project changes so future collaborators (including 
 - Added alternating ship boss battles with hull, wings, and guns plus stun shots.
 - Updated architecture/purpose docs for ship boss and rolling ELO.
 - Fixed version stamping script to update reliably.
+- Added a Boss Now button to trigger the next boss battle early.
 
 ## 2026-02-03
 - Initial playable Math Rain game built (HTML/CSS/JS single-page app).

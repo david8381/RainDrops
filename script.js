@@ -6,6 +6,7 @@ const eloEl = document.getElementById("elo");
 const eloBoardEl = document.getElementById("eloBoard");
 const answerInput = document.getElementById("answer");
 const pauseBtn = document.getElementById("pauseBtn");
+const bossBtn = document.getElementById("bossBtn");
 const restartBtn = document.getElementById("restartBtn");
 const setupOverlay = document.getElementById("setup");
 const startBtn = document.getElementById("startBtn");
@@ -26,7 +27,7 @@ const livesButtons = document.querySelectorAll("#livesSelect button");
 
 const GAME_HEIGHT = 520;
 const GAME_WIDTH = 900;
-const VERSION = "2026-02-05 22:57";
+const VERSION = "2026-02-05 22:59";
 
 let drops = [];
 let score = 0;
@@ -1381,6 +1382,32 @@ function getQueuedBossOp() {
   );
 }
 
+function triggerBossNow() {
+  if (!settings) return;
+  if (getActiveBossOp()) return;
+  const candidates = settings.ops.filter((opKey) => {
+    const state = opState[opKey];
+    if (!state) return false;
+    if (state.bossActive || state.bossQueued) return false;
+    if (state.preBossBreakMs > 0) return false;
+    return true;
+  });
+  if (!candidates.length) return;
+  let bestOp = candidates[0];
+  let bestProgress = opState[bestOp]?.progress || 0;
+  for (let i = 1; i < candidates.length; i += 1) {
+    const opKey = candidates[i];
+    const progress = opState[opKey]?.progress || 0;
+    if (progress > bestProgress) {
+      bestProgress = progress;
+      bestOp = opKey;
+    }
+  }
+  opState[bestOp].bossQueued = true;
+  opState[bestOp].preBossBreakMs = 0;
+  startBossBattle(bestOp);
+}
+
 function pickSpawnOp() {
   const available = settings.ops.filter((opKey) => {
     const state = opState[opKey];
@@ -1573,6 +1600,9 @@ answerInput.addEventListener("keydown", (event) => {
 });
 
 pauseBtn.addEventListener("click", togglePause);
+bossBtn.addEventListener("click", () => {
+  triggerBossNow();
+});
 restartBtn.addEventListener("click", restartGame);
 startBtn.addEventListener("click", () => {
   const selectedOps = Array.from(
