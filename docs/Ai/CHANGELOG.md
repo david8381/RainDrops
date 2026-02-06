@@ -21,6 +21,7 @@ This file records meaningful project changes so future collaborators (including 
 - Added a pause overlay and disabled answer input while paused.
 - ELO now updates on a rolling 30s window using time-to-clear and input churn signals.
 - Prevented duplicate answers from appearing on screen at the same time.
+- Invalid inputs that cannot complete any on-screen answer now count as wrong attempts and clear the input.
 
 ## 2026-02-03
 - Initial playable Math Rain game built (HTML/CSS/JS single-page app).

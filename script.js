@@ -476,6 +476,44 @@ function checkAnswer(inputValue) {
   updateBossState();
 }
 
+function isInputPossible(inputValue) {
+  if (!inputValue) return true;
+  const trimmed = inputValue.trim();
+  if (!trimmed) return true;
+  return drops.some((drop) => String(drop.answer).startsWith(trimmed));
+}
+
+function pickClosestDrop() {
+  if (drops.length === 0) return null;
+  let best = drops[0];
+  let bestNorm = getTimeNorm(best);
+  for (let i = 1; i < drops.length; i += 1) {
+    const drop = drops[i];
+    const norm = getTimeNorm(drop);
+    if (norm > bestNorm) {
+      bestNorm = norm;
+      best = drop;
+    }
+  }
+  return best;
+}
+
+function registerInputMistake() {
+  if (isPaused) return;
+  const churnNorm = clamp(0, 1, inputChurn / CHURN_MAX);
+  const targetDrop = pickClosestDrop();
+  if (targetDrop) {
+    recordEvent(targetDrop.opKey, {
+      correct: false,
+      timeNorm: getTimeNorm(targetDrop),
+      churnNorm,
+    });
+  }
+  inputChurn = 0;
+  answerInput.value = "";
+  currentInput = "";
+}
+
 function tick(timestamp) {
   if (!lastTime) lastTime = timestamp;
   const dt = timestamp - lastTime;
@@ -1139,6 +1177,10 @@ answerInput.addEventListener("input", (event) => {
     inputChurn = Math.min(CHURN_MAX * 2, inputChurn + 1);
   }
   currentInput = event.target.value.trim();
+  if (!isInputPossible(currentInput)) {
+    registerInputMistake();
+    return;
+  }
   checkAnswer(currentInput);
 });
 
