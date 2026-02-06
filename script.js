@@ -1190,8 +1190,16 @@ answerInput.addEventListener("keydown", (event) => {
   }
   if (event.key === "Enter") {
     event.preventDefault();
-    checkAnswer(answerInput.value.trim());
-    answerInput.value = "";
+    const value = answerInput.value.trim();
+    if (!value) return;
+    const numericValue = Number(value);
+    const hasExactMatch =
+      !Number.isNaN(numericValue) && drops.some((drop) => drop.answer === numericValue);
+    if (hasExactMatch) {
+      checkAnswer(value);
+    } else {
+      registerInputMistake();
+    }
   }
 });
 
