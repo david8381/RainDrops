@@ -1,13 +1,5 @@
 const canvas = document.getElementById("canvas");
-
-let scene = null;
-let camera = null;
-let renderer = null;
-let dropGroup = null;
-let shipGroup = null;
-let laserLine = null;
-let stunOverlay = null;
-let stunText = null;
+const ctx = canvas.getContext("2d");
 
 const scoreEl = document.getElementById("score");
 const eloEl = document.getElementById("elo");
@@ -36,7 +28,7 @@ const livesButtons = document.querySelectorAll("#livesSelect button");
 
 const GAME_HEIGHT = 520;
 const GAME_WIDTH = 900;
-const VERSION = "2026-02-05 23:42";
+const VERSION = "2026-02-05 23:30";
 
 let drops = [];
 let score = 0;
@@ -104,71 +96,11 @@ const operators = {
 function resizeCanvas() {
   const rect = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   canvasW = rect.width;
   canvasH = rect.height;
-  if (renderer && camera) {
-    renderer.setSize(canvasW, canvasH, false);
-    camera.aspect = canvasW / canvasH;
-    camera.updateProjectionMatrix();
-  } else {
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-  }
-  if (stunOverlay) {
-    stunOverlay.scale.set(canvasW / 1000, canvasH / 800, 1);
-  }
-}
-
-function initThree() {
-  if (renderer) return;
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-  renderer.setPixelRatio(window.devicePixelRatio || 1);
-  renderer.setSize(canvasW, canvasH, false);
-
-  scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(45, canvasW / canvasH, 1, 2000);
-  camera.position.set(0, 0, 800);
-
-  const ambient = new THREE.AmbientLight(0xffffff, 0.7);
-  scene.add(ambient);
-  const dir = new THREE.DirectionalLight(0xffffff, 0.6);
-  dir.position.set(0, 200, 400);
-  scene.add(dir);
-
-  dropGroup = new THREE.Group();
-  shipGroup = new THREE.Group();
-  scene.add(dropGroup);
-  scene.add(shipGroup);
-
-  const overlayGroup = new THREE.Group();
-  scene.add(overlayGroup);
-
-  const stunPlaneGeo = new THREE.PlaneGeometry(1000, 800);
-  const stunPlaneMat = new THREE.MeshBasicMaterial({
-    color: 0xf87171,
-    transparent: true,
-    opacity: 0.0,
-  });
-  stunOverlay = new THREE.Mesh(stunPlaneGeo, stunPlaneMat);
-  stunOverlay.position.set(0, 0, 100);
-  overlayGroup.add(stunOverlay);
-
-  stunText = createTextSprite("STUNNED", { fontSize: 32, color: "#fef2f2" });
-  stunText.position.set(0, 0, 120);
-  overlayGroup.add(stunText);
-
-  laserLine = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
-    new THREE.LineBasicMaterial({ color: 0xf87171, transparent: true, opacity: 0 })
-  );
-  scene.add(laserLine);
-}
-
-function toWorld(x, y) {
-  return {
-    x: x - canvasW / 2,
-    y: canvasH / 2 - y,
-  };
 }
 
 function updateStats() {
@@ -288,36 +220,6 @@ function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function createTextSprite(text, { fontSize = 18, color = "#f8fafc" } = {}) {
-  const padding = 8;
-  const font = `${fontSize}px Space Grotesk`;
-  const canvasEl = document.createElement("canvas");
-  const ctx2d = canvasEl.getContext("2d");
-  ctx2d.font = font;
-  const metrics = ctx2d.measureText(text);
-  const width = Math.ceil(metrics.width) + padding * 2;
-  const height = fontSize + padding * 2;
-  canvasEl.width = width * 2;
-  canvasEl.height = height * 2;
-  ctx2d.scale(2, 2);
-  ctx2d.font = font;
-  ctx2d.textAlign = "center";
-  ctx2d.textBaseline = "middle";
-  ctx2d.fillStyle = color;
-  ctx2d.strokeStyle = "rgba(2, 6, 23, 0.85)";
-  ctx2d.lineWidth = 4;
-  ctx2d.strokeText(text, width / 2, height / 2);
-  ctx2d.fillText(text, width / 2, height / 2);
-
-  const texture = new THREE.CanvasTexture(canvasEl);
-  const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
-  const sprite = new THREE.Sprite(material);
-  const scale = 0.9;
-  sprite.scale.set(width * scale, height * scale, 1);
-  sprite.userData = { baseColor: color };
-  return sprite;
-}
-
 function getShipAnswers() {
   if (!shipState || !shipState.active) return [];
   return shipState.parts.map((p) => p.answer);
@@ -359,62 +261,8 @@ function createDrop(opKey, isBoss = false, spawnedAt = 0, options = {}) {
     isBoss,
     isMissile: Boolean(options.isMissile),
     spawnedAt,
-    mesh: null,
-    textSprite: null,
   });
-  createDropVisual(drops[drops.length - 1]);
   return true;
-}
-
-function createDropVisual(drop) {
-  if (!scene || !dropGroup) return;
-  const radius = drop.isBoss || drop.isMissile ? 22 : 18;
-  const geometry = new THREE.SphereGeometry(radius, 24, 24);
-  const color = drop.isMissile ? 0xf87171 : drop.isBoss ? 0xfbbf24 : 0x7dd3fc;
-  const material = new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.1 });
-  const mesh = new THREE.Mesh(geometry, material);
-  const textSprite = createTextSprite(drop.text, {
-    fontSize: drop.isBoss || drop.isMissile ? 18 : 17,
-    color: "#f8fafc",
-  });
-  textSprite.position.set(0, 0, radius + 2);
-  mesh.add(textSprite);
-  dropGroup.add(mesh);
-  drop.mesh = mesh;
-  drop.textSprite = textSprite;
-  updateDropVisual(drop);
-}
-
-function updateDropVisual(drop) {
-  if (!drop.mesh) return;
-  const pos = toWorld(drop.x, drop.y);
-  drop.mesh.position.set(pos.x, pos.y, 0);
-}
-
-function removeDropVisual(drop) {
-  if (!drop.mesh) return;
-  dropGroup.remove(drop.mesh);
-  drop.mesh.traverse((child) => {
-    if (child.material && child.material.map) {
-      child.material.map.dispose();
-    }
-    if (child.material) child.material.dispose();
-    if (child.geometry) child.geometry.dispose();
-  });
-  drop.mesh = null;
-  drop.textSprite = null;
-}
-
-function clearDropVisuals() {
-  if (!dropGroup) return;
-  while (dropGroup.children.length > 0) {
-    const child = dropGroup.children.pop();
-    if (child.material && child.material.map) {
-      child.material.map.dispose();
-    }
-    if (child.material) child.material.dispose();
-    if (child.geometry) child.geometry.dispose();
-  }
 }
 
 function createSplash(drop) {
@@ -442,7 +290,6 @@ function createSplash(drop) {
 function updateDrops(dt) {
   for (const drop of drops) {
     drop.y += (drop.speed * dt) / 1000;
-    updateDropVisual(drop);
   }
 
   const bottom = canvasH - 30;
@@ -461,7 +308,6 @@ function updateDrops(dt) {
       if (drop.isMissile) {
         stunnedUntil = Math.max(stunnedUntil, gameTime + STUN_MS);
       }
-      removeDropVisual(drop);
     } else {
       survived.push(drop);
     }
@@ -528,59 +374,6 @@ function createShipBoss(opKey) {
     parts: makeProblems(SHIP_PART_COUNT, 0),
   };
   shipState.totalProblems = getShipRemainingProblems();
-  buildShipVisual();
-}
-
-function clearShipVisual() {
-  if (!shipGroup) return;
-  while (shipGroup.children.length > 0) {
-    const child = shipGroup.children.pop();
-    if (child.material && child.material.map) {
-      child.material.map.dispose();
-    }
-    if (child.material) child.material.dispose();
-    if (child.geometry) child.geometry.dispose();
-  }
-}
-
-function buildShipVisual() {
-  if (!shipGroup || !shipState) return;
-  clearShipVisual();
-  const hullGeo = new THREE.SphereGeometry(90, 32, 24);
-  const hullMat = new THREE.MeshStandardMaterial({
-    color: 0x1e293b,
-    roughness: 0.4,
-    metalness: 0.2,
-  });
-  const hull = new THREE.Mesh(hullGeo, hullMat);
-  hull.scale.set(1.4, 0.6, 0.8);
-  hull.position.set(0, 200, 0);
-  shipGroup.add(hull);
-
-  shipState.parts.forEach((part) => {
-    const sprite = createTextSprite(part.text, { fontSize: 14, color: "#e2e8f0" });
-    part.sprite = sprite;
-    shipGroup.add(sprite);
-  });
-  layoutShipParts();
-}
-
-function layoutShipParts() {
-  if (!shipState || !shipState.parts || !shipGroup) return;
-  const cols = 5;
-  const spacingX = 70;
-  const spacingY = 26;
-  const startX = -((cols - 1) * spacingX) / 2;
-  const startY = 220;
-  shipState.parts.forEach((part, index) => {
-    const col = index % cols;
-    const row = Math.floor(index / cols);
-    const x = startX + col * spacingX;
-    const y = startY - row * spacingY;
-    if (part.sprite) {
-      part.sprite.position.set(x, y, 5);
-    }
-  });
 }
 
 function isShipDestroyed() {
@@ -615,7 +408,7 @@ function spawnShipMissile() {
   if (!problem) return;
   const x = canvasW / 2 + randInt(-120, 120);
   const speedBase = getSpeedForOp(shipState.opKey) * 1.3;
-  const drop = {
+  drops.push({
     id: nextDropId++,
     x,
     y: 120,
@@ -626,11 +419,7 @@ function spawnShipMissile() {
     isBoss: false,
     isMissile: true,
     spawnedAt: gameTime,
-    mesh: null,
-    textSprite: null,
-  };
-  drops.push(drop);
-  createDropVisual(drop);
+  });
 }
 
 function findShipMatch(value) {
@@ -644,86 +433,182 @@ function findShipMatch(value) {
 
 function removeShipProblem(match) {
   if (!match || !shipState) return;
-  const removed = shipState.parts.splice(match.index, 1)[0];
-  if (removed && removed.sprite && shipGroup) {
-    shipGroup.remove(removed.sprite);
-    if (removed.sprite.material && removed.sprite.material.map) {
-      removed.sprite.material.map.dispose();
-    }
-    if (removed.sprite.material) removed.sprite.material.dispose();
+  shipState.parts.splice(match.index, 1);
+}
+
+function drawDrops() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (groundFlash > 0) {
+    const alpha = Math.min(1, groundFlash / 300) * 0.35;
+    ctx.fillStyle = `rgba(248, 113, 113, ${alpha.toFixed(2)})`;
+    ctx.fillRect(0, canvasH - 36, canvasW, 36);
   }
-  layoutShipParts();
-}
 
-function updateTextSprite(sprite, text) {
-  if (!sprite || !sprite.material || !sprite.material.map) return;
-  const fontSize = 32;
-  const padding = 8;
-  const canvasEl = sprite.material.map.image;
-  const ctx2d = canvasEl.getContext("2d");
-  const font = `${fontSize}px Space Grotesk`;
-  ctx2d.setTransform(1, 0, 0, 1, 0, 0);
-  ctx2d.clearRect(0, 0, canvasEl.width, canvasEl.height);
-  ctx2d.scale(2, 2);
-  ctx2d.font = font;
-  ctx2d.textAlign = "center";
-  ctx2d.textBaseline = "middle";
-  ctx2d.fillStyle = "#fef2f2";
-  ctx2d.strokeStyle = "rgba(2, 6, 23, 0.85)";
-  ctx2d.lineWidth = 4;
-  ctx2d.strokeText(text, canvasEl.width / 4, canvasEl.height / 4);
-  ctx2d.fillText(text, canvasEl.width / 4, canvasEl.height / 4);
-  sprite.material.map.needsUpdate = true;
-}
+  drawShip();
+  drawSplashes();
 
-function renderScene() {
-  if (!renderer || !scene || !camera) return;
   const inputNum = currentInput !== "" ? Number(currentInput) : NaN;
   const hasMatch = !Number.isNaN(inputNum);
 
-  drops.forEach((drop) => {
-    if (drop.textSprite) {
-      drop.textSprite.material.color.set(
-        hasMatch && drop.answer === inputNum ? 0xfde68a : 0xffffff
-      );
+  for (const drop of drops) {
+    const dropTop = drop.y - 26;
+    const dropBottom = drop.y + 22;
+    const dropRadius = 22;
+    const isHighlighted = hasMatch && drop.answer === inputNum;
+
+    const fillColor = drop.isMissile
+      ? "rgba(248, 113, 113, 0.92)"
+      : drop.isBoss
+        ? "rgba(251, 191, 36, 0.92)"
+        : "rgba(125, 211, 252, 0.92)";
+    const strokeColor = drop.isMissile
+      ? "rgba(254, 202, 202, 0.95)"
+      : drop.isBoss
+        ? "rgba(253, 230, 138, 0.95)"
+        : "rgba(186, 230, 253, 0.9)";
+    if (isHighlighted) {
+      ctx.shadowColor = drop.isBoss ? "rgba(251, 191, 36, 0.8)" : "rgba(125, 211, 252, 0.8)";
+      ctx.shadowBlur = 18;
     }
+    ctx.fillStyle = fillColor;
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = isHighlighted ? 3 : 2;
+    ctx.beginPath();
+    ctx.moveTo(drop.x, dropTop);
+    ctx.bezierCurveTo(
+      drop.x - dropRadius,
+      drop.y - 12,
+      drop.x - dropRadius,
+      drop.y + 6,
+      drop.x,
+      dropBottom
+    );
+    ctx.bezierCurveTo(
+      drop.x + dropRadius,
+      drop.y + 6,
+      drop.x + dropRadius,
+      drop.y - 12,
+      drop.x,
+      dropTop
+    );
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    if (isHighlighted) {
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
+    }
+
+    const fontSize = drop.isBoss || drop.isMissile ? 18 : 17;
+    ctx.font = `700 ${fontSize}px Space Grotesk`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(2, 6, 23, 0.85)";
+    ctx.fillStyle = "#f8fafc";
+    ctx.strokeText(drop.text, drop.x, drop.y + 2);
+    ctx.fillText(drop.text, drop.x, drop.y + 2);
+  }
+
+  drawLaser();
+  drawGun();
+  drawStunOverlay();
+}
+
+function drawShip() {
+  if (!shipState || !shipState.active) return;
+  const centerX = canvasW / 2;
+  const topY = 80;
+  const hullWidth = 220;
+  const hullHeight = 70;
+
+  ctx.save();
+  ctx.fillStyle = "rgba(30, 41, 59, 0.9)";
+  ctx.strokeStyle = "rgba(148, 163, 184, 0.65)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(centerX, topY, hullWidth / 2, hullHeight / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.restore();
+
+  const inputNum = currentInput !== "" ? Number(currentInput) : NaN;
+  const highlightAnswer = Number.isNaN(inputNum) ? null : inputNum;
+
+  drawShipProblems(shipState.parts, centerX, topY - 4, highlightAnswer);
+}
+
+function drawShipProblems(list, x, y, highlightAnswer) {
+  if (!list || list.length === 0) return;
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "700 14px Space Grotesk";
+  list.forEach((problem, idx) => {
+    const rowY = y + idx * 18;
+    if (highlightAnswer !== null && problem.answer === highlightAnswer) {
+      ctx.fillStyle = "#fde68a";
+    } else {
+      ctx.fillStyle = "#e2e8f0";
+    }
+    ctx.strokeStyle = "rgba(11, 18, 32, 0.75)";
+    ctx.lineWidth = 3;
+    ctx.strokeText(problem.text, x, rowY);
+    ctx.fillText(problem.text, x, rowY);
   });
+  ctx.restore();
+}
 
-  if (shipState && shipState.parts) {
-    shipState.parts.forEach((part) => {
-      if (part.sprite) {
-        part.sprite.material.color.set(
-          hasMatch && part.answer === inputNum ? 0xfde68a : 0xffffff
-        );
-      }
-    });
+function drawStunOverlay() {
+  if (!isStunned()) return;
+  const remaining = Math.max(0, Math.ceil((stunnedUntil - gameTime) / 100) / 10);
+  ctx.save();
+  ctx.fillStyle = "rgba(248, 113, 113, 0.15)";
+  ctx.fillRect(0, 0, canvasW, canvasH);
+  ctx.fillStyle = "rgba(248, 113, 113, 0.95)";
+  ctx.font = "700 24px Space Grotesk";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(`STUNNED ${remaining.toFixed(1)}s`, canvasW / 2, canvasH / 2);
+  ctx.restore();
+}
+
+function drawSplashes() {
+  for (const splash of splashes) {
+    const alpha = Math.max(0, splash.life / splash.maxLife);
+    ctx.fillStyle = splash.color.replace("{a}", alpha.toFixed(2));
+    ctx.beginPath();
+    ctx.ellipse(splash.x, splash.y, splash.rx, splash.ry, splash.rotation, 0, Math.PI * 2);
+    ctx.fill();
   }
+}
 
-  if (laserLine) {
-    if (laser) {
-      const start = toWorld(laser.x1, laser.y1);
-      const end = toWorld(laser.x2, laser.y2);
-      laserLine.geometry.setFromPoints([
-        new THREE.Vector3(start.x, start.y, 10),
-        new THREE.Vector3(end.x, end.y, 10),
-      ]);
-      laserLine.material.opacity = Math.max(0, laser.life / laser.maxLife);
-    } else {
-      laserLine.material.opacity = 0;
-    }
+function drawLaser() {
+  if (!laser) return;
+  const alpha = Math.max(0, laser.life / laser.maxLife);
+  ctx.strokeStyle = `rgba(248, 113, 113, ${alpha.toFixed(2)})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(laser.x1, laser.y1);
+  ctx.lineTo(laser.x2, laser.y2);
+  ctx.stroke();
+}
+
+function drawGun() {
+  const gunY = canvasH - 20;
+  const gunX = canvasW / 2;
+  ctx.fillStyle = "#1f2937";
+  ctx.beginPath();
+  if (typeof ctx.roundRect === "function") {
+    ctx.roundRect(gunX - 26, gunY - 12, 52, 18, 6);
+  } else {
+    ctx.rect(gunX - 26, gunY - 12, 52, 18);
   }
-
-  if (stunOverlay && stunText) {
-    if (isStunned()) {
-      const remaining = Math.max(0, Math.ceil((stunnedUntil - gameTime) / 100) / 10);
-      stunOverlay.material.opacity = 0.18;
-      updateTextSprite(stunText, `STUNNED ${remaining.toFixed(1)}s`);
-    } else {
-      stunOverlay.material.opacity = 0;
-    }
-  }
-
-  renderer.render(scene, camera);
+  ctx.fill();
+  ctx.fillStyle = "#475569";
+  ctx.fillRect(gunX - 4, gunY - 22, 8, 12);
 }
 
 function fireLaser(target) {
@@ -771,7 +656,6 @@ function checkAnswer(inputValue) {
     }
   }
 
-  cleared.forEach((drop) => removeDropVisual(drop));
   drops = remaining;
   let shipClears = 0;
   if (shipMatch) {
@@ -939,7 +823,7 @@ function tick(timestamp) {
     updateDifficulty();
     updateStats();
     updateEloBoard();
-    renderScene();
+    drawDrops();
 
   }
 
@@ -983,7 +867,6 @@ function startGame() {
   });
   score = 0;
   drops = [];
-  clearDropVisuals();
   splashes = [];
   spawnTimer = 0;
   lastTime = 0;
@@ -1047,7 +930,6 @@ function restartGame() {
   setupOverlay.setAttribute("aria-hidden", "false");
   stopBossMusic();
   shipState = null;
-  clearShipVisual();
   stunnedUntil = 0;
   wasStunned = false;
   preserveEloOnRestart = true;
@@ -1063,7 +945,6 @@ function triggerGameOver() {
   gameOverEl.classList.remove("hidden");
   gameOverEl.setAttribute("aria-hidden", "false");
   shipState = null;
-  clearShipVisual();
   stunnedUntil = 0;
 }
 
@@ -1137,7 +1018,6 @@ function resumeGame() {
   baseSpawnMs = data.baseSpawnMs;
   baseSpeed = data.baseSpeed;
   drops = [];
-  clearDropVisuals();
   splashes = [];
   spawnTimer = 0;
   lastTime = 0;
@@ -1148,7 +1028,6 @@ function resumeGame() {
   laser = null;
   groundFlash = 0;
   shipState = null;
-  clearShipVisual();
   stunnedUntil = 0;
   lives = typeof data.lives === "number" ? data.lives : null;
   isPaused = false;
@@ -1462,7 +1341,6 @@ function finishBossBattle(opKey) {
   state.bossSpawnLocked = false;
   state.bossType = "drops";
   shipState = null;
-  clearShipVisual();
   const currentIndex = Math.floor(state.progress / LEVEL_STEP);
   state.level = state.level + 1;
   state.progress = (currentIndex + 1) * LEVEL_STEP + (state.pendingProgress || 0);
@@ -1783,7 +1661,6 @@ document.addEventListener("keydown", (event) => {
 
 window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
-initThree();
 updateResumeButton();
 applyPausedState({ showOverlay: false });
 requestAnimationFrame(tick);
