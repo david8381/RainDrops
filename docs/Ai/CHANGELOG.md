@@ -27,6 +27,8 @@ This file records meaningful project changes so future collaborators (including 
 - Added a pre-commit hook to auto-stamp the version on each commit.
 - Added a miss sound for wrong answer inputs (enter or impossible prefix).
 - Wrong input now uses a distinct sound from drops hitting the ground.
+- Added alternating ship boss battles with hull, wings, and guns plus stun shots.
+- Updated architecture/purpose docs for ship boss and rolling ELO.
 
 ## 2026-02-03
 - Initial playable Math Rain game built (HTML/CSS/JS single-page app).

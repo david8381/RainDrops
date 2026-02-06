@@ -16,6 +16,7 @@ Build a fast, friendly math game where falling drops are cleared by typing answe
 - Progressive difficulty with per-operation levels and ranges.
 - Per-operation ratings: drop rate and accuracy are tracked independently.
 - Overall rating is shown but not emphasized as "ELO".
+- Boss battles alternate between drop swarms and a ship with hull/wing/gun parts that use different difficulty ranges and can stun the player.
 
 ## Repo Access
 - GitHub SSH user: `david8381`

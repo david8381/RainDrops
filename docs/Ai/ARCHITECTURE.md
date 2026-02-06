@@ -15,15 +15,17 @@ This is a standalone, static web game. There is no build step and no external de
 4. Typing an answer clears a matching drop immediately (no Enter key).
 5. Correct/miss events update per-operation drop rate and accuracy.
 6. Drop rate drives spawn rate and fall speed; per-operation progression and accuracy drive number range.
-7. Boss battles are triggered per operation when that operation hits its progress gate.
+7. Boss battles are triggered per operation when that operation hits its progress gate, alternating between drop bosses and ship bosses.
 8. The overall rating is computed from average drop rate and accuracy and shown in the HUD.
 
 ## Data Model (in `script.js`)
 - `drops`: active drops with `{ id, x, y, speed, text, answer, opKey, isBoss }`.
 - `settings`: chosen ops and starting level.
-- `opElo`: per-op ratings: `{ speed, correct, total }` used to derive drop rate.
-- `opState`: per-op progression state: `{ level, progress, pendingProgress, bossActive, bossCleared, bossTarget, bossSpawnLocked, bossQueued, preBossBreakMs }`.
+- `opElo`: per-op ratings: `{ speed, accuracy, events }` used to derive drop rate.
+- `opState`: per-op progression state: `{ level, progress, pendingProgress, bossActive, bossCleared, bossTarget, bossSpawnLocked, bossQueued, preBossBreakMs, bossTypeToggle, bossType }`.
 - `lives`: optional lives counter (null when disabled).
+- `shipState`: active ship boss with hull/wing/gun problems, shot timer, and gun disable state.
+- `stunnedUntil`: timestamp for temporary input disable when the ship fires.
 
 ## Extensibility Notes
 - If adding new operations, update `operators`, `opLabels`, and the setup UI.

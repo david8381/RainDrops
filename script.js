@@ -50,6 +50,8 @@ let lives = null;
 let gameTime = 0;
 let eloUpdateTimer = 0;
 let inputChurn = 0;
+let shipState = null;
+let stunnedUntil = 0;
 
 const ELO_MIN = 400;
 const ELO_MAX = 2000;
@@ -64,6 +66,14 @@ const ELO_WINDOW_MS = 30000;
 const ELO_SMOOTH = 0.2;
 const CHURN_MAX = 12;
 const ACCURACY_EMA_ALPHA = 0.02;
+const SHIP_HULL_COUNT = 3;
+const SHIP_WING_COUNT = 1;
+const SHIP_GUN_COUNT = 1;
+const SHIP_WING_RANGE_BONUS = 2;
+const SHIP_GUN_RANGE_BONUS = 1;
+const SHIP_SHOT_INTERVAL_MS = 1200;
+const SHIP_SHOT_CHANCE = 0.25;
+const STUN_MS = 1200;
 
 const opLabels = {
   add: "Add",
@@ -102,6 +112,10 @@ function updateStats() {
   } else {
     livesDisplayEl.classList.add("hidden");
   }
+}
+
+function isStunned() {
+  return gameTime < stunnedUntil;
 }
 
 function pickSettings() {
@@ -169,16 +183,64 @@ function generateProblem(opKey) {
   };
 }
 
+function generateProblemWithRange(opKey, maxValue) {
+  const key = opKey;
+  const op = operators[key];
+  let a = 0;
+  let b = 0;
+  let answer = 0;
+
+  if (key === "div") {
+    const quotient = randInt(1, maxValue);
+    b = randInt(1, maxValue);
+    a = quotient * b;
+    answer = quotient;
+  } else if (key === "sub") {
+    a = randInt(1, maxValue);
+    b = randInt(1, maxValue);
+    if (b > a) {
+      [a, b] = [b, a];
+    }
+    answer = op.fn(a, b);
+  } else {
+    a = randInt(1, maxValue);
+    b = randInt(1, maxValue);
+    answer = op.fn(a, b);
+  }
+
+  return {
+    text: `${a} ${op.symbol} ${b}`,
+    answer,
+    opKey: key,
+  };
+}
+
 function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function getShipAnswers() {
+  if (!shipState || !shipState.active) return [];
+  const answers = [];
+  shipState.hull.forEach((p) => answers.push(p.answer));
+  shipState.wings.left.forEach((p) => answers.push(p.answer));
+  shipState.wings.right.forEach((p) => answers.push(p.answer));
+  shipState.guns.left.forEach((p) => answers.push(p.answer));
+  shipState.guns.right.forEach((p) => answers.push(p.answer));
+  return answers;
+}
+
+function getActiveAnswers() {
+  const dropAnswers = drops.map((drop) => drop.answer);
+  return dropAnswers.concat(getShipAnswers());
 }
 
 function createDrop(opKey, isBoss = false, spawnedAt = 0) {
   let problem = null;
   let attempts = 0;
-  while (attempts < 12) {
+  while (attempts < 16) {
     const candidate = generateProblem(opKey);
-    const isDuplicate = drops.some((drop) => drop.answer === candidate.answer);
+    const isDuplicate = getActiveAnswers().includes(candidate.answer);
     if (!isDuplicate) {
       problem = candidate;
       break;
@@ -284,6 +346,93 @@ function updateLaser(dt) {
   }
 }
 
+function createShipBoss(opKey) {
+  const usedAnswers = new Set(getActiveAnswers());
+  const makeProblems = (count, rangeBonus) => {
+    const list = [];
+    let attempts = 0;
+    while (list.length < count && attempts < 40) {
+      const maxValue = clamp(2, RANGE_MAX + rangeBonus, getRangeMax(opKey) + rangeBonus);
+      const candidate = generateProblemWithRange(opKey, maxValue);
+      if (!usedAnswers.has(candidate.answer)) {
+        usedAnswers.add(candidate.answer);
+        list.push({
+          ...candidate,
+          spawnedAt: gameTime,
+        });
+      }
+      attempts += 1;
+    }
+    return list;
+  };
+
+  shipState = {
+    active: true,
+    opKey,
+    spawnedAt: gameTime,
+    shotTimer: 0,
+    gunsDisabled: false,
+    hull: makeProblems(SHIP_HULL_COUNT, 0),
+    wings: {
+      left: makeProblems(SHIP_WING_COUNT, SHIP_WING_RANGE_BONUS),
+      right: makeProblems(SHIP_WING_COUNT, SHIP_WING_RANGE_BONUS),
+    },
+    guns: {
+      left: makeProblems(SHIP_GUN_COUNT, SHIP_GUN_RANGE_BONUS),
+      right: makeProblems(SHIP_GUN_COUNT, SHIP_GUN_RANGE_BONUS),
+    },
+  };
+  shipState.totalProblems = getShipRemainingProblems();
+}
+
+function isShipDestroyed() {
+  if (!shipState || !shipState.active) return false;
+  const hullGone = shipState.hull.length === 0;
+  const wingsGone = shipState.wings.left.length === 0 && shipState.wings.right.length === 0;
+  return hullGone || wingsGone;
+}
+
+function isShipGunsDisabled() {
+  if (!shipState || !shipState.active) return true;
+  return shipState.guns.left.length === 0 && shipState.guns.right.length === 0;
+}
+
+function updateShip(dt) {
+  if (!shipState || !shipState.active) return;
+  if (isShipDestroyed()) return;
+  if (isShipGunsDisabled()) return;
+  shipState.shotTimer += dt;
+  if (shipState.shotTimer < SHIP_SHOT_INTERVAL_MS) return;
+  shipState.shotTimer = 0;
+  if (Math.random() < SHIP_SHOT_CHANCE) {
+    stunnedUntil = Math.max(stunnedUntil, gameTime + STUN_MS);
+  }
+}
+
+function findShipMatch(value) {
+  if (!shipState || !shipState.active) return null;
+  const sections = [
+    { key: "hull", side: "center", list: shipState.hull },
+    { key: "wings", side: "left", list: shipState.wings.left },
+    { key: "wings", side: "right", list: shipState.wings.right },
+    { key: "guns", side: "left", list: shipState.guns.left },
+    { key: "guns", side: "right", list: shipState.guns.right },
+  ];
+  for (const section of sections) {
+    const index = section.list.findIndex((p) => p.answer === value);
+    if (index >= 0) {
+      return { ...section, index, problem: section.list[index] };
+    }
+  }
+  return null;
+}
+
+function removeShipProblem(match) {
+  if (!match || !shipState) return;
+  match.list.splice(match.index, 1);
+  shipState.gunsDisabled = isShipGunsDisabled();
+}
+
 function drawDrops() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -293,6 +442,7 @@ function drawDrops() {
     ctx.fillRect(0, canvasH - 36, canvasW, 36);
   }
 
+  drawShip();
   drawSplashes();
 
   const inputNum = currentInput !== "" ? Number(currentInput) : NaN;
@@ -351,6 +501,93 @@ function drawDrops() {
 
   drawLaser();
   drawGun();
+  drawStunOverlay();
+}
+
+function drawShip() {
+  if (!shipState || !shipState.active) return;
+  const centerX = canvasW / 2;
+  const topY = 80;
+  const hullWidth = 220;
+  const hullHeight = 70;
+  const wingOffsetX = 150;
+  const wingOffsetY = 20;
+  const gunOffsetX = 120;
+  const gunOffsetY = 70;
+
+  ctx.save();
+  ctx.fillStyle = "rgba(30, 41, 59, 0.9)";
+  ctx.strokeStyle = "rgba(148, 163, 184, 0.65)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(centerX, topY, hullWidth / 2, hullHeight / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(51, 65, 85, 0.85)";
+  ctx.beginPath();
+  ctx.moveTo(centerX - wingOffsetX, topY + wingOffsetY);
+  ctx.lineTo(centerX - 60, topY + 10);
+  ctx.lineTo(centerX - 120, topY + 60);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(centerX + wingOffsetX, topY + wingOffsetY);
+  ctx.lineTo(centerX + 60, topY + 10);
+  ctx.lineTo(centerX + 120, topY + 60);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = shipState.gunsDisabled ? "rgba(71, 85, 105, 0.6)" : "rgba(15, 23, 42, 0.9)";
+  ctx.fillRect(centerX - gunOffsetX - 16, topY + gunOffsetY, 32, 16);
+  ctx.fillRect(centerX + gunOffsetX - 16, topY + gunOffsetY, 32, 16);
+  ctx.restore();
+
+  const inputNum = currentInput !== "" ? Number(currentInput) : NaN;
+  const highlightAnswer = Number.isNaN(inputNum) ? null : inputNum;
+
+  drawShipProblems(shipState.hull, centerX, topY - 6, highlightAnswer);
+  drawShipProblems(shipState.wings.left, centerX - 130, topY + 34, highlightAnswer);
+  drawShipProblems(shipState.wings.right, centerX + 130, topY + 34, highlightAnswer);
+  drawShipProblems(shipState.guns.left, centerX - 120, topY + 92, highlightAnswer);
+  drawShipProblems(shipState.guns.right, centerX + 120, topY + 92, highlightAnswer);
+}
+
+function drawShipProblems(list, x, y, highlightAnswer) {
+  if (!list || list.length === 0) return;
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "700 14px Space Grotesk";
+  list.forEach((problem, idx) => {
+    const rowY = y + idx * 18;
+    if (highlightAnswer !== null && problem.answer === highlightAnswer) {
+      ctx.fillStyle = "#fde68a";
+    } else {
+      ctx.fillStyle = "#e2e8f0";
+    }
+    ctx.strokeStyle = "rgba(11, 18, 32, 0.75)";
+    ctx.lineWidth = 3;
+    ctx.strokeText(problem.text, x, rowY);
+    ctx.fillText(problem.text, x, rowY);
+  });
+  ctx.restore();
+}
+
+function drawStunOverlay() {
+  if (!isStunned()) return;
+  ctx.save();
+  ctx.fillStyle = "rgba(248, 113, 113, 0.15)";
+  ctx.fillRect(0, 0, canvasW, canvasH);
+  ctx.fillStyle = "rgba(248, 113, 113, 0.95)";
+  ctx.font = "700 24px Space Grotesk";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("STUNNED", canvasW / 2, canvasH / 2);
+  ctx.restore();
 }
 
 function drawSplashes() {
@@ -413,15 +650,16 @@ function updateDifficulty() {
 }
 
 function checkAnswer(inputValue) {
-  if (isPaused) return;
+  if (isPaused || isStunned()) return;
   if (!inputValue) return;
   const value = Number(inputValue);
   if (Number.isNaN(value)) return;
 
+  const shipMatch = findShipMatch(value);
   const match = drops.find((drop) => drop.answer === value);
-  if (!match) return;
+  if (!shipMatch && !match) return;
 
-  const answerValue = match.answer;
+  const answerValue = shipMatch ? shipMatch.problem.answer : match.answer;
   const cleared = [];
   const remaining = [];
 
@@ -434,7 +672,12 @@ function checkAnswer(inputValue) {
   }
 
   drops = remaining;
-  score += cleared.length;
+  let shipClears = 0;
+  if (shipMatch) {
+    removeShipProblem(shipMatch);
+    shipClears = 1;
+  }
+  score += cleared.length + shipClears;
 
   const clearedByOp = {};
   const clearedBossByOp = {};
@@ -443,6 +686,11 @@ function checkAnswer(inputValue) {
     if (drop.isBoss) {
       clearedBossByOp[drop.opKey] = (clearedBossByOp[drop.opKey] || 0) + 1;
     }
+  }
+  if (shipMatch) {
+    const opKey = shipMatch.problem.opKey;
+    clearedByOp[opKey] = (clearedByOp[opKey] || 0) + 1;
+    clearedBossByOp[opKey] = (clearedBossByOp[opKey] || 0) + 1;
   }
 
   for (const [opKey, count] of Object.entries(clearedByOp)) {
@@ -468,10 +716,17 @@ function checkAnswer(inputValue) {
       churnNorm,
     });
   }
+  if (shipMatch) {
+    recordEvent(shipMatch.problem.opKey, {
+      correct: true,
+      timeNorm: getShipTimeNorm(),
+      churnNorm,
+    });
+  }
   inputChurn = 0;
   cleared.forEach((drop) => createSplash(drop));
   playPop();
-  fireLaser(match);
+  fireLaser(shipMatch ? { x: canvasW / 2, y: 90 } : match);
   answerInput.value = "";
   currentInput = "";
   updateBossState();
@@ -481,35 +736,40 @@ function isInputPossible(inputValue) {
   if (!inputValue) return true;
   const trimmed = inputValue.trim();
   if (!trimmed) return true;
-  return drops.some((drop) => String(drop.answer).startsWith(trimmed));
+  return getActiveAnswers().some((answer) => String(answer).startsWith(trimmed));
 }
 
-function pickClosestDrop() {
-  if (drops.length === 0) return null;
-  let best = drops[0];
-  let bestNorm = getTimeNorm(best);
-  for (let i = 1; i < drops.length; i += 1) {
-    const drop = drops[i];
-    const norm = getTimeNorm(drop);
-    if (norm > bestNorm) {
-      bestNorm = norm;
-      best = drop;
+function pickMistakeTarget() {
+  if (drops.length > 0) {
+    let best = drops[0];
+    let bestNorm = getTimeNorm(best);
+    for (let i = 1; i < drops.length; i += 1) {
+      const drop = drops[i];
+      const norm = getTimeNorm(drop);
+      if (norm > bestNorm) {
+        bestNorm = norm;
+        best = drop;
+      }
     }
+    return { opKey: best.opKey, timeNorm: bestNorm };
   }
-  return best;
+  if (shipState && shipState.active) {
+    return { opKey: shipState.opKey, timeNorm: getShipTimeNorm() };
+  }
+  return null;
 }
 
 function registerInputMistake() {
   if (isPaused) return;
   const churnNorm = clamp(0, 1, inputChurn / CHURN_MAX);
-  const targetDrop = pickClosestDrop();
-  if (targetDrop) {
-    recordEvent(targetDrop.opKey, {
+  const target = pickMistakeTarget();
+  if (target) {
+    recordEvent(target.opKey, {
       correct: false,
-      timeNorm: getTimeNorm(targetDrop),
+      timeNorm: target.timeNorm,
       churnNorm,
     });
-    applyProgressPenalty(targetDrop.opKey, 1);
+    applyProgressPenalty(target.opKey, 1);
   }
   playWrongInput();
   inputChurn = 0;
@@ -531,8 +791,13 @@ function tick(timestamp) {
     const activeBossOp = getActiveBossOp();
     const bossState = activeBossOp ? opState[activeBossOp] : null;
     const bossLocked = bossState ? bossState.bossSpawnLocked : false;
-    const spawnInterval = activeBossOp ? baseSpawnMs / BOSS_MULTIPLIER : baseSpawnMs;
-    const maxSpawns = activeBossOp ? 4 : 2;
+    const isShipBoss = bossState?.bossType === "ship";
+    const spawnInterval = activeBossOp
+      ? isShipBoss
+        ? baseSpawnMs
+        : baseSpawnMs / BOSS_MULTIPLIER
+      : baseSpawnMs;
+    const maxSpawns = activeBossOp ? (isShipBoss ? 2 : 4) : 2;
     let spawns = 0;
     while (spawnTimer >= spawnInterval && spawns < maxSpawns && !(activeBossOp && bossLocked)) {
       const opKey = activeBossOp || pickSpawnOp();
@@ -540,7 +805,7 @@ function tick(timestamp) {
         spawnTimer = 0;
         break;
       }
-      const created = createDrop(opKey, Boolean(activeBossOp), gameTime);
+      const created = createDrop(opKey, Boolean(activeBossOp && !isShipBoss), gameTime);
       if (!created) {
         spawnTimer = 0;
         break;
@@ -555,6 +820,8 @@ function tick(timestamp) {
     updateDrops(dt);
     updateSplashes(dt);
     updateLaser(dt);
+    updateShip(dt);
+    answerInput.disabled = isPaused || isStunned();
     if (groundFlash > 0) groundFlash = Math.max(0, groundFlash - dt);
     updateBossState();
     if (eloUpdateTimer >= ELO_WINDOW_MS) {
@@ -590,6 +857,8 @@ function startGame() {
       bossSpawnLocked: false,
       bossQueued: false,
       preBossBreakMs: 0,
+      bossTypeToggle: false,
+      bossType: "drops",
     };
   });
   score = 0;
@@ -600,6 +869,8 @@ function startGame() {
   gameTime = 0;
   eloUpdateTimer = 0;
   inputChurn = 0;
+  shipState = null;
+  stunnedUntil = 0;
   baseSpawnMs = 1400;
   baseSpeed = 40;
   stopBossMusic();
@@ -620,7 +891,7 @@ function startGame() {
 }
 
 function applyPausedState({ showOverlay } = {}) {
-  answerInput.disabled = isPaused;
+  answerInput.disabled = isPaused || isStunned();
   pauseBtn.textContent = isPaused ? "Resume" : "Pause";
   if (isPaused) {
     stopBossMusic();
@@ -652,6 +923,8 @@ function restartGame() {
   setupOverlay.classList.remove("hidden");
   setupOverlay.setAttribute("aria-hidden", "false");
   stopBossMusic();
+  shipState = null;
+  stunnedUntil = 0;
   updateResumeButton();
 }
 
@@ -663,6 +936,8 @@ function triggerGameOver() {
   finalRatingEl.textContent = Math.round(elo);
   gameOverEl.classList.remove("hidden");
   gameOverEl.setAttribute("aria-hidden", "false");
+  shipState = null;
+  stunnedUntil = 0;
 }
 
 const SAVE_KEY = "mathrain_save";
@@ -723,6 +998,15 @@ function resumeGame() {
     }
   });
   opState = data.opState;
+  settings.ops.forEach((op) => {
+    if (!opState[op]) return;
+    if (typeof opState[op].bossTypeToggle !== "boolean") {
+      opState[op].bossTypeToggle = false;
+    }
+    if (typeof opState[op].bossType !== "string") {
+      opState[op].bossType = "drops";
+    }
+  });
   baseSpawnMs = data.baseSpawnMs;
   baseSpeed = data.baseSpeed;
   drops = [];
@@ -735,6 +1019,8 @@ function resumeGame() {
   stopBossMusic();
   laser = null;
   groundFlash = 0;
+  shipState = null;
+  stunnedUntil = 0;
   lives = typeof data.lives === "number" ? data.lives : null;
   isPaused = false;
   applyPausedState({ showOverlay: false });
@@ -993,6 +1279,20 @@ function updateBossState() {
   const state = opState[activeBossOp];
   if (!state) return;
 
+  if (state.bossType === "ship") {
+    if (shipState && shipState.active) {
+      const total = getShipTotalProblems();
+      const cleared = total - getShipRemainingProblems();
+      state.bossTarget = total;
+      state.bossCleared = Math.min(total, cleared);
+      if (isShipDestroyed()) {
+        state.bossSpawnLocked = true;
+        finishBossBattle(activeBossOp);
+      }
+    }
+    return;
+  }
+
   if (state.bossCleared >= state.bossTarget) {
     state.bossSpawnLocked = true;
   }
@@ -1005,12 +1305,19 @@ function updateBossState() {
 function startBossBattle(opKey) {
   const state = opState[opKey];
   if (!state) return;
+  state.bossTypeToggle = !state.bossTypeToggle;
+  state.bossType = state.bossTypeToggle ? "ship" : "drops";
   state.bossActive = true;
   state.bossCleared = 0;
-  state.bossTarget = BOSS_CLEAR_TARGET;
+  state.bossTarget = state.bossType === "ship" ? 0 : BOSS_CLEAR_TARGET;
   state.bossSpawnLocked = false;
   state.bossQueued = false;
   state.preBossBreakMs = 0;
+  if (state.bossType === "ship") {
+    createShipBoss(opKey);
+  } else {
+    shipState = null;
+  }
   startBossMusic();
 }
 
@@ -1020,6 +1327,8 @@ function finishBossBattle(opKey) {
   state.bossActive = false;
   state.bossCleared = 0;
   state.bossSpawnLocked = false;
+  state.bossType = "drops";
+  shipState = null;
   const currentIndex = Math.floor(state.progress / LEVEL_STEP);
   state.level = state.level + 1;
   state.progress = (currentIndex + 1) * LEVEL_STEP + (state.pendingProgress || 0);
@@ -1034,6 +1343,28 @@ function finishBossBattle(opKey) {
 
 function hasBossDrops(opKey) {
   return drops.some((drop) => drop.isBoss && drop.opKey === opKey);
+}
+
+function getShipRemainingProblems() {
+  if (!shipState || !shipState.active) return 0;
+  return (
+    shipState.hull.length +
+    shipState.wings.left.length +
+    shipState.wings.right.length +
+    shipState.guns.left.length +
+    shipState.guns.right.length
+  );
+}
+
+function getShipTotalProblems() {
+  if (!shipState || !shipState.active) return 0;
+  return shipState.totalProblems || getShipRemainingProblems();
+}
+
+function getShipTimeNorm() {
+  if (!shipState || !shipState.active) return 1;
+  const elapsed = gameTime - shipState.spawnedAt;
+  return clamp(0, 1, elapsed / 10000);
 }
 
 function getActiveBossOp() {
@@ -1209,6 +1540,7 @@ pickActive(livesButtons);
 
 answerInput.addEventListener("input", (event) => {
   initAudio();
+  if (isStunned()) return;
   if (!isPaused) {
     inputChurn = Math.min(CHURN_MAX * 2, inputChurn + 1);
   }
@@ -1226,6 +1558,7 @@ answerInput.addEventListener("keydown", (event) => {
   }
   if (event.key === "Enter") {
     event.preventDefault();
+    if (isStunned()) return;
     const value = answerInput.value.trim();
     if (!value) return;
     const numericValue = Number(value);
