@@ -17,6 +17,8 @@ const gameOverEl = document.getElementById("gameOver");
 const finalScoreEl = document.getElementById("finalScore");
 const finalRatingEl = document.getElementById("finalRating");
 const playAgainBtn = document.getElementById("playAgainBtn");
+const pauseOverlayEl = document.getElementById("pauseOverlay");
+const resumeBtnOverlay = document.getElementById("resumeBtnOverlay");
 
 const levelButtons = document.querySelectorAll("#levelSelect button");
 const eloButtons = document.querySelectorAll("#eloSelect button");
@@ -389,6 +391,7 @@ function updateDifficulty() {
 }
 
 function checkAnswer(inputValue) {
+  if (isPaused) return;
   if (!inputValue) return;
   const value = Number(inputValue);
   if (Number.isNaN(value)) return;
@@ -527,7 +530,7 @@ function startGame() {
   const livesChoice = getActiveValue(livesButtons, "lives");
   lives = livesChoice > 0 ? livesChoice : null;
   isPaused = false;
-  pauseBtn.textContent = "Pause";
+  applyPausedState({ showOverlay: false });
   gameOverEl.classList.add("hidden");
   gameOverEl.setAttribute("aria-hidden", "true");
   updateStats();
@@ -538,20 +541,36 @@ function startGame() {
   answerInput.focus();
 }
 
-function togglePause() {
-  isPaused = !isPaused;
+function applyPausedState({ showOverlay } = {}) {
+  answerInput.disabled = isPaused;
   pauseBtn.textContent = isPaused ? "Resume" : "Pause";
   if (isPaused) {
     stopBossMusic();
   } else if (getActiveBossOp()) {
     startBossMusic();
   }
+  if (pauseOverlayEl) {
+    if (isPaused && showOverlay) {
+      pauseOverlayEl.classList.remove("hidden");
+      pauseOverlayEl.setAttribute("aria-hidden", "false");
+    } else {
+      pauseOverlayEl.classList.add("hidden");
+      pauseOverlayEl.setAttribute("aria-hidden", "true");
+    }
+  }
   if (!isPaused) {
     answerInput.focus();
   }
 }
 
+function togglePause() {
+  isPaused = !isPaused;
+  applyPausedState({ showOverlay: true });
+}
+
 function restartGame() {
+  isPaused = true;
+  applyPausedState({ showOverlay: false });
   setupOverlay.classList.remove("hidden");
   setupOverlay.setAttribute("aria-hidden", "false");
   stopBossMusic();
@@ -560,7 +579,7 @@ function restartGame() {
 
 function triggerGameOver() {
   isPaused = true;
-  stopBossMusic();
+  applyPausedState({ showOverlay: false });
   clearSave();
   finalScoreEl.textContent = score;
   finalRatingEl.textContent = Math.round(elo);
@@ -580,6 +599,7 @@ function saveGame() {
       settings,
       baseSpawnMs,
       baseSpeed,
+      lives,
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
   } catch (_) {}
@@ -619,9 +639,9 @@ function resumeGame() {
   stopBossMusic();
   laser = null;
   groundFlash = 0;
-  lives = null;
+  lives = typeof data.lives === "number" ? data.lives : null;
   isPaused = false;
-  pauseBtn.textContent = "Pause";
+  applyPausedState({ showOverlay: false });
   updateStats();
   buildEloBoard();
   updateEloBoard();
@@ -1072,6 +1092,12 @@ resumeBtn.addEventListener("click", () => {
   resumeGame();
 });
 
+if (resumeBtnOverlay) {
+  resumeBtnOverlay.addEventListener("click", () => {
+    if (isPaused) togglePause();
+  });
+}
+
 playAgainBtn.addEventListener("click", () => {
   gameOverEl.classList.add("hidden");
   gameOverEl.setAttribute("aria-hidden", "true");
@@ -1087,4 +1113,5 @@ document.addEventListener("keydown", (event) => {
 window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
 updateResumeButton();
+applyPausedState({ showOverlay: false });
 requestAnimationFrame(tick);

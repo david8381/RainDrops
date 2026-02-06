@@ -15,6 +15,10 @@ This file records meaningful project changes so future collaborators (including 
 - Replaced boss music setInterval with Web Audio API lookahead scheduling for drift-free playback.
 - Auto-focus answer input after boss victory.
 - Replaced drop ID generation with incrementing counter.
+## 2026-02-06
+- Pausing or returning to the setup screen now freezes answer clearing and game state.
+- Resume now restores saved lives count.
+- Added a pause overlay and disabled answer input while paused.
 
 ## 2026-02-03
 - Initial playable Math Rain game built (HTML/CSS/JS single-page app).
