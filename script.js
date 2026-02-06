@@ -7,6 +7,7 @@ const eloBoardEl = document.getElementById("eloBoard");
 const answerInput = document.getElementById("answer");
 const pauseBtn = document.getElementById("pauseBtn");
 const bossBtn = document.getElementById("bossBtn");
+const floodBtn = document.getElementById("floodBtn");
 const restartBtn = document.getElementById("restartBtn");
 const setupOverlay = document.getElementById("setup");
 const startBtn = document.getElementById("startBtn");
@@ -27,7 +28,7 @@ const livesButtons = document.querySelectorAll("#livesSelect button");
 
 const GAME_HEIGHT = 520;
 const GAME_WIDTH = 900;
-const VERSION = "2026-02-05 22:59";
+const VERSION = "2026-02-05 23:03";
 
 let drops = [];
 let score = 0;
@@ -1303,11 +1304,15 @@ function updateBossState() {
   }
 }
 
-function startBossBattle(opKey) {
+function startBossBattle(opKey, forcedType = null) {
   const state = opState[opKey];
   if (!state) return;
-  state.bossTypeToggle = !state.bossTypeToggle;
-  state.bossType = state.bossTypeToggle ? "ship" : "drops";
+  if (forcedType) {
+    state.bossType = forcedType;
+  } else {
+    state.bossTypeToggle = !state.bossTypeToggle;
+    state.bossType = state.bossTypeToggle ? "ship" : "drops";
+  }
   state.bossActive = true;
   state.bossCleared = 0;
   state.bossTarget = state.bossType === "ship" ? 0 : BOSS_CLEAR_TARGET;
@@ -1382,7 +1387,7 @@ function getQueuedBossOp() {
   );
 }
 
-function triggerBossNow() {
+function triggerBossNow(forcedType = null) {
   if (!settings) return;
   if (getActiveBossOp()) return;
   const candidates = settings.ops.filter((opKey) => {
@@ -1405,7 +1410,7 @@ function triggerBossNow() {
   }
   opState[bestOp].bossQueued = true;
   opState[bestOp].preBossBreakMs = 0;
-  startBossBattle(bestOp);
+  startBossBattle(bestOp, forcedType);
 }
 
 function pickSpawnOp() {
@@ -1601,7 +1606,10 @@ answerInput.addEventListener("keydown", (event) => {
 
 pauseBtn.addEventListener("click", togglePause);
 bossBtn.addEventListener("click", () => {
-  triggerBossNow();
+  triggerBossNow("ship");
+});
+floodBtn.addEventListener("click", () => {
+  triggerBossNow("drops");
 });
 restartBtn.addEventListener("click", restartGame);
 startBtn.addEventListener("click", () => {
