@@ -28,7 +28,7 @@ const livesButtons = document.querySelectorAll("#livesSelect button");
 
 const GAME_HEIGHT = 520;
 const GAME_WIDTH = 900;
-const VERSION = "2026-02-05 23:19";
+const VERSION = "2026-02-05 23:30";
 
 let drops = [];
 let score = 0;
@@ -500,12 +500,13 @@ function drawDrops() {
       ctx.shadowBlur = 0;
     }
 
-    ctx.font = "600 16px Space Grotesk";
+    const fontSize = drop.isBoss || drop.isMissile ? 18 : 17;
+    ctx.font = `700 ${fontSize}px Space Grotesk`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(11, 18, 32, 0.75)";
-    ctx.fillStyle = "#e2e8f0";
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(2, 6, 23, 0.85)";
+    ctx.fillStyle = "#f8fafc";
     ctx.strokeText(drop.text, drop.x, drop.y + 2);
     ctx.fillText(drop.text, drop.x, drop.y + 2);
   }
