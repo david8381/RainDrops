@@ -23,6 +23,8 @@ This file records meaningful project changes so future collaborators (including 
 - Prevented duplicate answers from appearing on screen at the same time.
 - Invalid inputs that cannot complete any on-screen answer now count as wrong attempts and clear the input.
 - Wrong answers now backslide per-operation progress.
+- Version now displays a date/time stamp.
+- Added a pre-commit hook to auto-stamp the version on each commit.
 
 ## 2026-02-03
 - Initial playable Math Rain game built (HTML/CSS/JS single-page app).
