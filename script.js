@@ -511,6 +511,7 @@ function registerInputMistake() {
     });
     applyProgressPenalty(targetDrop.opKey, 1);
   }
+  playWrongInput();
   inputChurn = 0;
   answerInput.value = "";
   currentInput = "";
@@ -1125,6 +1126,26 @@ function playMiss() {
   gain.connect(audioCtx.destination);
   osc.start(now);
   osc.stop(now + 0.2);
+}
+
+function playWrongInput() {
+  if (!audioCtx) return;
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = "square";
+  osc.frequency.setValueAtTime(320, now);
+  osc.frequency.exponentialRampToValueAtTime(180, now + 0.12);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.linearRampToValueAtTime(0.09, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 0.16);
 }
 
 function scheduleBossLoop() {
