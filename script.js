@@ -244,6 +244,7 @@ function updateDrops(dt) {
         timeNorm: getTimeNorm(drop),
         churnNorm: 0,
       });
+      applyProgressPenalty(drop.opKey, 1);
       missCount += 1;
     } else {
       survived.push(drop);
@@ -508,6 +509,7 @@ function registerInputMistake() {
       timeNorm: getTimeNorm(targetDrop),
       churnNorm,
     });
+    applyProgressPenalty(targetDrop.opKey, 1);
   }
   inputChurn = 0;
   answerInput.value = "";
@@ -787,6 +789,19 @@ function recordEvent(opKey, { correct, timeNorm, churnNorm }) {
   }
   score = clamp(0, 1, score);
   entry.events.push({ t: gameTime, score, correct });
+}
+
+function applyProgressPenalty(opKey, amount = 1) {
+  const state = opState[opKey];
+  if (!state || state.bossActive) return;
+  const levelFloor = Math.floor(state.progress / LEVEL_STEP) * LEVEL_STEP;
+  if (state.pendingProgress && state.pendingProgress > 0) {
+    const reduce = Math.min(state.pendingProgress, amount);
+    state.pendingProgress -= reduce;
+    amount -= reduce;
+  }
+  if (amount <= 0) return;
+  state.progress = Math.max(levelFloor, state.progress - amount);
 }
 
 function getSpeedForOp(opKey) {
