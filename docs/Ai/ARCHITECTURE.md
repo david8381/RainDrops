@@ -24,7 +24,7 @@ This is a standalone, static web game. There is no build step and no external de
 - `opElo`: per-op ratings: `{ speed, accuracy, events }` used to derive drop rate.
 - `opState`: per-op progression state: `{ level, progress, pendingProgress, bossActive, bossCleared, bossTarget, bossSpawnLocked, bossQueued, preBossBreakMs, bossTypeToggle, bossType }`.
 - `lives`: optional lives counter (null when disabled).
-- `shipState`: active ship boss with hull/wing/gun problems, shot timer, and gun disable state.
+- `shipState`: active ship boss with a pool of problems, shot timer, and missile firing.
 - `stunnedUntil`: timestamp for temporary input disable when the ship fires.
 
 ## Extensibility Notes

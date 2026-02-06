@@ -28,7 +28,7 @@ const livesButtons = document.querySelectorAll("#livesSelect button");
 
 const GAME_HEIGHT = 520;
 const GAME_WIDTH = 900;
-const VERSION = "2026-02-05 23:06";
+const VERSION = "2026-02-05 23:09";
 
 let drops = [];
 let score = 0;
@@ -68,13 +68,9 @@ const ELO_WINDOW_MS = 30000;
 const ELO_SMOOTH = 0.2;
 const CHURN_MAX = 12;
 const ACCURACY_EMA_ALPHA = 0.02;
-const SHIP_HULL_COUNT = 5;
-const SHIP_WING_COUNT = 2;
-const SHIP_GUN_COUNT = 2;
-const SHIP_WING_RANGE_BONUS = 2;
-const SHIP_GUN_RANGE_BONUS = 1;
-const SHIP_SHOT_INTERVAL_MS = 1200;
-const SHIP_SHOT_CHANCE = 0.25;
+const SHIP_PART_COUNT = 10;
+const SHIP_SHOT_INTERVAL_MS = 700;
+const SHIP_SHOT_CHANCE = 0.45;
 const STUN_MS = 1200;
 const SHIP_MISSILE_SPEED_MULT = 2.4;
 
@@ -224,13 +220,7 @@ function randInt(min, max) {
 
 function getShipAnswers() {
   if (!shipState || !shipState.active) return [];
-  const answers = [];
-  shipState.hull.forEach((p) => answers.push(p.answer));
-  shipState.wings.left.forEach((p) => answers.push(p.answer));
-  shipState.wings.right.forEach((p) => answers.push(p.answer));
-  shipState.guns.left.forEach((p) => answers.push(p.answer));
-  shipState.guns.right.forEach((p) => answers.push(p.answer));
-  return answers;
+  return shipState.parts.map((p) => p.answer);
 }
 
 function getActiveAnswers() {
@@ -379,36 +369,19 @@ function createShipBoss(opKey) {
     opKey,
     spawnedAt: gameTime,
     shotTimer: 0,
-    gunsDisabled: false,
-    hull: makeProblems(SHIP_HULL_COUNT, 0),
-    wings: {
-      left: makeProblems(SHIP_WING_COUNT, SHIP_WING_RANGE_BONUS),
-      right: makeProblems(SHIP_WING_COUNT, SHIP_WING_RANGE_BONUS),
-    },
-    guns: {
-      left: makeProblems(SHIP_GUN_COUNT, SHIP_GUN_RANGE_BONUS),
-      right: makeProblems(SHIP_GUN_COUNT, SHIP_GUN_RANGE_BONUS),
-    },
+    parts: makeProblems(SHIP_PART_COUNT, 0),
   };
   shipState.totalProblems = getShipRemainingProblems();
 }
 
 function isShipDestroyed() {
   if (!shipState || !shipState.active) return false;
-  const hullGone = shipState.hull.length === 0;
-  const wingsGone = shipState.wings.left.length === 0 && shipState.wings.right.length === 0;
-  return hullGone || wingsGone;
-}
-
-function isShipGunsDisabled() {
-  if (!shipState || !shipState.active) return true;
-  return shipState.guns.left.length === 0 && shipState.guns.right.length === 0;
+  return shipState.parts.length === 0;
 }
 
 function updateShip(dt) {
   if (!shipState || !shipState.active) return;
   if (isShipDestroyed()) return;
-  if (isShipGunsDisabled()) return;
   shipState.shotTimer += dt;
   if (shipState.shotTimer < SHIP_SHOT_INTERVAL_MS) return;
   shipState.shotTimer = 0;
@@ -419,7 +392,7 @@ function updateShip(dt) {
 
 function spawnShipMissile() {
   if (!shipState || !shipState.active) return;
-  const maxValue = clamp(2, RANGE_MAX + SHIP_GUN_RANGE_BONUS, getRangeMax(shipState.opKey) + SHIP_GUN_RANGE_BONUS);
+  const maxValue = clamp(2, RANGE_MAX + 1, getRangeMax(shipState.opKey) + 1);
   let attempts = 0;
   let problem = null;
   while (attempts < 20) {
@@ -449,26 +422,16 @@ function spawnShipMissile() {
 
 function findShipMatch(value) {
   if (!shipState || !shipState.active) return null;
-  const sections = [
-    { key: "hull", side: "center", list: shipState.hull },
-    { key: "wings", side: "left", list: shipState.wings.left },
-    { key: "wings", side: "right", list: shipState.wings.right },
-    { key: "guns", side: "left", list: shipState.guns.left },
-    { key: "guns", side: "right", list: shipState.guns.right },
-  ];
-  for (const section of sections) {
-    const index = section.list.findIndex((p) => p.answer === value);
-    if (index >= 0) {
-      return { ...section, index, problem: section.list[index] };
-    }
+  const index = shipState.parts.findIndex((p) => p.answer === value);
+  if (index >= 0) {
+    return { index, problem: shipState.parts[index] };
   }
   return null;
 }
 
 function removeShipProblem(match) {
   if (!match || !shipState) return;
-  match.list.splice(match.index, 1);
-  shipState.gunsDisabled = isShipGunsDisabled();
+  shipState.parts.splice(match.index, 1);
 }
 
 function drawDrops() {
@@ -556,10 +519,6 @@ function drawShip() {
   const topY = 80;
   const hullWidth = 220;
   const hullHeight = 70;
-  const wingOffsetX = 150;
-  const wingOffsetY = 20;
-  const gunOffsetX = 120;
-  const gunOffsetY = 70;
 
   ctx.save();
   ctx.fillStyle = "rgba(30, 41, 59, 0.9)";
@@ -570,36 +529,12 @@ function drawShip() {
   ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = "rgba(51, 65, 85, 0.85)";
-  ctx.beginPath();
-  ctx.moveTo(centerX - wingOffsetX, topY + wingOffsetY);
-  ctx.lineTo(centerX - 60, topY + 10);
-  ctx.lineTo(centerX - 120, topY + 60);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(centerX + wingOffsetX, topY + wingOffsetY);
-  ctx.lineTo(centerX + 60, topY + 10);
-  ctx.lineTo(centerX + 120, topY + 60);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.fillStyle = shipState.gunsDisabled ? "rgba(71, 85, 105, 0.6)" : "rgba(15, 23, 42, 0.9)";
-  ctx.fillRect(centerX - gunOffsetX - 16, topY + gunOffsetY, 32, 16);
-  ctx.fillRect(centerX + gunOffsetX - 16, topY + gunOffsetY, 32, 16);
   ctx.restore();
 
   const inputNum = currentInput !== "" ? Number(currentInput) : NaN;
   const highlightAnswer = Number.isNaN(inputNum) ? null : inputNum;
 
-  drawShipProblems(shipState.hull, centerX, topY - 6, highlightAnswer);
-  drawShipProblems(shipState.wings.left, centerX - 130, topY + 34, highlightAnswer);
-  drawShipProblems(shipState.wings.right, centerX + 130, topY + 34, highlightAnswer);
-  drawShipProblems(shipState.guns.left, centerX - 120, topY + 92, highlightAnswer);
-  drawShipProblems(shipState.guns.right, centerX + 120, topY + 92, highlightAnswer);
+  drawShipProblems(shipState.parts, centerX, topY - 4, highlightAnswer);
 }
 
 function drawShipProblems(list, x, y, highlightAnswer) {
@@ -1398,13 +1333,7 @@ function hasBossDrops(opKey) {
 
 function getShipRemainingProblems() {
   if (!shipState || !shipState.active) return 0;
-  return (
-    shipState.hull.length +
-    shipState.wings.left.length +
-    shipState.wings.right.length +
-    shipState.guns.left.length +
-    shipState.guns.right.length
-  );
+  return shipState.parts.length;
 }
 
 function getShipTotalProblems() {

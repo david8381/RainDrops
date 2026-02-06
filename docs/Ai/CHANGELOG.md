@@ -31,7 +31,7 @@ This file records meaningful project changes so future collaborators (including 
 - Updated architecture/purpose docs for ship boss and rolling ELO.
 - Fixed version stamping script to update reliably.
 - Added Boss Now (ship) and Flood Now (drop swarm) buttons to trigger boss battles early.
-- Ship bosses now have 5 hull problems, 2 per wing, 2 per gun, and fire fast missile problems that stun on impact with a visible timer.
+- Ship bosses now have a single pool of problems that must all be cleared, and they keep firing faster missiles while alive.
 
 ## 2026-02-03
 - Initial playable Math Rain game built (HTML/CSS/JS single-page app).
