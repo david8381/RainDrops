@@ -36,6 +36,7 @@ This file records meaningful project changes so future collaborators (including 
 - Escape/Backspace now clear the full input entry.
 - Restart preserves ELO instead of resetting it.
 - Increased raindrop text size/contrast for readability.
+- Switched drop and ship rendering to Three.js with 3D sprites for problem text.
 
 ## 2026-02-03
 - Initial playable Math Rain game built (HTML/CSS/JS single-page app).

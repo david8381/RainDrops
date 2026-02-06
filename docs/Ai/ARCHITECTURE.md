@@ -1,12 +1,12 @@
 # Architecture
 
 ## Overview
-This is a standalone, static web game. There is no build step and no external dependencies.
+This is a standalone, static web game. There is no build step, but Three.js is loaded via CDN for 3D rendering.
 
 ## Files
-- `index.html`: Markup and layout for the game, including the setup overlay and stats.
+- `index.html`: Markup and layout for the game, including the setup overlay and stats. Loads Three.js from CDN.
 - `styles.css`: Visual design, layout, and responsive behavior.
-- `script.js`: Game loop, input handling, drop generation, and rating logic.
+- `script.js`: Game loop, input handling, 3D scene setup, drop generation, and rating logic.
 
 ## Runtime Flow
 1. The user chooses settings in the overlay and starts the game.
