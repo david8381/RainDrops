@@ -10,4 +10,6 @@ if [ ! -f "$TARGET_FILE" ]; then
   exit 1
 fi
 
-perl -i '' -pe "s/^const VERSION = \".*\";/const VERSION = \"$STAMP\";/" "$TARGET_FILE"
+TMP_FILE="$(mktemp)"
+sed "s/^const VERSION = \".*\";/const VERSION = \"$STAMP\";/" "$TARGET_FILE" > "$TMP_FILE"
+mv "$TMP_FILE" "$TARGET_FILE"

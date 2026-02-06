@@ -26,7 +26,7 @@ const livesButtons = document.querySelectorAll("#livesSelect button");
 
 const GAME_HEIGHT = 520;
 const GAME_WIDTH = 900;
-const VERSION = "2026-02-05 22:37";
+const VERSION = "2026-02-05 22:57";
 
 let drops = [];
 let score = 0;
