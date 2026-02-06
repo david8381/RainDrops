@@ -47,11 +47,12 @@ let canvasH = 0;
 let groundFlash = 0;
 let currentInput = "";
 let lives = null;
+let gameTime = 0;
+let eloUpdateTimer = 0;
+let inputChurn = 0;
 
 const ELO_MIN = 400;
 const ELO_MAX = 2000;
-const SPEED_GAIN = 12;
-const SPEED_LOSS = 16;
 const ACCURACY_SMOOTH = 12;
 const LEVEL_STEP = 18;
 const BOSS_MULTIPLIER = 2;
@@ -59,6 +60,10 @@ const BOSS_CLEAR_TARGET = 8;
 const PRE_BOSS_BREAK_MS = 1800;
 const RANGE_MIN_START = 4;
 const RANGE_MAX = 12;
+const ELO_WINDOW_MS = 30000;
+const ELO_SMOOTH = 0.2;
+const CHURN_MAX = 12;
+const ACCURACY_EMA_ALPHA = 0.02;
 
 const opLabels = {
   add: "Add",
@@ -168,8 +173,19 @@ function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function createDrop(opKey, isBoss = false) {
-  const problem = generateProblem(opKey);
+function createDrop(opKey, isBoss = false, spawnedAt = 0) {
+  let problem = null;
+  let attempts = 0;
+  while (attempts < 12) {
+    const candidate = generateProblem(opKey);
+    const isDuplicate = drops.some((drop) => drop.answer === candidate.answer);
+    if (!isDuplicate) {
+      problem = candidate;
+      break;
+    }
+    attempts += 1;
+  }
+  if (!problem) return false;
   const padding = 36;
   const left = padding;
   const right = Math.max(padding + 20, canvasW - padding);
@@ -185,7 +201,9 @@ function createDrop(opKey, isBoss = false) {
     answer: problem.answer,
     opKey: problem.opKey,
     isBoss,
+    spawnedAt,
   });
+  return true;
 }
 
 function createSplash(drop) {
@@ -221,8 +239,11 @@ function updateDrops(dt) {
   let missCount = 0;
   for (const drop of drops) {
     if (drop.y >= bottom) {
-      adjustSpeed(drop.opKey, -SPEED_LOSS);
-      recordAccuracy(drop.opKey, false);
+      recordEvent(drop.opKey, {
+        correct: false,
+        timeNorm: getTimeNorm(drop),
+        churnNorm: 0,
+      });
       missCount += 1;
     } else {
       survived.push(drop);
@@ -438,12 +459,15 @@ function checkAnswer(inputValue) {
     }
   }
 
-  for (const [opKey, count] of Object.entries(clearedByOp)) {
-    adjustSpeed(opKey, SPEED_GAIN * count);
-    for (let i = 0; i < count; i += 1) {
-      recordAccuracy(opKey, true);
-    }
+  const churnNorm = clamp(0, 1, inputChurn / CHURN_MAX);
+  for (const drop of cleared) {
+    recordEvent(drop.opKey, {
+      correct: true,
+      timeNorm: getTimeNorm(drop),
+      churnNorm,
+    });
   }
+  inputChurn = 0;
   cleared.forEach((drop) => createSplash(drop));
   playPop();
   fireLaser(match);
@@ -458,6 +482,8 @@ function tick(timestamp) {
   lastTime = timestamp;
 
   if (!isPaused) {
+    gameTime += dt;
+    eloUpdateTimer += dt;
     updateBossQueues(dt);
 
     spawnTimer += dt;
@@ -473,7 +499,11 @@ function tick(timestamp) {
         spawnTimer = 0;
         break;
       }
-      createDrop(opKey, Boolean(activeBossOp));
+      const created = createDrop(opKey, Boolean(activeBossOp), gameTime);
+      if (!created) {
+        spawnTimer = 0;
+        break;
+      }
       spawnTimer -= spawnInterval;
       spawns += 1;
     }
@@ -486,6 +516,10 @@ function tick(timestamp) {
     updateLaser(dt);
     if (groundFlash > 0) groundFlash = Math.max(0, groundFlash - dt);
     updateBossState();
+    if (eloUpdateTimer >= ELO_WINDOW_MS) {
+      updateEloRatings();
+      eloUpdateTimer = eloUpdateTimer % ELO_WINDOW_MS;
+    }
     updateDifficulty();
     updateStats();
     updateEloBoard();
@@ -504,7 +538,7 @@ function startGame() {
   opElo = {};
   opState = {};
   settings.ops.forEach((op) => {
-    opElo[op] = { speed: elo, correct: 0, total: 0 };
+    opElo[op] = { speed: elo, accuracy: 0.8, events: [] };
     opState[op] = {
       level: settings.startLevel,
       progress: 0,
@@ -522,6 +556,9 @@ function startGame() {
   splashes = [];
   spawnTimer = 0;
   lastTime = 0;
+  gameTime = 0;
+  eloUpdateTimer = 0;
+  inputChurn = 0;
   baseSpawnMs = 1400;
   baseSpeed = 40;
   stopBossMusic();
@@ -629,6 +666,21 @@ function resumeGame() {
   score = data.score;
   elo = data.elo;
   opElo = data.opElo;
+  settings.ops.forEach((op) => {
+    const entry = opElo[op];
+    if (!entry) {
+      opElo[op] = { speed: elo, accuracy: 0.8, events: [] };
+      return;
+    }
+    entry.events = [];
+    if (typeof entry.accuracy !== "number") {
+      if (typeof entry.correct === "number" && typeof entry.total === "number" && entry.total > 0) {
+        entry.accuracy = entry.correct / entry.total;
+      } else {
+        entry.accuracy = 0.8;
+      }
+    }
+  });
   opState = data.opState;
   baseSpawnMs = data.baseSpawnMs;
   baseSpeed = data.baseSpeed;
@@ -636,6 +688,9 @@ function resumeGame() {
   splashes = [];
   spawnTimer = 0;
   lastTime = 0;
+  gameTime = 0;
+  eloUpdateTimer = 0;
+  inputChurn = 0;
   stopBossMusic();
   laser = null;
   groundFlash = 0;
@@ -661,11 +716,6 @@ function updateResumeButton() {
   }
 }
 
-function adjustSpeed(opKey, delta) {
-  if (!opElo[opKey]) return;
-  opElo[opKey].speed = clamp(ELO_MIN, ELO_MAX, opElo[opKey].speed + delta);
-}
-
 function clamp(min, max, value) {
   return Math.min(max, Math.max(min, value));
 }
@@ -683,16 +733,22 @@ function getAverageAccuracy() {
 }
 
 function getAccuracy(entry) {
-  const total = entry.total;
-  if (!total) return 0.8;
-  return entry.correct / total;
+  if (!entry || typeof entry.accuracy !== "number") return 0.8;
+  return entry.accuracy;
 }
 
-function recordAccuracy(opKey, isCorrect) {
+function recordEvent(opKey, { correct, timeNorm, churnNorm }) {
   const entry = opElo[opKey];
   if (!entry) return;
-  entry.total += 1;
-  if (isCorrect) entry.correct += 1;
+  const accuracyTarget = correct ? 1 : 0;
+  entry.accuracy =
+    entry.accuracy + (accuracyTarget - entry.accuracy) * ACCURACY_EMA_ALPHA;
+  let score = 0;
+  if (correct) {
+    score = 1 - 0.7 * timeNorm - 0.3 * churnNorm;
+  }
+  score = clamp(0, 1, score);
+  entry.events.push({ t: gameTime, score, correct });
 }
 
 function getSpeedForOp(opKey) {
@@ -727,9 +783,31 @@ function getRangeForOp(opKey) {
   const state = opState[opKey];
   if (!state) return RANGE_MIN_START;
   const baseRange = clamp(RANGE_MIN_START, RANGE_MAX, RANGE_MIN_START + (state.level - 1) * 2);
-  const accuracy = getAccuracy(opElo[opKey] || { correct: 0, total: 0 });
+  const accuracy = getAccuracy(opElo[opKey]);
   const bonus = accuracy >= 0.85 ? 1 : 0;
   return clamp(2, RANGE_MAX, baseRange + bonus);
+}
+
+function getTimeNorm(drop) {
+  const bottom = canvasH - 30;
+  const totalDistance = bottom + 20;
+  const fallDuration = (totalDistance / drop.speed) * 1000;
+  if (!Number.isFinite(fallDuration) || fallDuration <= 0) return 1;
+  return clamp(0, 1, (gameTime - drop.spawnedAt) / fallDuration);
+}
+
+function updateEloRatings() {
+  const windowStart = gameTime - ELO_WINDOW_MS;
+  settings.ops.forEach((opKey) => {
+    const entry = opElo[opKey];
+    if (!entry) return;
+    entry.events = entry.events.filter((evt) => evt.t >= windowStart);
+    if (entry.events.length === 0) return;
+    const avgScore =
+      entry.events.reduce((sum, evt) => sum + evt.score, 0) / entry.events.length;
+    const target = ELO_MIN + avgScore * (ELO_MAX - ELO_MIN);
+    entry.speed = clamp(ELO_MIN, ELO_MAX, entry.speed + (target - entry.speed) * ELO_SMOOTH);
+  });
 }
 
 function calculateOverallRating(avgSpeedElo, avgAccuracy) {
@@ -1057,6 +1135,9 @@ pickActive(livesButtons);
 
 answerInput.addEventListener("input", (event) => {
   initAudio();
+  if (!isPaused) {
+    inputChurn = Math.min(CHURN_MAX * 2, inputChurn + 1);
+  }
   currentInput = event.target.value.trim();
   checkAnswer(currentInput);
 });

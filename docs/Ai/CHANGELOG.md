@@ -19,6 +19,8 @@ This file records meaningful project changes so future collaborators (including 
 - Pausing or returning to the setup screen now freezes answer clearing and game state.
 - Resume now restores saved lives count.
 - Added a pause overlay and disabled answer input while paused.
+- ELO now updates on a rolling 30s window using time-to-clear and input churn signals.
+- Prevented duplicate answers from appearing on screen at the same time.
 
 ## 2026-02-03
 - Initial playable Math Rain game built (HTML/CSS/JS single-page app).
