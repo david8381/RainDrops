@@ -28,7 +28,7 @@ const livesButtons = document.querySelectorAll("#livesSelect button");
 
 const GAME_HEIGHT = 520;
 const GAME_WIDTH = 900;
-const VERSION = "2026-02-05 23:09";
+const VERSION = "2026-02-05 23:19";
 
 let drops = [];
 let score = 0;
@@ -54,6 +54,8 @@ let eloUpdateTimer = 0;
 let inputChurn = 0;
 let shipState = null;
 let stunnedUntil = 0;
+let wasStunned = false;
+let preserveEloOnRestart = false;
 
 const ELO_MIN = 400;
 const ELO_MAX = 2000;
@@ -803,7 +805,14 @@ function tick(timestamp) {
     updateSplashes(dt);
     updateLaser(dt);
     updateShip(dt);
-    answerInput.disabled = isPaused || isStunned();
+    if (isStunned()) {
+      if (!wasStunned) {
+        wasStunned = true;
+      }
+    } else if (wasStunned) {
+      wasStunned = false;
+      answerInput.focus();
+    }
     if (groundFlash > 0) groundFlash = Math.max(0, groundFlash - dt);
     updateBossState();
     if (eloUpdateTimer >= ELO_WINDOW_MS) {
@@ -824,11 +833,23 @@ function startGame() {
   initAudio();
   settings = pickSettings();
   settings.startLevel = getActiveValue(levelButtons, "level");
-  elo = getActiveValue(eloButtons, "elo");
+  const prevOpElo = preserveEloOnRestart ? opElo : null;
+  if (!preserveEloOnRestart) {
+    elo = getActiveValue(eloButtons, "elo");
+  }
   opElo = {};
   opState = {};
   settings.ops.forEach((op) => {
-    opElo[op] = { speed: elo, accuracy: 0.8, events: [] };
+    if (preserveEloOnRestart && prevOpElo && prevOpElo[op]) {
+      const prev = prevOpElo[op];
+      opElo[op] = {
+        speed: prev.speed || elo,
+        accuracy: typeof prev.accuracy === "number" ? prev.accuracy : 0.8,
+        events: [],
+      };
+    } else {
+      opElo[op] = { speed: elo, accuracy: 0.8, events: [] };
+    }
     opState[op] = {
       level: settings.startLevel,
       progress: 0,
@@ -853,6 +874,8 @@ function startGame() {
   inputChurn = 0;
   shipState = null;
   stunnedUntil = 0;
+  wasStunned = false;
+  preserveEloOnRestart = false;
   baseSpawnMs = 1400;
   baseSpeed = 40;
   stopBossMusic();
@@ -873,7 +896,7 @@ function startGame() {
 }
 
 function applyPausedState({ showOverlay } = {}) {
-  answerInput.disabled = isPaused || isStunned();
+  answerInput.disabled = isPaused;
   pauseBtn.textContent = isPaused ? "Resume" : "Pause";
   if (isPaused) {
     stopBossMusic();
@@ -907,6 +930,8 @@ function restartGame() {
   stopBossMusic();
   shipState = null;
   stunnedUntil = 0;
+  wasStunned = false;
+  preserveEloOnRestart = true;
   updateResumeButton();
 }
 
@@ -1562,9 +1587,20 @@ answerInput.addEventListener("keydown", (event) => {
   if (event.key === " ") {
     event.preventDefault();
   }
+  if (event.key === "Escape" || event.key === "Backspace") {
+    event.preventDefault();
+    event.stopPropagation();
+    answerInput.value = "";
+    currentInput = "";
+    inputChurn = 0;
+    return;
+  }
+  if (isStunned()) {
+    event.preventDefault();
+    return;
+  }
   if (event.key === "Enter") {
     event.preventDefault();
-    if (isStunned()) return;
     const value = answerInput.value.trim();
     if (!value) return;
     const numericValue = Number(value);

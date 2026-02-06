@@ -32,6 +32,9 @@ This file records meaningful project changes so future collaborators (including 
 - Fixed version stamping script to update reliably.
 - Added Boss Now (ship) and Flood Now (drop swarm) buttons to trigger boss battles early.
 - Ship bosses now have a single pool of problems that must all be cleared, and they keep firing faster missiles while alive.
+- Stun no longer blurs the input, and a post-stun refocus keeps typing smooth.
+- Escape/Backspace now clear the full input entry.
+- Restart preserves ELO instead of resetting it.
 
 ## 2026-02-03
 - Initial playable Math Rain game built (HTML/CSS/JS single-page app).
