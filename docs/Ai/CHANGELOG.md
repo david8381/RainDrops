@@ -9,6 +9,7 @@ This file records meaningful project changes so future collaborators (including 
 - Switched answer input `inputmode` to `decimal` to make decimal entry easier on mobile keyboards.
 - Reduced initial speed for the Factors of 10 operation so drops spawn and fall slower at the start.
 - Removed the previous speed floor behavior so repeated misses can keep slowing drop speed toward zero.
+- Lowered starting range from 4 to 2.
 
 ## 2026-02-04
 - Loaded Space Grotesk font via Google Fonts (was referenced but never loaded).

@@ -28,7 +28,7 @@ const livesButtons = document.querySelectorAll("#livesSelect button");
 
 const GAME_HEIGHT = 520;
 const GAME_WIDTH = 900;
-const VERSION = "2026-02-26 18:06";
+const VERSION = "2026-02-26 18:07";
 
 let drops = [];
 let score = 0;
@@ -65,7 +65,7 @@ const LEVEL_STEP = 18;
 const BOSS_MULTIPLIER = 2;
 const BOSS_CLEAR_TARGET = 8;
 const PRE_BOSS_BREAK_MS = 1800;
-const RANGE_MIN_START = 4;
+const RANGE_MIN_START = 2;
 const RANGE_MAX = 12;
 const ELO_WINDOW_MS = 30000;
 const ELO_SMOOTH = 0.2;
