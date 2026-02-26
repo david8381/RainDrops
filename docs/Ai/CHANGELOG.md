@@ -13,6 +13,7 @@ This file records meaningful project changes so future collaborators (including 
 - Added a dynamic active-drop cap so early gameplay starts with fewer simultaneous drops and scales up with speed.
 - Added optional session timer settings (2/5/10 minutes) with a live HUD countdown.
 - Added results-email capture at game start and a timed-session completion flow that opens an email draft with the session summary.
+- Fixed decimal input matching/prefix validation to avoid false wrong-input resets while typing values like `0.00...` for factors-of-10 problems.
 
 ## 2026-02-04
 - Loaded Space Grotesk font via Google Fonts (was referenced but never loaded).

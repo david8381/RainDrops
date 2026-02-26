@@ -33,7 +33,7 @@ const timerButtons = document.querySelectorAll("#timerSelect button");
 
 const GAME_HEIGHT = 520;
 const GAME_WIDTH = 900;
-const VERSION = "2026-02-26 18:15";
+const VERSION = "2026-02-26 18:22";
 
 let drops = [];
 let score = 0;
@@ -145,6 +145,7 @@ function generateFactorsOfTenProblem(maxValue) {
   return {
     text: `${left} ${direction === "mul" ? "×" : "÷"} ${factor}`,
     answer: Number(answerText),
+    answerText,
     opKey: "f10",
   };
 }
@@ -260,6 +261,7 @@ function generateProblem(opKey) {
   return {
     text: `${a} ${op.symbol} ${b}`,
     answer,
+    answerText: String(answer),
     opKey: key,
   };
 }
@@ -297,8 +299,34 @@ function generateProblemWithRange(opKey, maxValue) {
   return {
     text: `${a} ${op.symbol} ${b}`,
     answer,
+    answerText: String(answer),
     opKey: key,
   };
+}
+
+function normalizeTypedValue(inputValue, { allowIncomplete = true } = {}) {
+  let value = String(inputValue || "").trim();
+  if (!value) return "";
+  if (value.startsWith(".")) value = `0${value}`;
+  if (value.startsWith("-.") ) value = value.replace("-.", "-0.");
+  if (!/^-?\d*\.?\d*$/.test(value)) return value;
+  const negative = value.startsWith("-");
+  const body = negative ? value.slice(1) : value;
+  const parts = body.split(".");
+  let intPart = parts[0] || "0";
+  intPart = intPart.replace(/^0+(?=\d)/, "");
+  let out = `${negative ? "-" : ""}${intPart}`;
+  if (parts.length > 1) {
+    out += `.${parts[1]}`;
+  }
+  if (!allowIncomplete && out.endsWith(".")) {
+    out = out.slice(0, -1);
+  }
+  if (!allowIncomplete && out.includes(".")) {
+    out = out.replace(/0+$/, "").replace(/\.$/, "");
+  }
+  if (out === "-0") return "0";
+  return out;
 }
 
 function randInt(min, max) {
@@ -310,9 +338,19 @@ function getShipAnswers() {
   return shipState.parts.map((p) => p.answer);
 }
 
+function getShipAnswerTexts() {
+  if (!shipState || !shipState.active) return [];
+  return shipState.parts.map((p) => p.answerText || String(p.answer));
+}
+
 function getActiveAnswers() {
   const dropAnswers = drops.map((drop) => drop.answer);
   return dropAnswers.concat(getShipAnswers());
+}
+
+function getActiveAnswerTexts() {
+  const dropAnswers = drops.map((drop) => drop.answerText || String(drop.answer));
+  return dropAnswers.concat(getShipAnswerTexts());
 }
 
 function createDrop(opKey, isBoss = false, spawnedAt = 0, options = {}) {
@@ -342,6 +380,7 @@ function createDrop(opKey, isBoss = false, spawnedAt = 0, options = {}) {
     speed,
     text: problem.text,
     answer: problem.answer,
+    answerText: problem.answerText || String(problem.answer),
     opKey: problem.opKey,
     isBoss,
     isMissile: Boolean(options.isMissile),
@@ -500,6 +539,7 @@ function spawnShipMissile() {
     speed: speedBase * SHIP_MISSILE_SPEED_MULT,
     text: problem.text,
     answer: problem.answer,
+    answerText: problem.answerText || String(problem.answer),
     opKey: problem.opKey,
     isBoss: false,
     isMissile: true,
@@ -509,7 +549,14 @@ function spawnShipMissile() {
 
 function findShipMatch(value) {
   if (!shipState || !shipState.active) return null;
-  const index = shipState.parts.findIndex((p) => p.answer === value);
+  const normalizedTyped = normalizeTypedValue(value, { allowIncomplete: false });
+  const numericValue = Number(value);
+  const hasNumeric = !Number.isNaN(numericValue);
+  const index = shipState.parts.findIndex((p) => {
+    const text = p.answerText || String(p.answer);
+    if (normalizedTyped && text === normalizedTyped) return true;
+    return hasNumeric && p.answer === numericValue;
+  });
   if (index >= 0) {
     return { index, problem: shipState.parts[index] };
   }
@@ -720,11 +767,17 @@ function updateDifficulty() {
 function checkAnswer(inputValue) {
   if (isPaused || isStunned()) return;
   if (!inputValue) return;
+  const normalizedTyped = normalizeTypedValue(inputValue, { allowIncomplete: false });
   const value = Number(inputValue);
-  if (Number.isNaN(value)) return;
+  const hasNumeric = !Number.isNaN(value);
+  if (!normalizedTyped && !hasNumeric) return;
 
-  const shipMatch = findShipMatch(value);
-  const match = drops.find((drop) => drop.answer === value);
+  const shipMatch = findShipMatch(inputValue);
+  const match = drops.find((drop) => {
+    const text = drop.answerText || String(drop.answer);
+    if (normalizedTyped && text === normalizedTyped) return true;
+    return hasNumeric && drop.answer === value;
+  });
   if (!shipMatch && !match) return;
 
   const answerValue = shipMatch ? shipMatch.problem.answer : match.answer;
@@ -802,9 +855,12 @@ function checkAnswer(inputValue) {
 
 function isInputPossible(inputValue) {
   if (!inputValue) return true;
-  const trimmed = inputValue.trim();
-  if (!trimmed) return true;
-  return getActiveAnswers().some((answer) => String(answer).startsWith(trimmed));
+  const typed = normalizeTypedValue(inputValue, { allowIncomplete: true });
+  if (!typed) return true;
+  return getActiveAnswerTexts().some((answer) => {
+    const normalizedAnswer = normalizeTypedValue(answer, { allowIncomplete: false });
+    return normalizedAnswer.startsWith(typed);
+  });
 }
 
 function pickMistakeTarget() {
