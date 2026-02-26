@@ -28,7 +28,7 @@ const livesButtons = document.querySelectorAll("#livesSelect button");
 
 const GAME_HEIGHT = 520;
 const GAME_WIDTH = 900;
-const VERSION = "2026-02-05 23:30";
+const VERSION = "2026-02-26 18:01";
 
 let drops = [];
 let score = 0;
@@ -81,6 +81,7 @@ const opLabels = {
   sub: "Sub",
   mul: "Mul",
   div: "Div",
+  f10: "x10",
 };
 
 let opElo = {};
@@ -92,6 +93,51 @@ const operators = {
   mul: { symbol: "×", fn: (a, b) => a * b },
   div: { symbol: "÷", fn: (a, b) => a / b },
 };
+
+function pow10(exp) {
+  let out = 1;
+  for (let i = 0; i < exp; i += 1) out *= 10;
+  return out;
+}
+
+function formatFixedScale(value, scaleDigits) {
+  if (scaleDigits <= 0) return String(value);
+  const base = pow10(scaleDigits);
+  const absValue = Math.abs(value);
+  const intPart = Math.floor(absValue / base);
+  const fracPart = absValue % base;
+  const sign = value < 0 ? "-" : "";
+  return `${sign}${intPart}.${String(fracPart).padStart(scaleDigits, "0")}`;
+}
+
+function shiftDecimal(value, fromScale, shiftPower) {
+  const toScale = fromScale - shiftPower;
+  if (toScale >= 0) {
+    return formatFixedScale(value, toScale);
+  }
+  return String(value * pow10(-toScale));
+}
+
+function generateFactorsOfTenProblem(maxValue) {
+  const factorPowers = [1, 2, 3];
+  const direction = Math.random() < 0.5 ? "mul" : "div";
+  const power = factorPowers[randInt(0, factorPowers.length - 1)];
+  const factor = pow10(power);
+  const decimalPlaces = Math.random() < 0.7 ? 1 : 2;
+  const maxMantissa = Math.max(10, maxValue * pow10(decimalPlaces + 2));
+  const mantissa = randInt(10, maxMantissa);
+  const left = formatFixedScale(mantissa, decimalPlaces);
+  const answerText =
+    direction === "mul"
+      ? shiftDecimal(mantissa, decimalPlaces, power)
+      : shiftDecimal(mantissa, decimalPlaces, -power);
+
+  return {
+    text: `${left} ${direction === "mul" ? "×" : "÷"} ${factor}`,
+    answer: Number(answerText),
+    opKey: "f10",
+  };
+}
 
 function resizeCanvas() {
   const rect = canvas.getBoundingClientRect();
@@ -152,8 +198,13 @@ function getActiveValue(buttons, attr) {
 function generateProblem(opKey) {
   const { ops } = settings;
   const key = opKey || ops[Math.floor(Math.random() * ops.length)];
-  const op = operators[key];
   const maxValue = getRangeMax(key);
+
+  if (key === "f10") {
+    return generateFactorsOfTenProblem(maxValue);
+  }
+
+  const op = operators[key];
 
   let a = 0;
   let b = 0;
@@ -186,6 +237,11 @@ function generateProblem(opKey) {
 
 function generateProblemWithRange(opKey, maxValue) {
   const key = opKey;
+
+  if (key === "f10") {
+    return generateFactorsOfTenProblem(maxValue);
+  }
+
   const op = operators[key];
   let a = 0;
   let b = 0;

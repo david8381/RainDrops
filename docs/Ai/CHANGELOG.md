@@ -3,6 +3,11 @@
 ## Purpose
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
+## 2026-02-26
+- Added a new operation type: Factors of 10 (`f10`) for decimal shifting problems (multiply/divide by 10, 100, 1000).
+- Added the setup checkbox for Factors of 10.
+- Switched answer input `inputmode` to `decimal` to make decimal entry easier on mobile keyboards.
+
 ## 2026-02-04
 - Loaded Space Grotesk font via Google Fonts (was referenced but never loaded).
 - Cached canvas dimensions to avoid layout recalculation every frame.

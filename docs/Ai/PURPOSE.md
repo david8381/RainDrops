@@ -12,6 +12,7 @@ Build a fast, friendly math game where falling drops are cleared by typing answe
 ## Current Desires (User Intent)
 - Drops fall from the sky and clear when the correct answer is typed.
 - Startup choices include level and operations.
+- Operations include add/subtract/multiply/divide plus factors-of-10 decimal shifting.
 - Number range grows with progression (division range means quotient range).
 - Progressive difficulty with per-operation levels and ranges.
 - Per-operation ratings: drop rate and accuracy are tracked independently.

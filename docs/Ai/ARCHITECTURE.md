@@ -28,5 +28,6 @@ This is a standalone, static web game. There is no build step and no external de
 - `stunnedUntil`: timestamp for temporary input disable when the ship fires.
 
 ## Extensibility Notes
-- If adding new operations, update `operators`, `opLabels`, and the setup UI.
+- If adding new operations, update `opLabels` and the setup UI, then either add a normal entry in `operators` or a dedicated generator branch in `generateProblem`.
+- The factors-of-10 operation (`f10`) uses a dedicated generator that creates decimal shift problems (multiply/divide by 10, 100, 1000).
 - Keep changes in `script.js` isolated to the rating helpers for predictability.
