@@ -259,6 +259,12 @@ button.primary {
   font-size: 1.1rem;
 }
 
+.result-status {
+  margin: 0 0 14px 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -279,6 +285,16 @@ button.primary {
 
 .field small {
   color: var(--muted);
+}
+
+.field input[type="email"] {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: #0b1220;
+  color: var(--text);
+  font-size: 0.95rem;
 }
 
 .segmented {

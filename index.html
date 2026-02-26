@@ -22,6 +22,7 @@
         <div class="stats">
           <div><span class="label">Score</span> <span id="score">0</span></div>
           <div><span class="label">Rating</span> <span id="elo">800</span></div>
+          <div id="timerDisplay" class="hidden"><span class="label">Time</span> <span id="timeLeft">0:00</span></div>
           <div id="livesDisplay" class="hidden"><span class="label">Lives</span> <span id="livesCount">0</span></div>
           <div><span class="label">Version</span> <span id="version">dev</span></div>
         </div>
@@ -104,6 +105,22 @@
               <button data-lives="5">5</button>
             </div>
           </div>
+
+          <div class="field">
+            <label>Session Timer</label>
+            <div class="segmented" id="timerSelect">
+              <button data-minutes="0" class="active">None</button>
+              <button data-minutes="2">2m</button>
+              <button data-minutes="5">5m</button>
+              <button data-minutes="10">10m</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="resultEmail">Results Email</label>
+            <input id="resultEmail" type="email" placeholder="name@example.com" autocomplete="email" />
+            <small>Used when a timed session ends.</small>
+          </div>
         </div>
 
         <div class="actions">
@@ -117,6 +134,7 @@
       <div class="card game-over-card">
         <h1>Game Over</h1>
         <p class="card-sub">Final Score: <strong id="finalScore">0</strong> &middot; Rating: <strong id="finalRating">0</strong></p>
+        <p id="resultStatus" class="result-status hidden"></p>
         <div class="actions">
           <button id="playAgainBtn" class="primary">Play Again</button>
         </div>

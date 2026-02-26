@@ -10,6 +10,9 @@ This file records meaningful project changes so future collaborators (including 
 - Reduced initial speed for the Factors of 10 operation so drops spawn and fall slower at the start.
 - Removed the previous speed floor behavior so repeated misses can keep slowing drop speed toward zero.
 - Lowered starting range from 4 to 2.
+- Added a dynamic active-drop cap so early gameplay starts with fewer simultaneous drops and scales up with speed.
+- Added optional session timer settings (2/5/10 minutes) with a live HUD countdown.
+- Added results-email capture at game start and a timed-session completion flow that opens an email draft with the session summary.
 
 ## 2026-02-04
 - Loaded Space Grotesk font via Google Fonts (was referenced but never loaded).

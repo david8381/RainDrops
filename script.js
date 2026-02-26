@@ -13,22 +13,27 @@ const setupOverlay = document.getElementById("setup");
 const startBtn = document.getElementById("startBtn");
 const resumeBtn = document.getElementById("resumeBtn");
 const versionEl = document.getElementById("version");
+const timerDisplayEl = document.getElementById("timerDisplay");
+const timeLeftEl = document.getElementById("timeLeft");
 const livesDisplayEl = document.getElementById("livesDisplay");
 const livesCountEl = document.getElementById("livesCount");
 const gameOverEl = document.getElementById("gameOver");
 const finalScoreEl = document.getElementById("finalScore");
 const finalRatingEl = document.getElementById("finalRating");
+const resultStatusEl = document.getElementById("resultStatus");
 const playAgainBtn = document.getElementById("playAgainBtn");
 const pauseOverlayEl = document.getElementById("pauseOverlay");
 const resumeBtnOverlay = document.getElementById("resumeBtnOverlay");
+const resultEmailInput = document.getElementById("resultEmail");
 
 const levelButtons = document.querySelectorAll("#levelSelect button");
 const eloButtons = document.querySelectorAll("#eloSelect button");
 const livesButtons = document.querySelectorAll("#livesSelect button");
+const timerButtons = document.querySelectorAll("#timerSelect button");
 
 const GAME_HEIGHT = 520;
 const GAME_WIDTH = 900;
-const VERSION = "2026-02-26 18:07";
+const VERSION = "2026-02-26 18:15";
 
 let drops = [];
 let score = 0;
@@ -56,6 +61,9 @@ let shipState = null;
 let stunnedUntil = 0;
 let wasStunned = false;
 let preserveEloOnRestart = false;
+let sessionDurationMs = 0;
+let sessionEndAtMs = 0;
+let sessionComplete = false;
 
 const ELO_MIN = 400;
 const ELO_MAX = 2000;
@@ -155,6 +163,13 @@ function updateStats() {
   scoreEl.textContent = score;
   eloEl.textContent = Math.round(elo);
   if (versionEl) versionEl.textContent = VERSION;
+  if (sessionDurationMs > 0 && timeLeftEl && timerDisplayEl) {
+    timerDisplayEl.classList.remove("hidden");
+    const remainingMs = Math.max(0, sessionEndAtMs - gameTime);
+    timeLeftEl.textContent = formatCountdown(remainingMs);
+  } else if (timerDisplayEl) {
+    timerDisplayEl.classList.add("hidden");
+  }
   if (lives !== null) {
     livesDisplayEl.classList.remove("hidden");
     livesCountEl.textContent = lives;
@@ -178,9 +193,21 @@ function pickSettings() {
     selectedOps.push("add");
   }
 
+  const timerMinutes = getActiveValue(timerButtons, "minutes");
+  const resultsEmail = (resultEmailInput?.value || "").trim();
+
   return {
     ops: selectedOps,
+    timerMinutes,
+    resultsEmail,
   };
+}
+
+function formatCountdown(ms) {
+  const totalSec = Math.ceil(ms / 1000);
+  const mins = Math.floor(totalSec / 60);
+  const secs = totalSec % 60;
+  return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
 function pickActive(buttons) {
@@ -825,6 +852,12 @@ function tick(timestamp) {
 
   if (!isPaused) {
     gameTime += dt;
+    if (sessionDurationMs > 0 && !sessionComplete && gameTime >= sessionEndAtMs) {
+      triggerGameOver({ timedOut: true });
+      updateStats();
+      requestAnimationFrame(tick);
+      return;
+    }
     eloUpdateTimer += dt;
     updateBossQueues(dt);
 
@@ -844,6 +877,10 @@ function tick(timestamp) {
       const opKey = activeBossOp || pickSpawnOp();
       if (!opKey) {
         spawnTimer = 0;
+        break;
+      }
+      if (drops.length >= getMaxActiveDrops(opKey, Boolean(activeBossOp))) {
+        spawnTimer = Math.min(spawnTimer, spawnInterval);
         break;
       }
       const created = createDrop(opKey, Boolean(activeBossOp && !isShipBoss), gameTime);
@@ -933,6 +970,9 @@ function startGame() {
   stunnedUntil = 0;
   wasStunned = false;
   preserveEloOnRestart = false;
+  sessionDurationMs = Math.max(0, (settings.timerMinutes || 0) * 60000);
+  sessionEndAtMs = sessionDurationMs;
+  sessionComplete = false;
   baseSpawnMs = 1400;
   baseSpeed = 40;
   stopBossMusic();
@@ -944,6 +984,7 @@ function startGame() {
   applyPausedState({ showOverlay: false });
   gameOverEl.classList.add("hidden");
   gameOverEl.setAttribute("aria-hidden", "true");
+  setResultStatus("");
   updateStats();
   buildEloBoard();
   updateEloBoard();
@@ -989,15 +1030,60 @@ function restartGame() {
   stunnedUntil = 0;
   wasStunned = false;
   preserveEloOnRestart = true;
+  sessionComplete = false;
   updateResumeButton();
 }
 
-function triggerGameOver() {
+function setResultStatus(message = "") {
+  if (!resultStatusEl) return;
+  if (!message) {
+    resultStatusEl.textContent = "";
+    resultStatusEl.classList.add("hidden");
+    return;
+  }
+  resultStatusEl.textContent = message;
+  resultStatusEl.classList.remove("hidden");
+}
+
+function buildTimedResultsSummary() {
+  const ops = settings?.ops?.map((op) => opLabels[op] || op).join(", ") || "";
+  const elapsedMs = Math.min(gameTime, sessionDurationMs);
+  return [
+    `Math Rain timed session complete`,
+    `Score: ${score}`,
+    `Rating: ${Math.round(elo)}`,
+    `Duration: ${formatCountdown(elapsedMs)}`,
+    `Operations: ${ops}`,
+    `Finished: ${new Date().toLocaleString()}`,
+  ].join("\n");
+}
+
+function sendTimedResultsEmail() {
+  if (!settings?.resultsEmail) return "Timer complete.";
+  const subject = "Math Rain timed session results";
+  const body = buildTimedResultsSummary();
+  const mailto = `mailto:${encodeURIComponent(settings.resultsEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const popup = window.open(mailto, "_blank");
+  if (!popup) {
+    window.location.href = mailto;
+  }
+  return `Timer complete. Email draft opened for ${settings.resultsEmail}.`;
+}
+
+function triggerGameOver(options = {}) {
+  const { timedOut = false } = options;
   isPaused = true;
   applyPausedState({ showOverlay: false });
   clearSave();
   finalScoreEl.textContent = score;
   finalRatingEl.textContent = Math.round(elo);
+  if (timedOut) {
+    const status = sendTimedResultsEmail();
+    setResultStatus(status);
+    sessionComplete = true;
+  } else {
+    setResultStatus("");
+  }
   gameOverEl.classList.remove("hidden");
   gameOverEl.setAttribute("aria-hidden", "false");
   shipState = null;
@@ -1043,6 +1129,8 @@ function resumeGame() {
   if (!data) return;
   initAudio();
   settings = data.settings;
+  settings.timerMinutes = Number(settings.timerMinutes || 0);
+  settings.resultsEmail = typeof settings.resultsEmail === "string" ? settings.resultsEmail : "";
   score = data.score;
   elo = data.elo;
   opElo = data.opElo;
@@ -1085,9 +1173,13 @@ function resumeGame() {
   groundFlash = 0;
   shipState = null;
   stunnedUntil = 0;
+  sessionDurationMs = Math.max(0, (settings.timerMinutes || 0) * 60000);
+  sessionEndAtMs = sessionDurationMs;
+  sessionComplete = false;
   lives = typeof data.lives === "number" ? data.lives : null;
   isPaused = false;
   applyPausedState({ showOverlay: false });
+  setResultStatus("");
   updateStats();
   buildEloBoard();
   updateEloBoard();
@@ -1140,6 +1232,17 @@ function getSpawnMsFromSpeedElo(speedElo) {
     return 1700 - t * 1200;
   }
   return 3000 - (safeElo / ELO_MIN) * 1300;
+}
+
+function getMaxActiveDrops(opKey = null, isBoss = false) {
+  if (isBoss) return 20;
+  const speedElo = opKey ? opElo[opKey]?.speed ?? getAverageElo("speed") : getAverageElo("speed");
+  const safeElo = clamp(SPEED_ELO_MIN, ELO_MAX, speedElo);
+  if (safeElo <= ELO_MIN) {
+    return Math.max(2, Math.round(2 + (safeElo / ELO_MIN) * 2));
+  }
+  const t = (safeElo - ELO_MIN) / (ELO_MAX - ELO_MIN);
+  return Math.round(4 + t * 8);
 }
 
 function getAverageAccuracy() {
@@ -1645,6 +1748,7 @@ function playVictory() {
 pickActive(levelButtons);
 pickActive(eloButtons);
 pickActive(livesButtons);
+pickActive(timerButtons);
 
 answerInput.addEventListener("input", (event) => {
   initAudio();
@@ -1703,10 +1807,23 @@ startBtn.addEventListener("click", () => {
   const selectedOps = Array.from(
     document.querySelectorAll('.checks input[type="checkbox"]')
   ).filter((box) => box.checked);
+  const timerMinutes = getActiveValue(timerButtons, "minutes");
+  const resultsEmail = (resultEmailInput?.value || "").trim();
 
   if (selectedOps.length === 0) {
     selectedOps.push(document.querySelector('.checks input[value="add"]'));
     selectedOps[0].checked = true;
+  }
+
+  if (timerMinutes > 0 && !resultsEmail) {
+    window.alert("Enter a results email when using a session timer.");
+    resultEmailInput?.focus();
+    return;
+  }
+  if (timerMinutes > 0 && resultEmailInput && !resultEmailInput.checkValidity()) {
+    window.alert("Enter a valid results email address.");
+    resultEmailInput.focus();
+    return;
   }
 
   clearSave();

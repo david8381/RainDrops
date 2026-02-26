@@ -17,6 +17,7 @@ This is a standalone, static web game. There is no build step and no external de
 6. Drop rate drives spawn rate and fall speed; per-operation progression and accuracy drive number range.
 7. Boss battles are triggered per operation when that operation hits its progress gate, alternating between drop bosses and ship bosses.
 8. The overall rating is computed from average drop rate and accuracy and shown in the HUD.
+9. Optional timed sessions stop gameplay when the countdown reaches zero and trigger a results-email flow.
 
 ## Data Model (in `script.js`)
 - `drops`: active drops with `{ id, x, y, speed, text, answer, opKey, isBoss }`.
