@@ -28,7 +28,7 @@ const livesButtons = document.querySelectorAll("#livesSelect button");
 
 const GAME_HEIGHT = 520;
 const GAME_WIDTH = 900;
-const VERSION = "2026-02-26 18:01";
+const VERSION = "2026-02-26 18:06";
 
 let drops = [];
 let score = 0;
@@ -59,6 +59,7 @@ let preserveEloOnRestart = false;
 
 const ELO_MIN = 400;
 const ELO_MAX = 2000;
+const SPEED_ELO_MIN = 0;
 const ACCURACY_SMOOTH = 12;
 const LEVEL_STEP = 18;
 const BOSS_MULTIPLIER = 2;
@@ -75,6 +76,7 @@ const SHIP_SHOT_INTERVAL_MS = 700;
 const SHIP_SHOT_CHANCE = 0.45;
 const STUN_MS = 1200;
 const SHIP_MISSILE_SPEED_MULT = 2.4;
+const F10_START_SPEED_ELO = 220;
 
 const opLabels = {
   add: "Add",
@@ -682,10 +684,8 @@ function fireLaser(target) {
 
 function updateDifficulty() {
   const avgSpeedElo = getAverageElo("speed");
-  const t = (avgSpeedElo - ELO_MIN) / (ELO_MAX - ELO_MIN);
-  const clamped = Math.min(1, Math.max(0, t));
-  baseSpawnMs = 1700 - clamped * 1200;
-  baseSpeed = 30 + clamped * 60;
+  baseSpawnMs = getSpawnMsFromSpeedElo(avgSpeedElo);
+  baseSpeed = getFallSpeedFromSpeedElo(avgSpeedElo);
   const avgAccuracy = getAverageAccuracy();
   elo = calculateOverallRating(avgSpeedElo, avgAccuracy);
 }
@@ -900,12 +900,12 @@ function startGame() {
     if (preserveEloOnRestart && prevOpElo && prevOpElo[op]) {
       const prev = prevOpElo[op];
       opElo[op] = {
-        speed: prev.speed || elo,
+        speed: typeof prev.speed === "number" ? prev.speed : getStartingSpeedElo(op, elo),
         accuracy: typeof prev.accuracy === "number" ? prev.accuracy : 0.8,
         events: [],
       };
     } else {
-      opElo[op] = { speed: elo, accuracy: 0.8, events: [] };
+      opElo[op] = { speed: getStartingSpeedElo(op, elo), accuracy: 0.8, events: [] };
     }
     opState[op] = {
       level: settings.startLevel,
@@ -1049,7 +1049,7 @@ function resumeGame() {
   settings.ops.forEach((op) => {
     const entry = opElo[op];
     if (!entry) {
-      opElo[op] = { speed: elo, accuracy: 0.8, events: [] };
+      opElo[op] = { speed: getStartingSpeedElo(op, elo), accuracy: 0.8, events: [] };
       return;
     }
     entry.events = [];
@@ -1117,6 +1117,31 @@ function getAverageElo(type) {
   return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
 
+function getStartingSpeedElo(opKey, selectedElo) {
+  if (opKey === "f10") {
+    return Math.min(selectedElo, F10_START_SPEED_ELO);
+  }
+  return selectedElo;
+}
+
+function getFallSpeedFromSpeedElo(speedElo) {
+  const safeElo = clamp(SPEED_ELO_MIN, ELO_MAX, speedElo);
+  if (safeElo >= ELO_MIN) {
+    const t = (safeElo - ELO_MIN) / (ELO_MAX - ELO_MIN);
+    return 30 + t * 70;
+  }
+  return 30 * (safeElo / ELO_MIN);
+}
+
+function getSpawnMsFromSpeedElo(speedElo) {
+  const safeElo = clamp(SPEED_ELO_MIN, ELO_MAX, speedElo);
+  if (safeElo >= ELO_MIN) {
+    const t = (safeElo - ELO_MIN) / (ELO_MAX - ELO_MIN);
+    return 1700 - t * 1200;
+  }
+  return 3000 - (safeElo / ELO_MIN) * 1300;
+}
+
 function getAverageAccuracy() {
   const values = Object.values(opElo).map((entry) => getAccuracy(entry));
   if (values.length === 0) return 0.8;
@@ -1158,18 +1183,13 @@ function applyProgressPenalty(opKey, amount = 1) {
 function getSpeedForOp(opKey) {
   const entry = opElo[opKey];
   if (!entry) return baseSpeed;
-  const t = (entry.speed - ELO_MIN) / (ELO_MAX - ELO_MIN);
-  const clamped = clamp(0, 1, t);
-  return 30 + clamped * 70;
+  return getFallSpeedFromSpeedElo(entry.speed);
 }
 
 function getDropRateForOp(opKey) {
   const entry = opElo[opKey];
   if (!entry) return 60000 / baseSpawnMs;
-  const t = (entry.speed - ELO_MIN) / (ELO_MAX - ELO_MIN);
-  const clamped = clamp(0, 1, t);
-  const spawnMs = 1700 - clamped * 1200;
-  return 60000 / spawnMs;
+  return 60000 / getSpawnMsFromSpeedElo(entry.speed);
 }
 
 function getRangeMax(opKey) {
@@ -1209,8 +1229,8 @@ function updateEloRatings() {
     if (entry.events.length === 0) return;
     const avgScore =
       entry.events.reduce((sum, evt) => sum + evt.score, 0) / entry.events.length;
-    const target = ELO_MIN + avgScore * (ELO_MAX - ELO_MIN);
-    entry.speed = clamp(ELO_MIN, ELO_MAX, entry.speed + (target - entry.speed) * ELO_SMOOTH);
+    const target = SPEED_ELO_MIN + avgScore * (ELO_MAX - SPEED_ELO_MIN);
+    entry.speed = clamp(SPEED_ELO_MIN, ELO_MAX, entry.speed + (target - entry.speed) * ELO_SMOOTH);
   });
 }
 
