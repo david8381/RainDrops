@@ -694,7 +694,7 @@ button.primary:hover {
   user-select: none;
 }
 
-.kp-display-row {
+.kp-top-row {
   display: flex;
   align-items: center;
   gap: 8px;

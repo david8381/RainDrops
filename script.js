@@ -2601,7 +2601,11 @@ function init() {
     pauseBtn.textContent = "Pause";
   }
 
-  setupTouchKeypad();
+  try {
+    setupTouchKeypad();
+  } catch (err) {
+    document.title = "ERR: " + err.message;
+  }
   answerInput.focus();
   requestAnimationFrame(tick);
 }
