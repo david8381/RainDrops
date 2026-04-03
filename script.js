@@ -2411,6 +2411,12 @@ function setupTouchKeypad() {
   // Apply touch layout class
   document.body.classList.add("touch-device");
 
+  // Move keypad into the play column (inline flow, not fixed)
+  const playCol = document.querySelector(".play-col");
+  if (playCol) {
+    playCol.appendChild(touchKeypad);
+  }
+
   // Show the keypad
   touchKeypad.classList.remove("hidden");
 
@@ -2468,13 +2474,6 @@ function setupTouchKeypad() {
     });
   }
 
-  // Size the app to fit above the keypad
-  const fitLayout = () => {
-    const kpHeight = touchKeypad.offsetHeight;
-    document.querySelector(".app").style.height = `calc(100dvh - ${kpHeight}px)`;
-  };
-  fitLayout();
-  window.addEventListener("resize", fitLayout);
 }
 
 function updateKpDisplay() {

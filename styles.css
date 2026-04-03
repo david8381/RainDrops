@@ -879,41 +879,45 @@ button.primary:hover {
 
 .touch-device .app {
   height: 100dvh;
-  padding: 8px 10px 0;
-  gap: 6px;
+  height: 100vh; /* fallback */
+  padding: 6px 8px calc(env(safe-area-inset-bottom, 0px) + 4px);
+  gap: 4px;
   overflow: hidden;
+}
+
+@supports (height: 100dvh) {
+  .touch-device .app { height: 100dvh; }
 }
 
 .touch-device .top-bar {
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .touch-device .logo {
-  width: 32px;
-  height: 32px;
-  font-size: 0.75rem;
-  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  font-size: 0.7rem;
+  border-radius: 6px;
 }
 
 .touch-device .title {
-  font-size: 0.95rem;
+  font-size: 0.9rem;
 }
 
-.touch-device .subtitle {
-  display: none;
-}
-
+.touch-device .subtitle,
 .touch-device .version {
   display: none;
 }
 
 .touch-device .controls-bar {
-  padding: 6px 10px;
+  padding: 5px 8px;
+  flex-shrink: 0;
 }
 
 .touch-device .op-chit {
-  padding: 4px 10px;
-  font-size: 0.8rem;
+  padding: 3px 8px;
+  font-size: 0.78rem;
 }
 
 .touch-device .input-bar {
@@ -925,19 +929,19 @@ button.primary:hover {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  gap: 6px;
+  gap: 4px;
 }
 
 .touch-device .play-col {
   flex: 1;
   min-height: 0;
-  gap: 6px;
+  gap: 4px;
 }
 
 .touch-device .game {
   flex: 1;
   min-height: 0;
-  padding: 6px;
+  padding: 4px;
 }
 
 .touch-device #canvas {
@@ -946,4 +950,41 @@ button.primary:hover {
 
 .touch-device .side-panel {
   display: none;
+}
+
+/* Keypad inline (not fixed) on touch */
+.touch-device .touch-keypad {
+  position: static;
+  flex-shrink: 0;
+  border-top: none;
+  background: transparent;
+  padding: 0;
+  gap: 3px;
+}
+
+.touch-device .keypad-row {
+  gap: 4px;
+}
+
+.touch-device .kp-key {
+  padding: 8px 0;
+  font-size: 0.95rem;
+  border-radius: 6px;
+}
+
+.touch-device .kp-display-row {
+  gap: 6px;
+  padding: 0;
+  margin-bottom: 2px;
+}
+
+.touch-device .kp-input-display {
+  padding: 4px 8px;
+  font-size: 0.9rem;
+  min-height: 28px;
+}
+
+.touch-device .kp-action {
+  padding: 4px 10px;
+  font-size: 0.7rem;
 }
