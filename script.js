@@ -2411,10 +2411,10 @@ function setupTouchKeypad() {
   // Apply touch layout class
   document.body.classList.add("touch-device");
 
-  // Move keypad into the play column (inline flow, not fixed)
-  const playCol = document.querySelector(".play-col");
-  if (playCol) {
-    playCol.appendChild(touchKeypad);
+  // Move keypad into the side panel (above sliders/diff cards)
+  const sidePanel = document.getElementById("sidePanel");
+  if (sidePanel) {
+    sidePanel.insertBefore(touchKeypad, sidePanel.firstChild);
   }
 
   // Show the keypad

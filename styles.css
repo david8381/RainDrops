@@ -878,8 +878,7 @@ button.primary:hover {
 }
 
 .touch-device .app {
-  height: 100dvh;
-  height: 100vh; /* fallback */
+  height: 100vh;
   padding: 6px 8px calc(env(safe-area-inset-bottom, 0px) + 4px);
   gap: 4px;
   overflow: hidden;
@@ -913,6 +912,7 @@ button.primary:hover {
 .touch-device .controls-bar {
   padding: 5px 8px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .touch-device .op-chit {
@@ -924,12 +924,13 @@ button.primary:hover {
   display: none;
 }
 
+/* Two-column: canvas left, keypad+controls right */
 .touch-device .main-grid {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr auto;
   flex: 1;
   min-height: 0;
-  gap: 4px;
+  gap: 6px;
 }
 
 .touch-device .play-col {
@@ -948,11 +949,17 @@ button.primary:hover {
   height: 100%;
 }
 
+/* Side panel visible on touch, compact */
 .touch-device .side-panel {
-  display: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 200px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
-/* Keypad inline (not fixed) on touch */
+/* Keypad inline in side panel on touch */
 .touch-device .touch-keypad {
   position: static;
   flex-shrink: 0;
@@ -963,28 +970,83 @@ button.primary:hover {
 }
 
 .touch-device .keypad-row {
-  gap: 4px;
+  gap: 3px;
 }
 
 .touch-device .kp-key {
-  padding: 8px 0;
-  font-size: 0.95rem;
-  border-radius: 6px;
+  padding: 7px 0;
+  font-size: 0.85rem;
+  border-radius: 5px;
 }
 
 .touch-device .kp-display-row {
-  gap: 6px;
+  gap: 4px;
   padding: 0;
   margin-bottom: 2px;
 }
 
 .touch-device .kp-input-display {
-  padding: 4px 8px;
-  font-size: 0.9rem;
-  min-height: 28px;
+  padding: 4px 6px;
+  font-size: 0.85rem;
+  min-height: 26px;
+}
+
+.touch-device .kp-hint {
+  display: none;
 }
 
 .touch-device .kp-action {
-  padding: 4px 10px;
+  padding: 3px 8px;
+  font-size: 0.68rem;
+}
+
+/* Compact sliders on touch */
+.touch-device .sliders-row {
+  gap: 4px;
+}
+
+.touch-device .slider-card {
+  padding: 6px;
+  gap: 4px;
+}
+
+.touch-device .slider-header {
+  font-size: 0.65rem;
+}
+
+.touch-device .slider-wrap {
+  height: 70px;
+}
+
+.touch-device #speedSlider,
+.touch-device #rateSlider,
+.touch-device #paceSlider {
+  height: 70px;
+}
+
+.touch-device .slider-num {
+  font-size: 0.85rem;
+}
+
+.touch-device .diff-card {
+  padding: 6px 8px;
+  gap: 4px;
+}
+
+.touch-device .diff-card-label {
   font-size: 0.7rem;
+}
+
+.touch-device .diff-btn {
+  width: 24px;
+  height: 24px;
+  font-size: 0.85rem;
+}
+
+.touch-device .diff-value {
+  font-size: 0.9rem;
+}
+
+.touch-device .diff-range {
+  font-size: 0.65rem;
 }
