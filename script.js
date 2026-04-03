@@ -1248,12 +1248,18 @@ function isInputPossible(inputValue) {
   });
 }
 
+function updateScoreDisplay() {
+  updateScoreDisplay();
+  const ts = document.getElementById("touchScore");
+  if (ts) ts.textContent = score;
+}
+
 function handleCorrectAnswer(match) {
   clearAmbiguousTimer();
   if (factorTargetId === match.id) factorTargetId = null;
   recordProblemResult(match, true);
   score += 1;
-  scoreEl.textContent = score;
+  updateScoreDisplay();
   drops = drops.filter((d) => d.id !== match.id);
   createSplash(match);
   fireLaser(match);
@@ -2191,7 +2197,7 @@ function restartGame() {
   groundFlash = 0;
   currentInput = "";
   answerInput.value = "";
-  scoreEl.textContent = score;
+  updateScoreDisplay();
   if (isPaused) {
     togglePause();
   }
@@ -2419,6 +2425,16 @@ function setupTouchKeypad() {
 
   document.body.classList.add("touch-device");
 
+  // Add logo + score into the controls bar
+  const controlsBar = document.querySelector(".controls-bar");
+  const opChits = document.querySelector(".op-chits");
+  if (controlsBar && opChits) {
+    const touchBrand = document.createElement("div");
+    touchBrand.className = "touch-brand";
+    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score">Score: <span id="touchScore">0</span></div>`;
+    controlsBar.insertBefore(touchBrand, opChits);
+  }
+
   // Move keypad into play-col (below canvas)
   const playCol = document.querySelector(".play-col");
   if (playCol) playCol.appendChild(touchKeypad);
@@ -2571,7 +2587,7 @@ function init() {
   updateOpChits();
   updateDifficultyDisplays();
   updateSpeedDisplay();
-  scoreEl.textContent = score;
+  updateScoreDisplay();
   answerInput.tabIndex = -1;
 
   if (pauseOverlayEl) {

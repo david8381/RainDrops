@@ -493,7 +493,7 @@ button.primary:hover {
   display: grid;
   place-items: center;
   padding: 24px;
-  z-index: 100;
+  z-index: 300;
 }
 
 .card {
@@ -779,7 +779,6 @@ button.primary:hover {
 }
 
 .kp-enter {
-  flex: 2;
   background: var(--accent);
   color: #1a1a2e;
 }
@@ -789,17 +788,12 @@ button.primary:hover {
 }
 
 .kp-tab {
-  flex: 1.2;
   background: rgba(192, 160, 255, 0.15);
   color: #c0a0ff;
 }
 
 .kp-tab:active {
   background: rgba(192, 160, 255, 0.3);
-}
-
-.kp-dot {
-  flex: 0.8;
 }
 
 /* ── Utility ── */
@@ -888,37 +882,58 @@ button.primary:hover {
   .touch-device .app { height: 100dvh; }
 }
 
+/* Hide full header on touch — logo + score move into controls bar */
 .touch-device .top-bar {
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.touch-device .logo {
-  width: 28px;
-  height: 28px;
-  font-size: 0.7rem;
-  border-radius: 6px;
-}
-
-.touch-device .title {
-  font-size: 0.9rem;
-}
-
-.touch-device .subtitle,
-.touch-device .version {
   display: none;
 }
 
 .touch-device .controls-bar {
   padding: 4px 8px;
   flex-shrink: 0;
-  flex-wrap: wrap;
   gap: 4px;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+/* Show logo + score inline in controls bar on touch */
+.touch-device .controls-bar .touch-brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.touch-brand .logo {
+  width: 24px;
+  height: 24px;
+  font-size: 0.6rem;
+  border-radius: 5px;
+}
+
+.touch-brand .touch-score {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.touch-brand .touch-score span {
+  color: var(--text);
+}
+
+/* Op chits scroll horizontally */
+.touch-device .op-chits {
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  flex: 1;
+  min-width: 0;
+  -webkit-overflow-scrolling: touch;
 }
 
 .touch-device .op-chit {
   padding: 3px 8px;
   font-size: 0.78rem;
+  flex-shrink: 0;
 }
 
 /* Hide tooltips on touch */
