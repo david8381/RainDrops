@@ -24,23 +24,22 @@ Read these before making changes:
 ## Architecture
 
 Three files comprise the entire app:
-- **`index.html`** — markup: game canvas, setup overlay, HUD, side panel
+- **`index.html`** — markup: header, controls bar (op toggles, difficulty, speed), game canvas, input bar
 - **`styles.css`** — dark theme with CSS variables, responsive layout
-- **`script.js`** — all game logic (~845 lines): game loop, drop physics, input handling, ELO rating system, audio synthesis, boss battles
+- **`script.js`** — all game logic (~860 lines): game loop, drop physics, input handling, audio synthesis
 
 ### Key Data Structures (in `script.js`)
-- `drops[]` — active falling drops: `{ id, x, y, speed, text, answer, opKey, isBoss }`
-- `opElo` — per-operation ratings: `{ speed, correct, total }` driving spawn rate and fall speed
-- `opState` — per-operation progression: `{ level, progress, bossActive, bossCleared, bossQueued, bossTarget, bossSpawnLocked, preBossBreakMs, pendingProgress }`
-- `settings` — user-chosen operations and starting level
+- `drops[]` — active falling drops: `{ id, x, y, speed, text, answer, answerText, opKey }`
+- `opConfig` — per-operation config: `{ enabled, difficulty, symbol, label }`
+- `gameSpeed` — global speed (0-100) controlling fall speed and spawn rate
+- `score` — simple correct-answer counter
 
 ### Core Mechanics
 - Answers clear on keypress (no Enter key needed) — first matching drop is cleared
-- Each operation (add/subtract/multiply/divide) has independent ELO, level, range, and boss progression
-- Speed ELO (400–2000) controls spawn rate (1700ms→500ms) and fall speed (30→100 px/sec)
-- Number range grows with level and accuracy, capped at 12; division range means quotient range
-- Boss battles trigger at level-step gates (18 clears), require clearing 8 boss drops
-- Audio uses Web Audio API (synthesized pop, boss music, victory sounds)
+- Each operation has an independent difficulty (1-10) controlling number range
+- Speed slider (0-100) controls spawn rate and fall speed globally
+- Operations can be toggled on/off during gameplay via chit buttons
+- Audio uses Web Audio API (synthesized pop, miss, wrong-input sounds)
 
 ## Working Rules
 
@@ -48,6 +47,5 @@ Three files comprise the entire app:
 - Do not rename the `docs/Ai` folder
 - Add a changelog entry in `docs/Ai/CHANGELOG.md` for any player-facing or architectural change
 - Keep documentation in sync with behavioral changes
-- If adding new operations, update `operators`, `opLabels`, and the setup UI in tandem
-- Keep rating logic changes isolated to the rating helpers in `script.js`
+- If adding new operations, update `opConfig`, `operators` (or add a generator), and the toggle chits in `index.html`
 - Git: push to `main` branch, GitHub SSH user `david8381`, repo `RainDrops`

@@ -4,31 +4,32 @@
 This is a standalone, static web game. There is no build step and no external dependencies.
 
 ## Files
-- `index.html`: Markup and layout for the game, including the setup overlay and stats.
+- `index.html`: Markup and layout for the game — header, controls bar, canvas, and input bar.
 - `styles.css`: Visual design, layout, and responsive behavior.
-- `script.js`: Game loop, input handling, drop generation, and rating logic.
+- `script.js`: Game loop, input handling, drop generation, audio, and UI controls.
 
 ## Runtime Flow
-1. The user chooses settings in the overlay and starts the game.
+1. The game auto-starts on page load. No setup overlay.
 2. The animation loop runs via `requestAnimationFrame`.
-3. Drops are spawned on a timer, fall based on per-op drop rate, and are rendered on a canvas.
+3. Drops are spawned on a timer controlled by the global speed setting.
 4. Typing an answer clears a matching drop immediately (no Enter key).
-5. Correct/miss events update per-operation drop rate and accuracy.
-6. Drop rate drives spawn rate and fall speed; per-operation progression and accuracy drive number range.
-7. Boss battles are triggered per operation when that operation hits its progress gate, alternating between drop bosses and ship bosses.
-8. The overall rating is computed from average drop rate and accuracy and shown in the HUD.
-9. Optional timed sessions stop gameplay when the countdown reaches zero and trigger a results-email flow.
+5. The user adjusts operations, difficulty, and speed during gameplay via in-game controls.
 
 ## Data Model (in `script.js`)
-- `drops`: active drops with `{ id, x, y, speed, text, answer, opKey, isBoss }`.
-- `settings`: chosen ops and starting level.
-- `opElo`: per-op ratings: `{ speed, accuracy, events }` used to derive drop rate.
-- `opState`: per-op progression state: `{ level, progress, pendingProgress, bossActive, bossCleared, bossTarget, bossSpawnLocked, bossQueued, preBossBreakMs, bossTypeToggle, bossType }`.
-- `lives`: optional lives counter (null when disabled).
-- `shipState`: active ship boss with a pool of problems, shot timer, and missile firing.
-- `stunnedUntil`: timestamp for temporary input disable when the ship fires.
+- `drops[]`: active drops with `{ id, x, y, speed, text, answer, answerText, opKey }`.
+- `opConfig`: per-operation configuration: `{ enabled, difficulty, symbol, label }`.
+- `gameSpeed`: global speed 0-100 controlling fall speed and spawn interval.
+- `score`: simple counter of correct answers.
+- `splashes[]`: particle effects from cleared drops.
+
+## Controls
+- **Operation chits**: pill-shaped toggles at the top to enable/disable each operation type during play. At least one must remain enabled.
+- **Difficulty**: per-operation 1-10 setting with +/− buttons. Higher difficulty increases the number range for that operation.
+- **Speed slider**: 0 (frozen) to 100 (fast). Controls both drop fall speed and spawn interval.
+- **Pause**: Escape key or Pause button. Shows a blurred overlay.
+- **Restart**: resets score and drops, keeps current settings.
 
 ## Extensibility Notes
-- If adding new operations, update `opLabels` and the setup UI, then either add a normal entry in `operators` or a dedicated generator branch in `generateProblem`.
-- The factors-of-10 operation (`f10`) uses a dedicated generator that creates decimal shift problems (multiply/divide by 10, 100, 1000).
-- Keep changes in `script.js` isolated to the rating helpers for predictability.
+- If adding new operations, add an entry to `opConfig`, `operators` (or a dedicated generator), and a toggle chit in `index.html`.
+- The factors-of-10 operation (`f10`) uses a dedicated generator for decimal shift problems.
+- Difficulty mapping is in `getDifficultyRange()` — add a branch for new operation types.

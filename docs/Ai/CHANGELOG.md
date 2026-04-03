@@ -3,6 +3,18 @@
 ## Purpose
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
+## 2026-03-26
+- Major rewrite: stripped ELO rating system, boss battles (ship/flood), lives, session timer, starting level, game over screen, and setup overlay.
+- Game now auto-starts on page load with no configuration screen.
+- Added in-game operation toggle chits (+, −, ×, ÷, x10) — click to enable/disable during gameplay.
+- Added per-operation difficulty controls (1-10) adjustable during gameplay via +/− buttons.
+- Added global speed slider (0-100) controlling drop fall speed and spawn rate; speed 0 freezes the game.
+- Simplified scoring to a plain counter (correct answers only).
+- Removed side panel, ELO board, progress bars, and gun/laser visuals.
+- Modernized UI: refined dark theme, controls bar above canvas, cleaner layout, backdrop blur on pause overlay, focus ring on input, pill-shaped op toggles.
+- Reduced script.js from ~1915 lines to ~860 lines.
+- Updated all documentation to match new architecture.
+
 ## 2026-02-26
 - Added a new operation type: Factors of 10 (`f10`) for decimal shifting problems (multiply/divide by 10, 100, 1000).
 - Added the setup checkbox for Factors of 10.

@@ -1,24 +1,22 @@
 # Purpose
 
 ## Project Goal
-Build a fast, friendly math game where falling drops are cleared by typing answers. The game should feel responsive, reward improvement, and adapt difficulty in a fair way.
+Build a fast, friendly math game where falling drops are cleared by typing answers. The game should feel responsive and let the user control their own experience.
 
 ## Design Principles
 - No friction: answers clear immediately without pressing Enter.
-- Skill-based progression: performance drives speed and range, not arbitrary timers.
+- User-controlled pacing: speed, difficulty, and operation types are all adjustable during play.
 - Clarity over complexity: plain HTML/CSS/JS, minimal moving parts.
-- Playable on first load: no build tools or installs required.
+- Playable on first load: no build tools, no installs, no setup screen.
 
 ## Current Desires (User Intent)
 - Drops fall from the sky and clear when the correct answer is typed.
-- Startup choices include level and operations.
 - Operations include add/subtract/multiply/divide plus factors-of-10 decimal shifting.
-- Optional timed sessions can be started with a results email target.
-- Number range grows with progression (division range means quotient range).
-- Progressive difficulty with per-operation levels and ranges.
-- Per-operation ratings: drop rate and accuracy are tracked independently.
-- Overall rating is shown but not emphasized as "ELO".
-- Boss battles alternate between drop swarms and a ship with hull/wing/gun parts that use different difficulty ranges and can stun the player.
+- Each operation can be toggled on/off during gameplay.
+- Each operation has an independent difficulty level (1-10) controlling number range.
+- Speed is a single global slider from 0 (frozen) to 100 (fast).
+- Scoring is a simple correct-answer counter.
+- No boss battles, lives, timers, or ELO rating.
 
 ## Repo Access
 - GitHub SSH user: `david8381`
