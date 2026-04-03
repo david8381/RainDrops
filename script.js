@@ -2417,7 +2417,7 @@ const isTouchDevice = _touchChecks.ontouchstart
   || _touchChecks.pointerCoarse
   || _touchChecks.uaMatch
   || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-document.title = `touch=${isTouchDevice} ots=${_touchChecks.ontouchstart} mtp=${_touchChecks.maxTouchPoints} ptr=${_touchChecks.pointerCoarse} ua=${_touchChecks.uaMatch} plat=${_touchChecks.platform}`;
+// debug removed
 const touchKeypad = document.getElementById("touchKeypad");
 
 const kpDisplay = document.getElementById("kpDisplay");
@@ -2450,6 +2450,8 @@ function setupTouchKeypad() {
   // Move keypad into play-col (below canvas)
   const playCol = document.querySelector(".play-col");
   if (playCol) playCol.appendChild(touchKeypad);
+
+  document.title = `class=${document.body.classList.contains("touch-device")} kpVis=${!touchKeypad.classList.contains("hidden")} playCol=${!!playCol} kpParent=${touchKeypad.parentElement?.className}`;
 
   touchKeypad.classList.remove("hidden");
 
