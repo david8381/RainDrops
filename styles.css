@@ -873,7 +873,7 @@ button.primary:hover {
 
 .touch-device .app {
   height: 100vh;
-  padding: 4px 6px calc(env(safe-area-inset-bottom, 0px) + 4px);
+  padding: calc(env(safe-area-inset-top, 0px) + 4px) 6px calc(env(safe-area-inset-bottom, 0px) + 4px);
   gap: 3px;
   overflow: hidden;
 }
@@ -1081,9 +1081,9 @@ button.primary:hover {
   background: rgba(255, 255, 255, 0.18);
 }
 
-/* Diff scroll container — fixed height, scrollable */
+/* Diff scroll container — fixed height, always reserved */
 .kp-diff-scroll {
-  max-height: 30px;
+  height: 28px;
   overflow-x: auto;
   overflow-y: hidden;
   flex-shrink: 0;
