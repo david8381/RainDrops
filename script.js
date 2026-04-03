@@ -500,12 +500,12 @@ function formatFactorization(collected, remaining) {
   const primes = Object.keys(collected).map(Number).sort((a, b) => a - b);
   for (const p of primes) {
     const exp = collected[p];
-    parts.push(exp === 1 ? String(p) : `${p}${toSuperscript(exp)}`);
+    parts.push(exp === 1 ? String(p) : `${p}^${exp}`);
   }
   if (remaining > 1) {
     parts.push(String(remaining));
   }
-  return parts.join("·");
+  return parts.join("*");
 }
 
 function formatFactorDropText(drop) {
@@ -520,7 +520,7 @@ function formatFactorDropText(drop) {
     return `${orig}=${formatFactorization(collected, 1)}`;
   }
   // In progress — factors so far, remaining separate
-  return `${orig}=${formatFactorization(collected, 1)}·`;
+  return `${orig}=${formatFactorization(collected, 1)}*`;
 }
 
 function getFactorRemainingText(drop) {
@@ -1608,6 +1608,28 @@ function updateOpChits() {
     btn.classList.toggle("active", opConfig[opKey].enabled);
   });
   buildDiffCards();
+  updateInputHint();
+}
+
+function updateInputHint() {
+  const el = document.getElementById("inputHint");
+  if (!el) return;
+  const enabled = getEnabledOps();
+  if (enabled.length === 0) {
+    el.textContent = "Select a problem type to begin.";
+    return;
+  }
+  const hints = [];
+  const hasBasic = enabled.some((op) => ["add", "sub", "mul", "div", "f10"].includes(op));
+  const hasSI = enabled.includes("si");
+  const hasRect = enabled.includes("rect");
+  const hasCirc = enabled.includes("circ");
+  const hasFactor = enabled.includes("factor");
+  if (hasBasic || hasRect) hints.push("Type answer to clear");
+  if (hasCirc) hints.push("○: type π coefficient");
+  if (hasSI) hints.push("SI: type *1000 or /100 + Enter");
+  if (hasFactor) hints.push("p·q: type 2^2*3 + Enter, or Tab to factor");
+  el.textContent = hints.join(" · ");
 }
 
 function buildDiffCards() {
@@ -2366,7 +2388,101 @@ canvas.addEventListener("click", (event) => {
 window.addEventListener("resize", resizeCanvas);
 
 // ============================================================
-// 14. Initialization
+// 14. Touch Keypad
+// ============================================================
+
+const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+const touchKeypad = document.getElementById("touchKeypad");
+
+function setupTouchKeypad() {
+  if (!isTouchDevice || !touchKeypad) return;
+
+  // Show the keypad
+  touchKeypad.classList.remove("hidden");
+
+  // Suppress native keyboard on the answer input
+  answerInput.setAttribute("inputmode", "none");
+  answerInput.setAttribute("readonly", "readonly");
+  // Remove readonly briefly on focus to keep cursor visible, but prevent keyboard
+  answerInput.addEventListener("focus", () => {
+    answerInput.removeAttribute("readonly");
+    setTimeout(() => answerInput.setAttribute("readonly", "readonly"), 0);
+  });
+
+  // Wire up keypad buttons
+  touchKeypad.querySelectorAll(".kp-key").forEach((btn) => {
+    btn.tabIndex = -1;
+    btn.addEventListener("touchstart", (e) => {
+      e.preventDefault(); // prevent focus shift and double-tap zoom
+      initAudio();
+      const key = btn.dataset.key;
+      handleKeypadPress(key);
+    });
+    // Also support mouse click for testing on desktop
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      initAudio();
+      const key = btn.dataset.key;
+      handleKeypadPress(key);
+    });
+  });
+
+  // Add padding to the app so content isn't hidden behind the keypad
+  const updatePadding = () => {
+    const kpHeight = touchKeypad.offsetHeight;
+    document.querySelector(".app").style.paddingBottom = kpHeight + 16 + "px";
+  };
+  updatePadding();
+  window.addEventListener("resize", updatePadding);
+}
+
+function handleKeypadPress(key) {
+  if (key === "Backspace") {
+    clearAmbiguousTimer();
+    answerInput.value = "";
+    currentInput = "";
+    return;
+  }
+
+  if (key === "Enter") {
+    // Same logic as the physical Enter key
+    if (isPaused) return;
+    if (isInFactorTargetMode()) {
+      factorTargetId = null;
+    }
+    const value = answerInput.value.trim();
+    if (!value) return;
+    const match = findDropMatch(value, { enterPressed: true });
+    if (match) {
+      handleCorrectAnswer(match);
+    } else {
+      handleWrongInput();
+    }
+    return;
+  }
+
+  if (key === "Tab") {
+    if (isPaused) return;
+    const factorDrops = getVisibleFactorDrops();
+    if (factorDrops.length > 0) {
+      const next = getNextFactorDrop(factorTargetId);
+      if (next) {
+        enterFactorTargeting(next);
+      } else {
+        exitFactorTargeting();
+      }
+    }
+    return;
+  }
+
+  // Character key (digit, *, ^, /, -, .)
+  answerInput.value = currentInput + key;
+  currentInput = answerInput.value;
+  processInput(currentInput);
+}
+
+// ============================================================
+// 15. Initialization
 // ============================================================
 
 function init() {
@@ -2375,11 +2491,8 @@ function init() {
   updateDifficultyDisplays();
   updateSpeedDisplay();
   scoreEl.textContent = score;
-  // Keep answer input always focused for typing but out of the tab order
-  // so Tab cycles only: speed slider -> rate slider -> diff cards
   answerInput.tabIndex = -1;
 
-  // Hide pause overlay initially (game starts running)
   if (pauseOverlayEl) {
     pauseOverlayEl.classList.add("hidden");
   }
@@ -2387,6 +2500,7 @@ function init() {
     pauseBtn.textContent = "Pause";
   }
 
+  setupTouchKeypad();
   answerInput.focus();
   requestAnimationFrame(tick);
 }
