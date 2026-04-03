@@ -87,6 +87,12 @@ body {
   font-weight: 500;
 }
 
+.version {
+  font-size: 0.65rem;
+  color: rgba(122, 139, 168, 0.4);
+  font-weight: 400;
+}
+
 /* ── Controls bar (op chits only) ── */
 
 .controls-bar {
