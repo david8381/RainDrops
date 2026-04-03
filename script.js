@@ -1394,7 +1394,7 @@ function isInFactorTargetMode() {
 }
 
 function getTargetedFactorDrop() {
-  if (!factorTargetId) return null;
+  if (factorTargetId === null) return null;
   const drop = drops.find((d) => d.id === factorTargetId);
   // If the targeted drop is gone (cleared or fell), exit targeting
   if (!drop || drop.revealed) {
@@ -2168,7 +2168,7 @@ function restartGame() {
   answerInput.focus();
 }
 
-// Answer input handler
+// Answer input handler — single path for all input processing
 answerInput.addEventListener("input", (event) => {
   initAudio();
   const value = answerInput.value;
@@ -2179,13 +2179,10 @@ answerInput.addEventListener("input", (event) => {
   }
 
   currentInput = answerInput.value;
-  // In factor targeting mode, input is handled in keydown instead
-  if (!isInFactorTargetMode()) {
-    processInput(currentInput);
-  }
+  processInput(currentInput);
 });
 
-// Input keydown for Enter (SI), Backspace clearing, factor targeting digits, and space prevention
+// Input keydown for Enter, Backspace, and space prevention
 answerInput.addEventListener("keydown", (event) => {
   if (event.key === " ") {
     event.preventDefault();
@@ -2195,15 +2192,6 @@ answerInput.addEventListener("keydown", (event) => {
     clearAmbiguousTimer();
     answerInput.value = "";
     currentInput = "";
-  }
-  // In factor targeting mode, handle digit keys here (more reliable than input event)
-  if (isInFactorTargetMode() && /^[0-9]$/.test(event.key)) {
-    event.preventDefault();
-    initAudio();
-    currentInput = currentInput + event.key;
-    answerInput.value = currentInput;
-    processInput(currentInput);
-    return;
   }
   if (event.key === "Enter") {
     event.preventDefault();
@@ -2278,19 +2266,7 @@ document.addEventListener("keydown", (event) => {
     return;
   }
 
-  // In factor targeting mode, handle digits when input doesn't have focus
-  if (isInFactorTargetMode() && !isPaused && /^[0-9]$/.test(event.key)
-      && document.activeElement !== answerInput) {
-    event.preventDefault();
-    answerInput.focus();
-    initAudio();
-    currentInput = currentInput + event.key;
-    answerInput.value = currentInput;
-    processInput(currentInput);
-    return;
-  }
-
-  // Focus input on any printable character when not paused
+  // Focus input and insert character when not paused and input not focused
   if (
     !isPaused &&
     document.activeElement !== answerInput &&
@@ -2298,7 +2274,11 @@ document.addEventListener("keydown", (event) => {
     !event.ctrlKey &&
     !event.metaKey
   ) {
+    event.preventDefault();
     answerInput.focus();
+    answerInput.value = currentInput + event.key;
+    currentInput = answerInput.value;
+    processInput(currentInput);
   }
 });
 

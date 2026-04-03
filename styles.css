@@ -97,6 +97,9 @@ body {
   padding: 10px 16px;
   border-radius: var(--radius);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+  position: relative;
+  z-index: 10;
+  overflow: visible;
 }
 
 /* ── Operation chits ── */
@@ -127,6 +130,40 @@ body {
   color: #0a0e1a;
   border: 1px solid transparent;
   box-shadow: 0 1px 6px rgba(96, 180, 240, 0.3);
+}
+
+/* ── Custom tooltips ── */
+
+.has-tip {
+  position: relative;
+}
+
+.has-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e293b;
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.5;
+  padding: 8px 12px;
+  border-radius: 8px;
+  white-space: pre-line;
+  width: max-content;
+  max-width: 260px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  z-index: 50;
+}
+
+.has-tip:hover::after {
+  opacity: 1;
 }
 
 /* ── Two-column layout ── */
