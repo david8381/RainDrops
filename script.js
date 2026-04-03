@@ -2405,11 +2405,19 @@ window.addEventListener("resize", resizeCanvas);
 // 14. Touch Keypad
 // ============================================================
 
-const isTouchDevice = "ontouchstart" in window
-  || navigator.maxTouchPoints > 0
-  || window.matchMedia("(pointer: coarse)").matches
-  || /iPad|iPhone|iPod|Android/i.test(navigator.userAgent)
+const _touchChecks = {
+  ontouchstart: "ontouchstart" in window,
+  maxTouchPoints: navigator.maxTouchPoints,
+  pointerCoarse: window.matchMedia("(pointer: coarse)").matches,
+  uaMatch: /iPad|iPhone|iPod|Android/i.test(navigator.userAgent),
+  platform: navigator.platform,
+};
+const isTouchDevice = _touchChecks.ontouchstart
+  || _touchChecks.maxTouchPoints > 0
+  || _touchChecks.pointerCoarse
+  || _touchChecks.uaMatch
   || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+document.title = `touch=${isTouchDevice} ots=${_touchChecks.ontouchstart} mtp=${_touchChecks.maxTouchPoints} ptr=${_touchChecks.pointerCoarse} ua=${_touchChecks.uaMatch} plat=${_touchChecks.platform}`;
 const touchKeypad = document.getElementById("touchKeypad");
 
 const kpDisplay = document.getElementById("kpDisplay");
