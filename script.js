@@ -2405,19 +2405,10 @@ window.addEventListener("resize", resizeCanvas);
 // 14. Touch Keypad
 // ============================================================
 
-const _touchChecks = {
-  ontouchstart: "ontouchstart" in window,
-  maxTouchPoints: navigator.maxTouchPoints,
-  pointerCoarse: window.matchMedia("(pointer: coarse)").matches,
-  uaMatch: /iPad|iPhone|iPod|Android/i.test(navigator.userAgent),
-  platform: navigator.platform,
-};
-const isTouchDevice = _touchChecks.ontouchstart
-  || _touchChecks.maxTouchPoints > 0
-  || _touchChecks.pointerCoarse
-  || _touchChecks.uaMatch
+const isTouchDevice = "ontouchstart" in window
+  || navigator.maxTouchPoints > 0
+  || window.matchMedia("(pointer: coarse)").matches
   || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-// debug removed
 const touchKeypad = document.getElementById("touchKeypad");
 
 const kpDisplay = document.getElementById("kpDisplay");
@@ -2450,8 +2441,6 @@ function setupTouchKeypad() {
   // Move keypad into play-col (below canvas)
   const playCol = document.querySelector(".play-col");
   if (playCol) playCol.appendChild(touchKeypad);
-
-  document.title = `class=${document.body.classList.contains("touch-device")} kpVis=${!touchKeypad.classList.contains("hidden")} playCol=${!!playCol} kpParent=${touchKeypad.parentElement?.className}`;
 
   touchKeypad.classList.remove("hidden");
 
@@ -2611,11 +2600,7 @@ function init() {
     pauseBtn.textContent = "Pause";
   }
 
-  try {
-    setupTouchKeypad();
-  } catch (err) {
-    document.title = "ERR: " + err.message;
-  }
+  setupTouchKeypad();
   answerInput.focus();
   requestAnimationFrame(tick);
 }
