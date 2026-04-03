@@ -1249,7 +1249,7 @@ function isInputPossible(inputValue) {
 }
 
 function updateScoreDisplay() {
-  updateScoreDisplay();
+  scoreEl.textContent = score;
   const ts = document.getElementById("touchScore");
   if (ts) ts.textContent = score;
 }
