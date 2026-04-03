@@ -1612,6 +1612,7 @@ function updateOpChits() {
     btn.classList.toggle("active", opConfig[opKey].enabled);
   });
   buildDiffCards();
+  buildKpDiffStrip();
   updateInputHint();
 }
 
@@ -2147,6 +2148,7 @@ function updateDifficultyDisplays() {
   const focused = document.activeElement;
   const focusedOp = focused?.closest?.(".diff-card")?.dataset?.op || focused?.dataset?.op;
   buildDiffCards();
+  buildKpDiffStrip();
   if (focusedOp) {
     const restored = document.querySelector(`.diff-card[data-op="${focusedOp}"]`);
     if (restored) restored.focus();
@@ -2405,19 +2407,22 @@ const kpHint = document.getElementById("kpHint");
 const kpPauseBtn = document.getElementById("kpPauseBtn");
 const kpRestartBtn = document.getElementById("kpRestartBtn");
 
+function wireKpButton(el, handler) {
+  if (!el) return;
+  el.tabIndex = -1;
+  el.addEventListener("touchstart", (e) => { e.preventDefault(); initAudio(); handler(); });
+  el.addEventListener("click", (e) => { e.preventDefault(); initAudio(); handler(); });
+}
+
 function setupTouchKeypad() {
   if (!isTouchDevice || !touchKeypad) return;
 
-  // Apply touch layout class
   document.body.classList.add("touch-device");
 
-  // Move keypad into the side panel (above sliders/diff cards)
-  const sidePanel = document.getElementById("sidePanel");
-  if (sidePanel) {
-    sidePanel.insertBefore(touchKeypad, sidePanel.firstChild);
-  }
+  // Move keypad into play-col (below canvas)
+  const playCol = document.querySelector(".play-col");
+  if (playCol) playCol.appendChild(touchKeypad);
 
-  // Show the keypad
   touchKeypad.classList.remove("hidden");
 
   // Suppress native keyboard
@@ -2428,52 +2433,81 @@ function setupTouchKeypad() {
     setTimeout(() => answerInput.setAttribute("readonly", "readonly"), 0);
   });
 
-  // Wire up keypad buttons
+  // Wire keypad keys
   touchKeypad.querySelectorAll(".kp-key").forEach((btn) => {
-    btn.tabIndex = -1;
-    btn.addEventListener("touchstart", (e) => {
-      e.preventDefault();
-      initAudio();
-      handleKeypadPress(btn.dataset.key);
-    });
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      initAudio();
-      handleKeypadPress(btn.dataset.key);
-    });
+    wireKpButton(btn, () => handleKeypadPress(btn.dataset.key));
   });
 
-  // Wire up pause/restart in keypad
-  if (kpPauseBtn) {
-    kpPauseBtn.addEventListener("touchstart", (e) => {
-      e.preventDefault();
-      initAudio();
-      togglePause();
-      kpPauseBtn.textContent = isPaused ? "Resume" : "Pause";
-    });
-    kpPauseBtn.addEventListener("click", (e) => {
-      e.preventDefault();
-      initAudio();
-      togglePause();
-      kpPauseBtn.textContent = isPaused ? "Resume" : "Pause";
-    });
-  }
+  // Pause / Restart
+  wireKpButton(kpPauseBtn, () => {
+    togglePause();
+    if (kpPauseBtn) kpPauseBtn.textContent = isPaused ? "Resume" : "Pause";
+  });
+  wireKpButton(kpRestartBtn, () => {
+    restartGame();
+    if (kpPauseBtn) kpPauseBtn.textContent = "Pause";
+  });
 
-  if (kpRestartBtn) {
-    kpRestartBtn.addEventListener("touchstart", (e) => {
-      e.preventDefault();
-      initAudio();
-      restartGame();
-      if (kpPauseBtn) kpPauseBtn.textContent = "Pause";
-    });
-    kpRestartBtn.addEventListener("click", (e) => {
-      e.preventDefault();
-      initAudio();
-      restartGame();
-      if (kpPauseBtn) kpPauseBtn.textContent = "Pause";
-    });
-  }
+  // Wire inline sliders (sync with main sliders)
+  const kpSpeedEl = document.getElementById("kpSpeed");
+  const kpRateEl = document.getElementById("kpRate");
+  const kpPaceEl = document.getElementById("kpPace");
+  if (kpSpeedEl) kpSpeedEl.addEventListener("input", () => {
+    setSpeed(Number(kpSpeedEl.value));
+    document.getElementById("kpSpeedVal").textContent = gameSpeed + "%";
+  });
+  if (kpRateEl) kpRateEl.addEventListener("input", () => {
+    setRate(Number(kpRateEl.value));
+    document.getElementById("kpRateVal").textContent = spawnRate;
+  });
+  if (kpPaceEl) kpPaceEl.addEventListener("input", () => {
+    setPace(Number(kpPaceEl.value));
+    document.getElementById("kpPaceVal").textContent = getMaxFallTime() + "s";
+  });
+}
 
+// Build inline diff items in the keypad controls row
+function buildKpDiffStrip() {
+  const strip = document.getElementById("kpDiffStrip");
+  if (!strip) return;
+  strip.innerHTML = "";
+  const enabled = getEnabledOps();
+  enabled.forEach((opKey) => {
+    const config = opConfig[opKey];
+    const item = document.createElement("div");
+    item.className = "kp-diff-item";
+
+    const label = document.createElement("span");
+    label.className = "kp-diff-label";
+    label.textContent = opDisplayLabels[opKey] || opKey;
+
+    const downBtn = document.createElement("button");
+    downBtn.className = "kp-diff-btn";
+    downBtn.textContent = "\u2212";
+    wireKpButton(downBtn, () => setDifficulty(opKey, opConfig[opKey].difficulty - 1));
+
+    const val = document.createElement("span");
+    val.className = "kp-diff-val";
+    val.textContent = config.difficulty;
+
+    const upBtn = document.createElement("button");
+    upBtn.className = "kp-diff-btn";
+    upBtn.textContent = "+";
+    wireKpButton(upBtn, () => setDifficulty(opKey, opConfig[opKey].difficulty + 1));
+
+    item.appendChild(label);
+    item.appendChild(downBtn);
+    item.appendChild(val);
+    item.appendChild(upBtn);
+
+    // Click the item (not buttons) to show stats
+    item.addEventListener("click", (e) => {
+      if (e.target === downBtn || e.target === upBtn) return;
+      showStatsPopup(opKey);
+    });
+
+    strip.appendChild(item);
+  });
 }
 
 function updateKpDisplay() {

@@ -879,8 +879,8 @@ button.primary:hover {
 
 .touch-device .app {
   height: 100vh;
-  padding: 6px 8px calc(env(safe-area-inset-bottom, 0px) + 4px);
-  gap: 4px;
+  padding: 4px 6px calc(env(safe-area-inset-bottom, 0px) + 4px);
+  gap: 3px;
   overflow: hidden;
 }
 
@@ -910,9 +910,10 @@ button.primary:hover {
 }
 
 .touch-device .controls-bar {
-  padding: 5px 8px;
+  padding: 4px 8px;
   flex-shrink: 0;
   flex-wrap: wrap;
+  gap: 4px;
 }
 
 .touch-device .op-chit {
@@ -920,75 +921,63 @@ button.primary:hover {
   font-size: 0.78rem;
 }
 
-.touch-device .input-bar {
+/* Hide tooltips on touch */
+.touch-device .has-tip::after {
   display: none;
 }
 
-/* Two-column: canvas left, keypad+controls right */
+.touch-device .input-bar,
+.touch-device .side-panel {
+  display: none;
+}
+
+/* Canvas fills middle */
 .touch-device .main-grid {
-  display: grid;
-  grid-template-columns: 1fr auto;
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
-  gap: 6px;
+  gap: 0;
 }
 
 .touch-device .play-col {
   flex: 1;
   min-height: 0;
-  gap: 4px;
+  gap: 0;
 }
 
 .touch-device .game {
   flex: 1;
   min-height: 0;
-  padding: 4px;
+  padding: 3px;
+  border-radius: 10px;
 }
 
 .touch-device #canvas {
   height: 100%;
 }
 
-/* Side panel visible on touch, compact */
-.touch-device .side-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 200px;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
-/* Keypad inline in side panel on touch */
+/* Keypad at bottom, inline */
 .touch-device .touch-keypad {
   position: static;
   flex-shrink: 0;
   border-top: none;
   background: transparent;
   padding: 0;
-  gap: 3px;
+  gap: 2px;
 }
 
-.touch-device .keypad-row {
-  gap: 3px;
-}
-
-.touch-device .kp-key {
-  padding: 7px 0;
-  font-size: 0.85rem;
-  border-radius: 5px;
-}
-
-.touch-device .kp-display-row {
-  gap: 4px;
-  padding: 0;
-  margin-bottom: 2px;
+.touch-device .kp-top-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
 }
 
 .touch-device .kp-input-display {
-  padding: 4px 6px;
+  padding: 3px 8px;
   font-size: 0.85rem;
-  min-height: 26px;
+  min-height: 24px;
 }
 
 .touch-device .kp-hint {
@@ -1000,53 +989,125 @@ button.primary:hover {
   font-size: 0.68rem;
 }
 
-/* Compact sliders on touch */
-.touch-device .sliders-row {
+/* Controls row: horizontal sliders + inline diff cards */
+.kp-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.kp-slider {
+  display: flex;
+  align-items: center;
   gap: 4px;
+  font-size: 0.68rem;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.touch-device .slider-card {
-  padding: 6px;
-  gap: 4px;
+.kp-slider input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 50px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  outline: none;
 }
 
-.touch-device .slider-header {
-  font-size: 0.65rem;
+.kp-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
 }
 
-.touch-device .slider-wrap {
-  height: 70px;
+.kp-slider input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
 }
 
-.touch-device #speedSlider,
-.touch-device #rateSlider,
-.touch-device #paceSlider {
-  height: 70px;
+.kp-sval {
+  color: var(--accent);
+  font-weight: 700;
+  min-width: 22px;
+  font-size: 0.72rem;
 }
 
-.touch-device .slider-num {
-  font-size: 0.85rem;
+/* Inline diff strip */
+.kp-diff-strip {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
 }
 
-.touch-device .diff-card {
-  padding: 6px 8px;
-  gap: 4px;
+.kp-diff-item {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+  padding: 2px 6px;
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  cursor: pointer;
 }
 
-.touch-device .diff-card-label {
-  font-size: 0.7rem;
+.kp-diff-label {
+  color: var(--muted);
+  font-weight: 600;
 }
 
-.touch-device .diff-btn {
-  width: 24px;
-  height: 24px;
-  font-size: 0.85rem;
+.kp-diff-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  touch-action: manipulation;
 }
 
-.touch-device .diff-value {
+.kp-diff-val {
+  font-weight: 700;
+  font-size: 0.78rem;
+  min-width: 14px;
+  text-align: center;
+}
+
+/* Keypad keys */
+.touch-device .kp-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.touch-device .keypad-row {
+  gap: 3px;
+}
+
+.touch-device .kp-key {
+  padding: 8px 0;
   font-size: 0.9rem;
-}
-
-.touch-device .diff-range {
-  font-size: 0.65rem;
+  border-radius: 6px;
 }

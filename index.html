@@ -22,7 +22,7 @@
         <div class="stats">
           <div><span class="label">Score</span> <span id="score">0</span></div>
         </div>
-        <div class="version">v0.2.4</div>
+        <div class="version">v0.2.5</div>
       </header>
 
       <nav class="controls-bar">
@@ -90,37 +90,43 @@
     </main>
 
     <div id="touchKeypad" class="touch-keypad hidden">
-      <div class="kp-display-row">
+      <div class="kp-top-row">
         <div class="kp-input-display" id="kpDisplay">&nbsp;</div>
         <div class="kp-hint" id="kpHint"></div>
         <button class="kp-action" id="kpPauseBtn">Pause</button>
         <button class="kp-action" id="kpRestartBtn">Restart</button>
       </div>
-      <div class="keypad-row">
-        <button class="kp-key" data-key="1">1</button>
-        <button class="kp-key" data-key="2">2</button>
-        <button class="kp-key" data-key="3">3</button>
-        <button class="kp-key kp-op" data-key="*">*</button>
-        <button class="kp-key kp-op" data-key="^">^</button>
+      <div class="kp-controls-row" id="kpControlsRow">
+        <div class="kp-slider"><span>Spd</span><input type="range" id="kpSpeed" min="0" max="100" value="30" /><span id="kpSpeedVal" class="kp-sval">30%</span></div>
+        <div class="kp-slider"><span>Rate</span><input type="range" id="kpRate" min="0" max="10" value="3" /><span id="kpRateVal" class="kp-sval">3</span></div>
+        <div class="kp-slider"><span>Pace</span><input type="range" id="kpPace" min="1" max="10" value="5" /><span id="kpPaceVal" class="kp-sval">6s</span></div>
+        <div class="kp-diff-strip" id="kpDiffStrip"></div>
       </div>
-      <div class="keypad-row">
-        <button class="kp-key" data-key="4">4</button>
-        <button class="kp-key" data-key="5">5</button>
-        <button class="kp-key" data-key="6">6</button>
-        <button class="kp-key kp-op" data-key="/">/</button>
-        <button class="kp-key kp-op" data-key="-">&minus;</button>
-      </div>
-      <div class="keypad-row">
-        <button class="kp-key" data-key="7">7</button>
-        <button class="kp-key" data-key="8">8</button>
-        <button class="kp-key" data-key="9">9</button>
-        <button class="kp-key" data-key="0">0</button>
-        <button class="kp-key kp-del" data-key="Backspace">&#9003;</button>
-      </div>
-      <div class="keypad-row">
-        <button class="kp-key kp-enter" data-key="Enter">Enter</button>
-        <button class="kp-key kp-tab" data-key="Tab">Tab</button>
-        <button class="kp-key kp-dot" data-key=".">.</button>
+      <div class="kp-keys">
+        <div class="keypad-row">
+          <button class="kp-key" data-key="1">1</button>
+          <button class="kp-key" data-key="2">2</button>
+          <button class="kp-key" data-key="3">3</button>
+          <button class="kp-key" data-key="4">4</button>
+          <button class="kp-key" data-key="5">5</button>
+          <button class="kp-key kp-del" data-key="Backspace">&#9003;</button>
+        </div>
+        <div class="keypad-row">
+          <button class="kp-key" data-key="6">6</button>
+          <button class="kp-key" data-key="7">7</button>
+          <button class="kp-key" data-key="8">8</button>
+          <button class="kp-key" data-key="9">9</button>
+          <button class="kp-key" data-key="0">0</button>
+          <button class="kp-key kp-dot" data-key=".">.</button>
+        </div>
+        <div class="keypad-row">
+          <button class="kp-key kp-op" data-key="*">*</button>
+          <button class="kp-key kp-op" data-key="^">^</button>
+          <button class="kp-key kp-op" data-key="/">/</button>
+          <button class="kp-key kp-op" data-key="-">&minus;</button>
+          <button class="kp-key kp-tab" data-key="Tab">Tab</button>
+          <button class="kp-key kp-enter" data-key="Enter">&#9166;</button>
+        </div>
       </div>
     </div>
 
