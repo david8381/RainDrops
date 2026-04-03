@@ -2278,6 +2278,18 @@ document.addEventListener("keydown", (event) => {
     return;
   }
 
+  // In factor targeting mode, handle digits when input doesn't have focus
+  if (isInFactorTargetMode() && !isPaused && /^[0-9]$/.test(event.key)
+      && document.activeElement !== answerInput) {
+    event.preventDefault();
+    answerInput.focus();
+    initAudio();
+    currentInput = currentInput + event.key;
+    answerInput.value = currentInput;
+    processInput(currentInput);
+    return;
+  }
+
   // Focus input on any printable character when not paused
   if (
     !isPaused &&
