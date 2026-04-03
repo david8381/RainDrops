@@ -1260,6 +1260,7 @@ function handleCorrectAnswer(match) {
   playPop();
   answerInput.value = "";
   currentInput = "";
+  updateKpDisplay();
 }
 
 function handleWrongInput() {
@@ -1274,6 +1275,7 @@ function handleWrongInput() {
   playWrongInput();
   answerInput.value = "";
   currentInput = "";
+  updateKpDisplay();
 }
 
 function hasLongerMatch(value) {
@@ -1431,6 +1433,7 @@ function enterFactorTargeting(drop) {
   answerInput.value = "";
   currentInput = "";
   answerInput.focus();
+  updateKpDisplay();
 }
 
 function exitFactorTargeting() {
@@ -1438,6 +1441,7 @@ function exitFactorTargeting() {
   answerInput.value = "";
   currentInput = "";
   answerInput.focus();
+  updateKpDisplay();
 }
 
 // ============================================================
@@ -1629,7 +1633,9 @@ function updateInputHint() {
   if (hasCirc) hints.push("○: type π coefficient");
   if (hasSI) hints.push("SI: type *1000 or /100 + Enter");
   if (hasFactor) hints.push("p·q: type 2^2*3 + Enter, or Tab to factor");
-  el.textContent = hints.join(" · ");
+  const text = hints.join(" · ");
+  el.textContent = text;
+  if (kpHint) kpHint.textContent = text;
 }
 
 function buildDiffCards() {
@@ -2394,16 +2400,23 @@ window.addEventListener("resize", resizeCanvas);
 const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0;
 const touchKeypad = document.getElementById("touchKeypad");
 
+const kpDisplay = document.getElementById("kpDisplay");
+const kpHint = document.getElementById("kpHint");
+const kpPauseBtn = document.getElementById("kpPauseBtn");
+const kpRestartBtn = document.getElementById("kpRestartBtn");
+
 function setupTouchKeypad() {
   if (!isTouchDevice || !touchKeypad) return;
+
+  // Apply touch layout class
+  document.body.classList.add("touch-device");
 
   // Show the keypad
   touchKeypad.classList.remove("hidden");
 
-  // Suppress native keyboard on the answer input
+  // Suppress native keyboard
   answerInput.setAttribute("inputmode", "none");
   answerInput.setAttribute("readonly", "readonly");
-  // Remove readonly briefly on focus to keep cursor visible, but prevent keyboard
   answerInput.addEventListener("focus", () => {
     answerInput.removeAttribute("readonly");
     setTimeout(() => answerInput.setAttribute("readonly", "readonly"), 0);
@@ -2413,27 +2426,60 @@ function setupTouchKeypad() {
   touchKeypad.querySelectorAll(".kp-key").forEach((btn) => {
     btn.tabIndex = -1;
     btn.addEventListener("touchstart", (e) => {
-      e.preventDefault(); // prevent focus shift and double-tap zoom
+      e.preventDefault();
       initAudio();
-      const key = btn.dataset.key;
-      handleKeypadPress(key);
+      handleKeypadPress(btn.dataset.key);
     });
-    // Also support mouse click for testing on desktop
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       initAudio();
-      const key = btn.dataset.key;
-      handleKeypadPress(key);
+      handleKeypadPress(btn.dataset.key);
     });
   });
 
-  // Add padding to the app so content isn't hidden behind the keypad
-  const updatePadding = () => {
+  // Wire up pause/restart in keypad
+  if (kpPauseBtn) {
+    kpPauseBtn.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      initAudio();
+      togglePause();
+      kpPauseBtn.textContent = isPaused ? "Resume" : "Pause";
+    });
+    kpPauseBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      initAudio();
+      togglePause();
+      kpPauseBtn.textContent = isPaused ? "Resume" : "Pause";
+    });
+  }
+
+  if (kpRestartBtn) {
+    kpRestartBtn.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      initAudio();
+      restartGame();
+      if (kpPauseBtn) kpPauseBtn.textContent = "Pause";
+    });
+    kpRestartBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      initAudio();
+      restartGame();
+      if (kpPauseBtn) kpPauseBtn.textContent = "Pause";
+    });
+  }
+
+  // Size the app to fit above the keypad
+  const fitLayout = () => {
     const kpHeight = touchKeypad.offsetHeight;
-    document.querySelector(".app").style.paddingBottom = kpHeight + 16 + "px";
+    document.querySelector(".app").style.height = `calc(100dvh - ${kpHeight}px)`;
   };
-  updatePadding();
-  window.addEventListener("resize", updatePadding);
+  fitLayout();
+  window.addEventListener("resize", fitLayout);
+}
+
+function updateKpDisplay() {
+  if (!kpDisplay) return;
+  kpDisplay.textContent = currentInput || "\u00a0";
 }
 
 function handleKeypadPress(key) {
@@ -2441,16 +2487,16 @@ function handleKeypadPress(key) {
     clearAmbiguousTimer();
     answerInput.value = "";
     currentInput = "";
+    updateKpDisplay();
     return;
   }
 
   if (key === "Enter") {
-    // Same logic as the physical Enter key
     if (isPaused) return;
     if (isInFactorTargetMode()) {
       factorTargetId = null;
     }
-    const value = answerInput.value.trim();
+    const value = currentInput.trim();
     if (!value) return;
     const match = findDropMatch(value, { enterPressed: true });
     if (match) {
@@ -2458,6 +2504,7 @@ function handleKeypadPress(key) {
     } else {
       handleWrongInput();
     }
+    updateKpDisplay();
     return;
   }
 
@@ -2476,9 +2523,10 @@ function handleKeypadPress(key) {
   }
 
   // Character key (digit, *, ^, /, -, .)
-  answerInput.value = currentInput + key;
-  currentInput = answerInput.value;
+  currentInput = currentInput + key;
+  answerInput.value = currentInput;
   processInput(currentInput);
+  updateKpDisplay();
 }
 
 // ============================================================

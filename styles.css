@@ -685,13 +685,55 @@ button.primary:hover {
   right: 0;
   background: #0f1628;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 8px;
+  padding: 6px 8px calc(env(safe-area-inset-bottom, 0px) + 6px);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   z-index: 200;
   -webkit-user-select: none;
   user-select: none;
+}
+
+.kp-display-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+.kp-input-display {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  min-height: 32px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.kp-hint {
+  flex: 1;
+  font-size: 0.7rem;
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.kp-action {
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 .keypad-row {
@@ -701,12 +743,12 @@ button.primary:hover {
 
 .kp-key {
   flex: 1;
-  padding: 14px 0;
+  padding: 10px 0;
   border: none;
   border-radius: 8px;
   background: var(--surface-2);
   color: var(--text);
-  font-size: 1.1rem;
+  font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
   touch-action: manipulation;
@@ -827,4 +869,81 @@ button.primary:hover {
     width: 100%;
     justify-content: flex-end;
   }
+}
+
+/* ── Touch device layout (applied via JS .touch-device class) ── */
+
+.touch-device {
+  overflow: hidden;
+}
+
+.touch-device .app {
+  height: 100dvh;
+  padding: 8px 10px 0;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.touch-device .top-bar {
+  gap: 8px;
+}
+
+.touch-device .logo {
+  width: 32px;
+  height: 32px;
+  font-size: 0.75rem;
+  border-radius: 8px;
+}
+
+.touch-device .title {
+  font-size: 0.95rem;
+}
+
+.touch-device .subtitle {
+  display: none;
+}
+
+.touch-device .version {
+  display: none;
+}
+
+.touch-device .controls-bar {
+  padding: 6px 10px;
+}
+
+.touch-device .op-chit {
+  padding: 4px 10px;
+  font-size: 0.8rem;
+}
+
+.touch-device .input-bar {
+  display: none;
+}
+
+.touch-device .main-grid {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 6px;
+}
+
+.touch-device .play-col {
+  flex: 1;
+  min-height: 0;
+  gap: 6px;
+}
+
+.touch-device .game {
+  flex: 1;
+  min-height: 0;
+  padding: 6px;
+}
+
+.touch-device #canvas {
+  height: 100%;
+}
+
+.touch-device .side-panel {
+  display: none;
 }
