@@ -62,7 +62,7 @@ This file records meaningful project changes so future collaborators (including 
 - Increased raindrop text size/contrast for readability.
 
 ## 2026-02-03
-- Initial playable Math Rain game built (HTML/CSS/JS single-page app).
+- Initial playable Rain Math game built (HTML/CSS/JS single-page app).
 - Startup settings overlay: choose starting level, operations, and number range (1-12).
 - Gameplay: falling drops, type-to-clear without pressing Enter, progressive difficulty.
 - Division uses the selected range as the maximum quotient.

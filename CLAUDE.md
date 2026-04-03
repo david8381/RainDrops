@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Math Rain — a browser-based math game where falling raindrops are cleared by typing correct answers. Built with vanilla HTML/CSS/JS, no frameworks or build tools.
+Rain Math — a browser-based math game where falling raindrops are cleared by typing correct answers. Built with vanilla HTML/CSS/JS, no frameworks or build tools.
 
 ## Running
 
