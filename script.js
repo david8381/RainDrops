@@ -2467,21 +2467,38 @@ function setupTouchKeypad() {
     if (kpPauseBtn) kpPauseBtn.textContent = "Pause";
   });
 
-  // Wire inline sliders (sync with main sliders)
-  const kpSpeedEl = document.getElementById("kpSpeed");
-  const kpRateEl = document.getElementById("kpRate");
-  const kpPaceEl = document.getElementById("kpPace");
-  if (kpSpeedEl) kpSpeedEl.addEventListener("input", () => {
-    setSpeed(Number(kpSpeedEl.value));
-    document.getElementById("kpSpeedVal").textContent = gameSpeed + "%";
+  // Wire inline slider +/- buttons
+  function syncKpSliderDisplays() {
+    const sv = document.getElementById("kpSpeedVal");
+    const rv = document.getElementById("kpRateVal");
+    const pv = document.getElementById("kpPaceVal");
+    if (sv) sv.textContent = gameSpeed + "%";
+    if (rv) rv.textContent = spawnRate;
+    if (pv) pv.textContent = getMaxFallTime() + "s";
+  }
+  wireKpButton(document.getElementById("kpSpeedDn"), () => {
+    setSpeed(gameSpeed - 10);
+    syncKpSliderDisplays();
   });
-  if (kpRateEl) kpRateEl.addEventListener("input", () => {
-    setRate(Number(kpRateEl.value));
-    document.getElementById("kpRateVal").textContent = spawnRate;
+  wireKpButton(document.getElementById("kpSpeedUp"), () => {
+    setSpeed(gameSpeed + 10);
+    syncKpSliderDisplays();
   });
-  if (kpPaceEl) kpPaceEl.addEventListener("input", () => {
-    setPace(Number(kpPaceEl.value));
-    document.getElementById("kpPaceVal").textContent = getMaxFallTime() + "s";
+  wireKpButton(document.getElementById("kpRateDn"), () => {
+    setRate(spawnRate - 1);
+    syncKpSliderDisplays();
+  });
+  wireKpButton(document.getElementById("kpRateUp"), () => {
+    setRate(spawnRate + 1);
+    syncKpSliderDisplays();
+  });
+  wireKpButton(document.getElementById("kpPaceDn"), () => {
+    setPace(pace - 1);
+    syncKpSliderDisplays();
+  });
+  wireKpButton(document.getElementById("kpPaceUp"), () => {
+    setPace(pace + 1);
+    syncKpSliderDisplays();
   });
 }
 
