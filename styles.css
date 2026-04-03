@@ -1081,14 +1081,20 @@ button.primary:hover {
   background: rgba(255, 255, 255, 0.18);
 }
 
-/* Inline diff strip */
+/* Diff scroll container — fixed height, scrollable */
+.kp-diff-scroll {
+  max-height: 30px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-shrink: 0;
+  -webkit-overflow-scrolling: touch;
+}
+
 .kp-diff-strip {
   display: flex;
   gap: 6px;
   align-items: center;
-  overflow-x: auto;
-  flex: 1;
-  min-width: 0;
+  width: max-content;
 }
 
 .kp-diff-item {
