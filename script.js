@@ -2252,6 +2252,15 @@ answerInput.addEventListener("keydown", (event) => {
 
 // Keyboard shortcuts
 document.addEventListener("keydown", (event) => {
+  // Skip all game input when feedback form or stats popup is open
+  if (feedbackOverlay && !feedbackOverlay.classList.contains("hidden")) {
+    if (event.key === "Escape") {
+      feedbackOverlay.classList.add("hidden");
+      event.preventDefault();
+    }
+    return;
+  }
+
   initAudio();
 
   // Tab / Shift+Tab: cycle through factor drops in targeting mode

@@ -94,12 +94,13 @@ body {
 }
 
 .version a {
-  color: rgba(122, 139, 168, 0.5);
+  color: var(--accent-2);
   text-decoration: none;
+  opacity: 0.7;
 }
 
 .version a:hover {
-  color: var(--accent-2);
+  opacity: 1;
 }
 
 /* ── Feedback form ── */
@@ -133,6 +134,7 @@ body {
 
 .fb-row .fb-field {
   flex: 1;
+  min-width: 0;
 }
 
 .fb-field {
@@ -150,6 +152,7 @@ body {
 .fb-field input,
 .fb-field select,
 .fb-field textarea {
+  width: 100%;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -192,6 +195,16 @@ body {
 .fb-cancel:hover {
   color: var(--text);
   border-color: rgba(255, 255, 255, 0.2);
+}
+
+@media (max-width: 480px) {
+  .fb-row {
+    flex-direction: column;
+  }
+  .feedback-card {
+    max-height: 85vh;
+    overflow-y: auto;
+  }
 }
 
 /* ── Controls bar (op chits only) ── */
@@ -1023,14 +1036,14 @@ button.primary:hover {
 }
 
 .touch-fb {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--muted);
-  font-size: 0.65rem;
+  background: rgba(96, 180, 240, 0.2);
+  color: var(--accent-2);
+  font-size: 0.7rem;
   font-weight: 700;
   text-decoration: none;
   flex-shrink: 0;
