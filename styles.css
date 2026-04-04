@@ -93,6 +93,107 @@ body {
   font-weight: 400;
 }
 
+.version a {
+  color: rgba(122, 139, 168, 0.5);
+  text-decoration: none;
+}
+
+.version a:hover {
+  color: var(--accent-2);
+}
+
+/* ── Feedback form ── */
+
+.feedback-card {
+  max-width: 440px;
+  text-align: left;
+}
+
+.feedback-card h2 {
+  margin: 0 0 4px 0;
+  font-size: 1.3rem;
+}
+
+.feedback-sub {
+  margin: 0 0 16px 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.feedback-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fb-row {
+  display: flex;
+  gap: 10px;
+}
+
+.fb-row .fb-field {
+  flex: 1;
+}
+
+.fb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fb-field label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.fb-field input,
+.fb-field select,
+.fb-field textarea {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.88rem;
+  font-family: inherit;
+  outline: none;
+}
+
+.fb-field input:focus,
+.fb-field select:focus,
+.fb-field textarea:focus {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 2px rgba(96, 180, 240, 0.15);
+}
+
+.fb-field textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.fb-field select {
+  cursor: pointer;
+}
+
+.fb-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.fb-cancel {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.fb-cancel:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
 /* ── Controls bar (op chits only) ── */
 
 .controls-bar {
@@ -919,6 +1020,20 @@ button.primary:hover {
 
 .touch-brand .touch-score span {
   color: var(--text);
+}
+
+.touch-fb {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-decoration: none;
+  flex-shrink: 0;
 }
 
 /* Op chits scroll horizontally */

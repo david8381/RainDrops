@@ -2398,6 +2398,28 @@ canvas.addEventListener("click", (event) => {
   }
 });
 
+// Feedback popup
+const feedbackOverlay = document.getElementById("feedbackOverlay");
+const feedbackLink = document.getElementById("feedbackLink");
+const fbCancel = document.getElementById("fbCancel");
+
+if (feedbackLink) {
+  feedbackLink.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (feedbackOverlay) feedbackOverlay.classList.remove("hidden");
+  });
+}
+if (fbCancel) {
+  fbCancel.addEventListener("click", () => {
+    if (feedbackOverlay) feedbackOverlay.classList.add("hidden");
+  });
+}
+if (feedbackOverlay) {
+  feedbackOverlay.addEventListener("click", (e) => {
+    if (e.target === feedbackOverlay) feedbackOverlay.classList.add("hidden");
+  });
+}
+
 // Canvas resize
 window.addEventListener("resize", resizeCanvas);
 
@@ -2434,8 +2456,15 @@ function setupTouchKeypad() {
   if (controlsBar && opChits) {
     const touchBrand = document.createElement("div");
     touchBrand.className = "touch-brand";
-    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score">Score: <span id="touchScore">0</span></div>`;
+    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score">Score: <span id="touchScore">0</span></div><a href="#" class="touch-fb" id="touchFbLink">?</a>`;
     controlsBar.insertBefore(touchBrand, opChits);
+    const touchFbLink = document.getElementById("touchFbLink");
+    if (touchFbLink) {
+      touchFbLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (feedbackOverlay) feedbackOverlay.classList.remove("hidden");
+      });
+    }
   }
 
   // Move keypad into play-col (below canvas)

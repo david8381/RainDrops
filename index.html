@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=034" />
+    <link rel="stylesheet" href="styles.css?v=035" />
   </head>
   <body>
     <main class="app">
@@ -22,7 +22,7 @@
         <div class="stats">
           <div><span class="label">Score</span> <span id="score">0</span></div>
         </div>
-        <div class="version">v0.3.4</div>
+        <div class="version">v0.3.5 · <a href="#" id="feedbackLink">Feedback</a></div>
       </header>
 
       <nav class="controls-bar">
@@ -132,6 +132,51 @@
       </div>
     </div>
 
+    <div id="feedbackOverlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Send feedback">
+      <div class="card feedback-card">
+        <h2>Send Feedback</h2>
+        <p class="feedback-sub">Bug report, feature idea, or just say hi.</p>
+        <form
+          class="feedback-form"
+          action="https://formsubmit.co/contact@rainmath.com"
+          method="POST"
+        >
+          <input type="hidden" name="_subject" value="Rain Math Feedback" />
+          <input type="hidden" name="_captcha" value="true" />
+          <input type="hidden" name="_next" value="https://david8381.github.io/RainDrops/?feedback=sent" />
+          <input type="text" name="_honey" style="display:none" />
+          <div class="fb-row">
+            <div class="fb-field">
+              <label for="fbName">Name</label>
+              <input id="fbName" type="text" name="name" placeholder="Optional" />
+            </div>
+            <div class="fb-field">
+              <label for="fbEmail">Email</label>
+              <input id="fbEmail" type="email" name="email" placeholder="Optional" />
+            </div>
+          </div>
+          <div class="fb-field">
+            <label for="fbCategory">Category</label>
+            <select id="fbCategory" name="category">
+              <option value="bug">Bug Report</option>
+              <option value="feature">Feature Request</option>
+              <option value="problem-type">New Problem Type Idea</option>
+              <option value="ui">UI / Layout</option>
+              <option value="other" selected>General</option>
+            </select>
+          </div>
+          <div class="fb-field">
+            <label for="fbMessage">Message</label>
+            <textarea id="fbMessage" name="message" rows="4" required placeholder="What's on your mind?"></textarea>
+          </div>
+          <div class="fb-actions">
+            <button type="button" class="fb-cancel" id="fbCancel">Cancel</button>
+            <button type="submit" class="primary">Send Feedback</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <div id="pauseOverlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Game paused">
       <div class="card pause-card">
         <h1>Paused</h1>
@@ -140,7 +185,7 @@
       </div>
     </div>
 
-    <script src="script.js?v=033"></script>
+    <script src="script.js?v=035"></script>
     <script data-goatcounter="https://mathrain.goatcounter.com/count"
             async src="//gc.zgo.at/count.js"></script>
   </body>
