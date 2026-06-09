@@ -1,3 +1,22 @@
+const {
+  advanceFactorDrop: advanceFactorDropCore,
+  clamp,
+  createDefaultOpConfig,
+  createProblemStats,
+  generateWeightedProblem: generateCoreWeightedProblem,
+  getDifficultyRange,
+  getFactorRemainingText,
+  getFullFactorization,
+  getSIPrefixesForDifficulty,
+  matchesFactorDrop,
+  normalizeTypedValue,
+  operators,
+  randInt,
+  recordProblemResult: recordProblemResultCore,
+  resetProblemStats,
+  lerp,
+} = globalThis.RainMathCore;
+
 // ============================================================
 // 1. Constants and State
 // ============================================================
@@ -16,24 +35,7 @@ const paceSlider = document.getElementById("paceSlider");
 const paceValueEl = document.getElementById("paceValue");
 const pauseOverlayEl = document.getElementById("pauseOverlay");
 
-const operators = {
-  add: { symbol: "+", fn: (a, b) => a + b },
-  sub: { symbol: "-", fn: (a, b) => a - b },
-  mul: { symbol: "×", fn: (a, b) => a * b },
-  div: { symbol: "÷", fn: (a, b) => a / b },
-};
-
-const opConfig = {
-  add: { enabled: false, difficulty: 3, symbol: "+", label: "+" },
-  sub: { enabled: false, difficulty: 3, symbol: "-", label: "-" },
-  mul: { enabled: false, difficulty: 3, symbol: "×", label: "×" },
-  div: { enabled: false, difficulty: 3, symbol: "÷", label: "÷" },
-  f10: { enabled: false, difficulty: 3, symbol: "×10", label: "x10" },
-  si:  { enabled: false, difficulty: 3, symbol: "SI", label: "SI" },
-  rect: { enabled: false, difficulty: 3, symbol: "▭", label: "▭" },
-  circ: { enabled: false, difficulty: 3, symbol: "○", label: "○" },
-  factor: { enabled: false, difficulty: 3, symbol: "n!", label: "n!" },
-};
+const opConfig = createDefaultOpConfig();
 
 let drops = [];
 let splashes = [];
@@ -58,25 +60,10 @@ let factorTargetId = null; // id of the targeted factor drop, or null
 // For add/sub/mul/div: keyed by "a,b" (for div: "quotient,divisor").
 // For f10: keyed by problem text.
 // Each entry: { asked: number, correct: number }
-const problemStats = {
-  add: {},
-  sub: {},
-  mul: {},
-  div: {},
-  f10: {},
-  si: {},
-  rect: {},
-  circ: {},
-  factor: {},
-};
+const problemStats = createProblemStats();
 
 function recordProblemResult(drop, correct) {
-  const stats = problemStats[drop.opKey];
-  if (!stats) return;
-  const key = drop.statsKey || drop.text;
-  if (!stats[key]) stats[key] = { asked: 0, correct: 0 };
-  stats[key].asked += 1;
-  if (correct) stats[key].correct += 1;
+  recordProblemResultCore(problemStats, drop, correct);
 }
 let spawnRate = 3;
 let pace = 5;
@@ -84,67 +71,6 @@ let pace = 5;
 // ============================================================
 // 2. Utility Functions
 // ============================================================
-
-function randInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function clamp(min, max, value) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
-
-function normalizeTypedValue(inputValue, { allowIncomplete = true } = {}) {
-  let value = String(inputValue || "").trim();
-  if (!value) return "";
-  if (value.startsWith(".")) value = `0${value}`;
-  if (value.startsWith("-.")) value = value.replace("-.", "-0.");
-  if (!/^-?\d*\.?\d*$/.test(value)) return value;
-  const negative = value.startsWith("-");
-  const body = negative ? value.slice(1) : value;
-  const parts = body.split(".");
-  let intPart = parts[0] || "0";
-  intPart = intPart.replace(/^0+(?=\d)/, "");
-  let out = `${negative ? "-" : ""}${intPart}`;
-  if (parts.length > 1) {
-    out += `.${parts[1]}`;
-  }
-  if (!allowIncomplete && out.endsWith(".")) {
-    out = out.slice(0, -1);
-  }
-  if (!allowIncomplete && out.includes(".")) {
-    out = out.replace(/0+$/, "").replace(/\.$/, "");
-  }
-  if (out === "-0") return "0";
-  return out;
-}
-
-function pow10(exp) {
-  let out = 1;
-  for (let i = 0; i < exp; i += 1) out *= 10;
-  return out;
-}
-
-function formatFixedScale(value, scaleDigits) {
-  if (scaleDigits <= 0) return String(value);
-  const base = pow10(scaleDigits);
-  const absValue = Math.abs(value);
-  const intPart = Math.floor(absValue / base);
-  const fracPart = absValue % base;
-  const sign = value < 0 ? "-" : "";
-  return `${sign}${intPart}.${String(fracPart).padStart(scaleDigits, "0")}`;
-}
-
-function shiftDecimal(value, fromScale, shiftPower) {
-  const toScale = fromScale - shiftPower;
-  if (toScale >= 0) {
-    return formatFixedScale(value, toScale);
-  }
-  return String(value * pow10(-toScale));
-}
 
 // ============================================================
 // 3. Speed Control
@@ -207,55 +133,6 @@ function getMaxDrops() {
 // 4. Difficulty Mapping
 // ============================================================
 
-function getDifficultyRange(opKey, difficulty) {
-  const d = clamp(1, 10, difficulty);
-  const t = (d - 1) / 9; // 0..1
-
-  if (opKey === "add" || opKey === "sub") {
-    // difficulty 1 = 1-3, difficulty 5 = 1-10, difficulty 10 = 1-20
-    const maxVal = Math.round(lerp(3, 20, t));
-    return { min: 1, max: maxVal };
-  }
-
-  if (opKey === "mul" || opKey === "div") {
-    // difficulty 1 = 1-3, difficulty 5 = 1-8, difficulty 10 = 1-12
-    const maxVal = Math.round(lerp(3, 12, t));
-    return { min: 1, max: maxVal };
-  }
-
-  if (opKey === "f10") {
-    // Return maxValue for f10 generation
-    const maxVal = Math.round(lerp(3, 20, t));
-    return { min: 1, max: maxVal };
-  }
-
-  if (opKey === "si") {
-    // Range represents number of prefix pairs available
-    const prefixes = getSIPrefixesForDifficulty(d);
-    return { min: 1, max: prefixes.length };
-  }
-
-  if (opKey === "rect") {
-    // Same range as add/sub — side lengths
-    const maxVal = Math.round(lerp(3, 20, t));
-    return { min: 1, max: maxVal };
-  }
-
-  if (opKey === "circ") {
-    // Radius / diameter values
-    const maxVal = Math.round(lerp(3, 12, t));
-    return { min: 1, max: maxVal };
-  }
-
-  if (opKey === "factor") {
-    // Composite number range: diff 1 = 4-16, diff 10 = 4-200
-    const maxVal = Math.round(lerp(16, 200, t));
-    return { min: 4, max: maxVal };
-  }
-
-  return { min: 1, max: 10 };
-}
-
 // ============================================================
 // 5. Operation Toggle Functions
 // ============================================================
@@ -281,524 +158,8 @@ function setDifficulty(opKey, level) {
 // 6. Problem Generation
 // ============================================================
 
-function generateFactorsOfTenProblem(maxValue) {
-  const difficulty = opConfig.f10.difficulty;
-  const t = (difficulty - 1) / 9;
-
-  // Higher difficulty: more factor powers available
-  const factorPowers = difficulty <= 3 ? [1] : difficulty <= 6 ? [1, 2] : [1, 2, 3];
-  const direction = Math.random() < 0.5 ? "mul" : "div";
-  const power = factorPowers[randInt(0, factorPowers.length - 1)];
-  const factor = pow10(power);
-
-  // Higher difficulty: more decimal places possible
-  const decimalPlaces = difficulty <= 4 ? 1 : Math.random() < 0.7 ? 1 : 2;
-  const maxMantissa = Math.max(10, maxValue * pow10(decimalPlaces + 2));
-  const mantissa = randInt(10, maxMantissa);
-  const left = formatFixedScale(mantissa, decimalPlaces);
-  const answerText =
-    direction === "mul"
-      ? shiftDecimal(mantissa, decimalPlaces, power)
-      : shiftDecimal(mantissa, decimalPlaces, -power);
-
-  return {
-    text: `${left} ${direction === "mul" ? "×" : "÷"} ${factor}`,
-    answer: Number(answerText),
-    answerText,
-    opKey: "f10",
-  };
-}
-
-// ── SI Metric Conversion ──
-
-// Each prefix: [symbol, exponent relative to base unit]
-// Ordered for difficulty gating.
-const siPrefixes = [
-  { sym: "k", exp: 3, name: "kilo" },   // diff 1+
-  { sym: "",  exp: 0, name: "base" },    // diff 1+
-  { sym: "c", exp: -2, name: "centi" },  // diff 2+
-  { sym: "m", exp: -3, name: "milli" },  // diff 3+
-  { sym: "h", exp: 2, name: "hecto" },   // diff 5+
-  { sym: "da", exp: 1, name: "deca" },   // diff 6+
-  { sym: "d", exp: -1, name: "deci" },   // diff 6+
-  { sym: "M", exp: 6, name: "mega" },    // diff 7+ (was 6, adjusted)
-  { sym: "μ", exp: -6, name: "micro" },  // diff 7+
-  { sym: "G", exp: 9, name: "giga" },    // diff 8+
-  { sym: "n", exp: -9, name: "nano" },   // diff 8+
-  { sym: "T", exp: 12, name: "tera" },   // diff 9+
-  { sym: "p", exp: -12, name: "pico" },  // diff 9+
-];
-
-// Which prefixes unlock at each difficulty level
-function getSIPrefixesForDifficulty(difficulty) {
-  const d = clamp(1, 10, difficulty);
-  const thresholds = [
-    1,  // k
-    1,  // base
-    2,  // c
-    3,  // m
-    5,  // h
-    6,  // da
-    6,  // d
-    7,  // M
-    7,  // μ
-    8,  // G
-    8,  // n
-    9,  // T
-    9,  // p
-  ];
-  return siPrefixes.filter((_, i) => d >= thresholds[i]);
-}
-
-const siBaseUnits = ["m", "g", "L"];
-
-// Convert exponent difference to answer text like "*1000" or "/100"
-function expDiffToConversion(expDiff) {
-  if (expDiff === 0) return "*1";
-  const factor = Math.pow(10, Math.abs(expDiff));
-  return expDiff > 0 ? `*${factor}` : `/${factor}`;
-}
-
-function generateSIProblem(difficulty) {
-  const prefixes = getSIPrefixesForDifficulty(difficulty);
-  if (prefixes.length < 2) return null;
-
-  // Pick two different prefixes
-  let fromIdx = randInt(0, prefixes.length - 1);
-  let toIdx = fromIdx;
-  while (toIdx === fromIdx) {
-    toIdx = randInt(0, prefixes.length - 1);
-  }
-  const from = prefixes[fromIdx];
-  const to = prefixes[toIdx];
-
-  // Pick a base unit for display
-  const baseUnit = siBaseUnits[randInt(0, siBaseUnits.length - 1)];
-
-  // Answer is the decimal shift: from.exp - to.exp
-  const expDiff = from.exp - to.exp;
-
-  const fromUnit = from.sym + baseUnit;
-  const toUnit = to.sym + baseUnit;
-
-  const answerText = expDiffToConversion(expDiff);
-  return {
-    text: `${fromUnit} → ${toUnit}`,
-    answer: answerText,
-    answerText,
-    opKey: "si",
-    statsKey: `${from.sym || "base"},${to.sym || "base"}`,
-  };
-}
-
-function shiftDecimalSimple(value, shift) {
-  // Multiply value by 10^shift, return as string
-  if (shift === 0) return String(value);
-  if (shift > 0) {
-    return String(value) + "0".repeat(shift);
-  }
-  // Negative shift: divide
-  const str = String(value);
-  const decPos = str.length + shift; // where decimal goes
-  if (decPos <= 0) {
-    return "0." + "0".repeat(-decPos) + str;
-  }
-  return str.slice(0, decPos) + "." + str.slice(decPos);
-}
-
-// ── Rectangle Perimeter & Area ──
-
-function generateRectProblem(opKey) {
-  const range = getDifficultyRange("rect", opConfig.rect.difficulty);
-  const l = randInt(range.min, range.max);
-  const w = randInt(range.min, range.max);
-  const isPerimeter = Math.random() < 0.5;
-  const answer = isPerimeter ? 2 * (l + w) : l * w;
-  const prefix = isPerimeter ? "P" : "A";
-  return {
-    text: `${prefix}▭ ${l}×${w}`,
-    answer,
-    answerText: String(answer),
-    opKey: "rect",
-    statsKey: `${prefix},${l},${w}`,
-  };
-}
-
-// ── Circle Circumference & Area (answers in terms of π) ──
-
-function generateCircleProblem(opKey) {
-  const range = getDifficultyRange("circ", opConfig.circ.difficulty);
-  const subtypes = ["Cr", "Cd", "Ar", "Ad"];
-  const subtype = subtypes[randInt(0, subtypes.length - 1)];
-  const val = randInt(range.min, range.max);
-  return generateCircleOfType(subtype, val);
-}
-
-function generateCircleOfType(subtype, val) {
-  let answer, text, statsKey;
-
-  if (subtype === "Cr") {
-    answer = 2 * val;
-    text = `C○ r=${val} =?π`;
-    statsKey = `Cr,${val}`;
-  } else if (subtype === "Cd") {
-    answer = val;
-    text = `C○ d=${val} =?π`;
-    statsKey = `Cd,${val}`;
-  } else if (subtype === "Ar") {
-    answer = val * val;
-    text = `A○ r=${val} =?π`;
-    statsKey = `Ar,${val}`;
-  } else {
-    const r = val / 2;
-    answer = r * r;
-    text = `A○ d=${val} =?π`;
-    statsKey = `Ad,${val}`;
-  }
-
-  const answerText = answer % 1 === 0 ? String(answer) : String(answer);
-  return { text, answer, answerText, opKey: "circ", statsKey };
-}
-
-// ── Prime Factorization ──
-
-function isPrime(n) {
-  if (n < 2) return false;
-  if (n < 4) return true;
-  if (n % 2 === 0 || n % 3 === 0) return false;
-  for (let i = 5; i * i <= n; i += 6) {
-    if (n % i === 0 || n % (i + 2) === 0) return false;
-  }
-  return true;
-}
-
-function isComposite(n) {
-  return n >= 4 && !isPrime(n);
-}
-
-function getSmallestPrimeFactor(n) {
-  if (n < 2) return null;
-  if (n % 2 === 0) return 2;
-  for (let i = 3; i * i <= n; i += 2) {
-    if (n % i === 0) return i;
-  }
-  return n; // n is prime
-}
-
-const SUPERSCRIPTS = {
-  "0": "\u2070", "1": "\u00b9", "2": "\u00b2", "3": "\u00b3",
-  "4": "\u2074", "5": "\u2075", "6": "\u2076", "7": "\u2077",
-  "8": "\u2078", "9": "\u2079",
-};
-
-function toSuperscript(n) {
-  return String(n).split("").map((c) => SUPERSCRIPTS[c] || c).join("");
-}
-
-function formatFactorization(collected, remaining) {
-  const parts = [];
-  const primes = Object.keys(collected).map(Number).sort((a, b) => a - b);
-  for (const p of primes) {
-    const exp = collected[p];
-    parts.push(exp === 1 ? String(p) : `${p}^${exp}`);
-  }
-  if (remaining > 1) {
-    parts.push(String(remaining));
-  }
-  return parts.join("*");
-}
-
-function formatFactorDropText(drop) {
-  const orig = drop.factorOriginal;
-  const collected = drop.factorCollected;
-  const remaining = drop.factorRemaining;
-  if (Object.keys(collected).length === 0) {
-    return String(orig);
-  }
-  if (remaining <= 1) {
-    // Complete — show full prime factorization
-    return `${orig}=${formatFactorization(collected, 1)}`;
-  }
-  // In progress — factors so far, remaining separate
-  return `${orig}=${formatFactorization(collected, 1)}*`;
-}
-
-function getFactorRemainingText(drop) {
-  if (!drop.factorRemaining || drop.factorRemaining <= 1) return null;
-  if (Object.keys(drop.factorCollected).length === 0) return null;
-  return String(drop.factorRemaining);
-}
-
-function getFullFactorization(n) {
-  const factors = {};
-  let rem = n;
-  for (let p = 2; p * p <= rem; p++) {
-    while (rem % p === 0) {
-      factors[p] = (factors[p] || 0) + 1;
-      rem /= p;
-    }
-  }
-  if (rem > 1) factors[rem] = (factors[rem] || 0) + 1;
-  return formatFactorization(factors, 1);
-}
-
-function generateFactorProblem() {
-  const range = getDifficultyRange("factor", opConfig.factor.difficulty);
-  // Pick a random composite in range
-  let attempts = 0;
-  let n;
-  do {
-    n = randInt(range.min, range.max);
-    attempts++;
-  } while (!isComposite(n) && attempts < 50);
-  if (!isComposite(n)) n = 12; // fallback
-
-  return {
-    text: String(n),
-    answer: null, // multi-step, no single answer
-    answerText: null,
-    opKey: "factor",
-    statsKey: String(n),
-    factorOriginal: n,
-    factorRemaining: n,
-    factorCollected: {},
-    factorLastPrime: null,
-  };
-}
-
-function generateProblem(opKey) {
-  const config = opConfig[opKey];
-  const range = getDifficultyRange(opKey, config.difficulty);
-
-  if (opKey === "factor") {
-    return generateFactorProblem();
-  }
-
-  if (opKey === "rect") {
-    return generateRectProblem(opKey);
-  }
-
-  if (opKey === "circ") {
-    return generateCircleProblem(opKey);
-  }
-
-  if (opKey === "si") {
-    return generateSIProblem(config.difficulty);
-  }
-
-  if (opKey === "f10") {
-    return generateFactorsOfTenProblem(range.max);
-  }
-
-  const op = operators[opKey];
-  let a = 0;
-  let b = 0;
-  let answer = 0;
-
-  let statsKey;
-
-  if (opKey === "div") {
-    const quotient = randInt(range.min, range.max);
-    b = randInt(range.min, range.max);
-    a = quotient * b;
-    answer = quotient;
-    statsKey = `${quotient},${b}`;
-  } else if (opKey === "sub") {
-    a = randInt(range.min, range.max);
-    b = randInt(range.min, range.max);
-    if (b > a) {
-      [a, b] = [b, a];
-    }
-    answer = op.fn(a, b);
-    statsKey = `${a},${b}`;
-  } else {
-    a = randInt(range.min, range.max);
-    b = randInt(range.min, range.max);
-    answer = op.fn(a, b);
-    statsKey = `${a},${b}`;
-  }
-
-  return {
-    text: `${a} ${op.symbol} ${b}`,
-    answer,
-    answerText: String(answer),
-    opKey,
-    statsKey,
-  };
-}
-
-function getMastery(opKey, statsKey) {
-  const stats = problemStats[opKey];
-  const entry = stats ? stats[statsKey] : null;
-  if (!entry || entry.asked === 0) return 0;
-  const confidence = Math.min(entry.asked, 10) / 10;
-  const accuracy = entry.correct / entry.asked;
-  return accuracy * confidence;
-}
-
-function getSelectionWeight(mastery) {
-  return 1 - mastery * 0.8;
-}
-
-function weightedPick(items) {
-  // items: [{ value, weight }]
-  const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
-  if (totalWeight <= 0) return items[Math.floor(Math.random() * items.length)].value;
-  let roll = Math.random() * totalWeight;
-  for (const item of items) {
-    roll -= item.weight;
-    if (roll <= 0) return item.value;
-  }
-  return items[items.length - 1].value;
-}
-
 function generateWeightedProblem(opKey) {
-  const config = opConfig[opKey];
-  const range = getDifficultyRange(opKey, config.difficulty);
-
-  if (opKey === "factor") {
-    // Enumerate all composites in range, weight by mastery
-    const composites = [];
-    for (let n = range.min; n <= range.max; n++) {
-      if (!isComposite(n)) continue;
-      const key = String(n);
-      const mastery = getMastery("factor", key);
-      composites.push({ n, weight: getSelectionWeight(mastery) });
-    }
-    if (composites.length === 0) return generateFactorProblem();
-    const pick = weightedPick(composites.map((c) => ({ value: c.n, weight: c.weight })));
-    return {
-      text: String(pick),
-      answer: null,
-      answerText: null,
-      opKey: "factor",
-      statsKey: String(pick),
-      factorOriginal: pick,
-      factorRemaining: pick,
-      factorCollected: {},
-      factorLastPrime: null,
-    };
-  }
-
-  if (opKey === "rect") {
-    // Enumerate all l×w pairs, both P and A variants
-    const pairs = [];
-    for (let l = range.min; l <= range.max; l++) {
-      for (let w = range.min; w <= range.max; w++) {
-        for (const prefix of ["P", "A"]) {
-          const key = `${prefix},${l},${w}`;
-          const mastery = getMastery("rect", key);
-          pairs.push({ l, w, prefix, statsKey: key, weight: getSelectionWeight(mastery) });
-        }
-      }
-    }
-    if (pairs.length === 0) return generateProblem(opKey);
-    const pick = weightedPick(pairs.map((p) => ({ value: p, weight: p.weight })));
-    const answer = pick.prefix === "P" ? 2 * (pick.l + pick.w) : pick.l * pick.w;
-    return {
-      text: `${pick.prefix}▭ ${pick.l}×${pick.w}`,
-      answer,
-      answerText: String(answer),
-      opKey: "rect",
-      statsKey: pick.statsKey,
-    };
-  }
-
-  if (opKey === "circ") {
-    // Enumerate all 4 subtypes × each value
-    const items = [];
-    for (let v = range.min; v <= range.max; v++) {
-      for (const sub of ["Cr", "Cd", "Ar", "Ad"]) {
-        const key = `${sub},${v}`;
-        const mastery = getMastery("circ", key);
-        items.push({ sub, val: v, statsKey: key, weight: getSelectionWeight(mastery) });
-      }
-    }
-    if (items.length === 0) return generateProblem(opKey);
-    const pick = weightedPick(items.map((it) => ({ value: it, weight: it.weight })));
-    return generateCircleOfType(pick.sub, pick.val);
-  }
-
-  if (opKey === "si") {
-    // Enumerate all prefix pairs for this difficulty and weight by mastery
-    const prefixes = getSIPrefixesForDifficulty(config.difficulty);
-    const pairs = [];
-    for (let i = 0; i < prefixes.length; i++) {
-      for (let j = 0; j < prefixes.length; j++) {
-        if (i === j) continue;
-        const key = `${prefixes[i].sym || "base"},${prefixes[j].sym || "base"}`;
-        const mastery = getMastery("si", key);
-        pairs.push({ from: prefixes[i], to: prefixes[j], statsKey: key, weight: getSelectionWeight(mastery) });
-      }
-    }
-    if (pairs.length === 0) return generateProblem(opKey);
-    const pick = weightedPick(pairs.map((p) => ({ value: p, weight: p.weight })));
-    const baseUnit = siBaseUnits[randInt(0, siBaseUnits.length - 1)];
-    const expDiff = pick.from.exp - pick.to.exp;
-    const answerText = expDiffToConversion(expDiff);
-    return {
-      text: `${pick.from.sym}${baseUnit} → ${pick.to.sym}${baseUnit}`,
-      answer: answerText,
-      answerText,
-      opKey: "si",
-      statsKey: pick.statsKey,
-    };
-  }
-
-  if (opKey === "f10") {
-    // f10 problem space is too dynamic; generate candidates and pick the weakest
-    const candidates = [];
-    for (let i = 0; i < 8; i++) {
-      const problem = generateFactorsOfTenProblem(range.max);
-      const mastery = getMastery("f10", problem.text);
-      candidates.push({ problem, weight: getSelectionWeight(mastery) });
-    }
-    return weightedPick(candidates.map((c) => ({ value: c.problem, weight: c.weight })));
-  }
-
-  const op = operators[opKey];
-  const pairs = [];
-
-  for (let a = range.min; a <= range.max; a++) {
-    for (let b = range.min; b <= range.max; b++) {
-      let statsKey;
-      if (opKey === "div") {
-        statsKey = `${a},${b}`; // a=quotient, b=divisor
-      } else if (opKey === "sub") {
-        if (b > a) continue;
-        statsKey = `${a},${b}`;
-      } else {
-        statsKey = `${a},${b}`;
-      }
-      const mastery = getMastery(opKey, statsKey);
-      pairs.push({ a, b, statsKey, weight: getSelectionWeight(mastery) });
-    }
-  }
-
-  if (pairs.length === 0) return generateProblem(opKey);
-
-  const pick = weightedPick(pairs.map((p) => ({ value: p, weight: p.weight })));
-  let dispA = pick.a;
-  let dispB = pick.b;
-  let answer;
-
-  if (opKey === "div") {
-    dispA = pick.a * pick.b; // quotient * divisor
-    dispB = pick.b;
-    answer = pick.a;
-  } else if (opKey === "sub") {
-    answer = op.fn(pick.a, pick.b);
-  } else {
-    answer = op.fn(pick.a, pick.b);
-  }
-
-  return {
-    text: `${dispA} ${op.symbol} ${dispB}`,
-    answer,
-    answerText: String(answer),
-    opKey,
-    statsKey: pick.statsKey,
-  };
+  return generateCoreWeightedProblem(opKey, opConfig, problemStats);
 }
 
 function pickRandomEnabledOp() {
@@ -1157,47 +518,6 @@ function revealDrop(drop) {
   drop.revealed = true;
 }
 
-// Parse a typed factorization like "2^4", "2*2*2*2", "2^2*3^2"
-// Returns the prime factorization as { prime: exponent } or null if invalid
-function parseFactorizationInput(value) {
-  if (!value || !/^[0-9*^]+$/.test(value)) return null;
-  const terms = value.split("*");
-  const factors = {};
-  for (const term of terms) {
-    if (!term) return null;
-    let base, exp;
-    if (term.includes("^")) {
-      const parts = term.split("^");
-      if (parts.length !== 2) return null;
-      base = Number(parts[0]);
-      exp = Number(parts[1]);
-      if (!Number.isInteger(base) || !Number.isInteger(exp)) return null;
-      if (base < 2 || exp < 1) return null;
-    } else {
-      base = Number(term);
-      exp = 1;
-      if (!Number.isInteger(base) || base < 2) return null;
-    }
-    if (!isPrime(base)) return null;
-    factors[base] = (factors[base] || 0) + exp;
-  }
-  return factors;
-}
-
-function factorizationProduct(factors) {
-  let product = 1;
-  for (const [prime, exp] of Object.entries(factors)) {
-    product *= Math.pow(Number(prime), exp);
-  }
-  return product;
-}
-
-function matchesFactorDrop(value, drop) {
-  const factors = parseFactorizationInput(value);
-  if (!factors) return false;
-  return factorizationProduct(factors) === drop.factorOriginal;
-}
-
 function findDropMatch(value, { enterPressed = false } = {}) {
   const normalizedTyped = normalizeTypedValue(value, {
     allowIncomplete: false,
@@ -1321,7 +641,7 @@ function processInput(value) {
     const typedNum = Number(value);
     const isValidDivisor = !Number.isNaN(typedNum) && Number.isInteger(typedNum) && typedNum >= 2;
     if (isValidDivisor && target.factorRemaining % typedNum === 0) {
-      advanceFactorDrop(target, typedNum);
+      advanceFactorDrop(target, typedNum, { fromTargeting: true });
       answerInput.value = "";
       currentInput = "";
     } else if (isValidDivisor && target.factorRemaining % typedNum !== 0) {
@@ -1367,31 +687,8 @@ function couldMatchTargetedFactor(value) {
   return false;
 }
 
-function advanceFactorDrop(drop, divisor) {
-  drop.factorRemaining = drop.factorRemaining / divisor;
-
-  // Decompose the divisor into primes and add to collected
-  let d = divisor;
-  for (let p = 2; p * p <= d; p++) {
-    while (d % p === 0) {
-      drop.factorCollected[p] = (drop.factorCollected[p] || 0) + 1;
-      d /= p;
-    }
-  }
-  if (d > 1) drop.factorCollected[d] = (drop.factorCollected[d] || 0) + 1;
-
-  // If remaining is prime, auto-include it — factorization is complete
-  if (drop.factorRemaining > 1 && isPrime(drop.factorRemaining)) {
-    const r = drop.factorRemaining;
-    drop.factorCollected[r] = (drop.factorCollected[r] || 0) + 1;
-    drop.factorRemaining = 1;
-  }
-
-  drop.text = formatFactorDropText(drop);
-
-  if (drop.factorRemaining <= 1) {
-    drop.factorComplete = true;
-  }
+function advanceFactorDrop(drop, divisor, { fromTargeting = false } = {}) {
+  advanceFactorDropCore(drop, divisor, { fromTargeting });
   playPop();
 }
 
@@ -2233,8 +1530,13 @@ answerInput.addEventListener("keydown", (event) => {
     event.preventDefault();
     if (isPaused) return;
 
-    // Exit targeting mode so typed factorization can be checked
     if (isInFactorTargetMode()) {
+      const target = getTargetedFactorDrop();
+      if (target && target.factorComplete) {
+        handleCorrectAnswer(target);
+        return;
+      }
+      // Exit targeting mode so typed factorization can be checked
       factorTargetId = null; // exit silently without clearing input
     }
 
@@ -2601,6 +1903,12 @@ function handleKeypadPress(key) {
   if (key === "Enter") {
     if (isPaused) return;
     if (isInFactorTargetMode()) {
+      const target = getTargetedFactorDrop();
+      if (target && target.factorComplete) {
+        handleCorrectAnswer(target);
+        updateKpDisplay();
+        return;
+      }
       factorTargetId = null;
     }
     const value = currentInput.trim();
@@ -2637,6 +1945,147 @@ function handleKeypadPress(key) {
 }
 
 // ============================================================
+// 14b. Test Hooks
+// ============================================================
+
+function cloneForTest(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function getTestState() {
+  return {
+    score,
+    drops: drops.map((drop) => ({ ...drop, factorCollected: { ...(drop.factorCollected || {}) } })),
+    opConfig: cloneForTest(opConfig),
+    problemStats: cloneForTest(problemStats),
+    gameSpeed,
+    spawnRate,
+    pace,
+    isPaused,
+    factorTargetId,
+    currentInput,
+  };
+}
+
+function resetSettingsForTest() {
+  const defaults = createDefaultOpConfig();
+  for (const key of Object.keys(opConfig)) {
+    Object.assign(opConfig[key], defaults[key]);
+  }
+}
+
+function makeTestDrop(overrides = {}) {
+  const opKey = overrides.opKey || "add";
+  const answerText = overrides.answerText ?? String(overrides.answer ?? 0);
+  const drop = {
+    id: overrides.id ?? nextDropId++,
+    x: overrides.x ?? canvasW / 2,
+    y: overrides.y ?? 100,
+    baseSpeed: overrides.baseSpeed ?? 0,
+    text: overrides.text ?? "1 + 1",
+    answer: overrides.answer ?? Number(answerText),
+    answerText,
+    opKey,
+    statsKey: overrides.statsKey ?? overrides.text ?? "test",
+    revealed: overrides.revealed ?? false,
+  };
+
+  if (opKey === "factor") {
+    drop.answer = null;
+    drop.answerText = null;
+    drop.factorOriginal = overrides.factorOriginal ?? Number(drop.text);
+    drop.factorRemaining = overrides.factorRemaining ?? drop.factorOriginal;
+    drop.factorCollected = { ...(overrides.factorCollected || {}) };
+    drop.factorLastPrime = overrides.factorLastPrime ?? null;
+    drop.factorComplete = overrides.factorComplete ?? false;
+    drop.statsKey = overrides.statsKey ?? String(drop.factorOriginal);
+  }
+
+  return drop;
+}
+
+function installTestHooks() {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has("test")) return;
+
+  window.__RAIN_MATH_TEST__ = {
+    reset({ clearStats = true } = {}) {
+      clearAmbiguousTimer();
+      resetSettingsForTest();
+      if (clearStats) resetProblemStats(problemStats);
+      drops = [];
+      splashes = [];
+      laser = null;
+      score = 0;
+      spawnTimer = 0;
+      lastTime = 0;
+      gameTime = 0;
+      groundFlash = 0;
+      currentInput = "";
+      factorTargetId = null;
+      answerInput.value = "";
+      isPaused = false;
+      setSpeed(30);
+      setRate(0);
+      setPace(5);
+      updateOpChits();
+      updateDifficultyDisplays();
+      updateSpeedDisplay();
+      updateScoreDisplay();
+      if (pauseBtn) pauseBtn.textContent = "Pause";
+      if (pauseOverlayEl) pauseOverlayEl.classList.add("hidden");
+      drawDrops();
+      return getTestState();
+    },
+    enableOps(opKeys) {
+      Object.keys(opConfig).forEach((key) => {
+        opConfig[key].enabled = opKeys.includes(key);
+      });
+      updateOpChits();
+      return getTestState();
+    },
+    setOpDifficulty(opKey, level) {
+      setDifficulty(opKey, level);
+      return getTestState();
+    },
+    setControls({ speed, rate, pace: nextPace } = {}) {
+      if (speed !== undefined) setSpeed(speed);
+      if (rate !== undefined) setRate(rate);
+      if (nextPace !== undefined) setPace(nextPace);
+      updateSpeedDisplay();
+      return getTestState();
+    },
+    addDrop(overrides) {
+      const drop = makeTestDrop(overrides);
+      drops.push(drop);
+      drawDrops();
+      return cloneForTest(drop);
+    },
+    seedStats(opKey, stats) {
+      problemStats[opKey] = cloneForTest(stats);
+      return getTestState();
+    },
+    submit(value, { enter = false } = {}) {
+      answerInput.value = String(value);
+      currentInput = answerInput.value;
+      if (enter) {
+        const match = findDropMatch(currentInput, { enterPressed: true });
+        if (match) {
+          handleCorrectAnswer(match);
+        } else {
+          handleWrongInput();
+        }
+      } else {
+        processInput(currentInput);
+      }
+      drawDrops();
+      return getTestState();
+    },
+    getState: getTestState,
+  };
+}
+
+// ============================================================
 // 15. Initialization
 // ============================================================
 
@@ -2656,6 +2105,8 @@ function init() {
   }
 
   setupTouchKeypad();
+  installTestHooks();
+  window.__RAIN_MATH_READY__ = true;
   answerInput.focus();
   requestAnimationFrame(tick);
 }

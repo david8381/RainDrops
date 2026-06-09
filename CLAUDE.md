@@ -1,51 +1,60 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working in this repository.
 
 ## Project
 
-Rain Math — a browser-based math game where falling raindrops are cleared by typing correct answers. Built with vanilla HTML/CSS/JS, no frameworks or build tools.
+Rain Math is a browser-based math game where falling raindrops are cleared by typing correct answers. Production is a static site: vanilla HTML, CSS, and browser JavaScript with no bundler and no runtime package dependencies.
 
 ## Running
 
-Open `index.html` in a browser. No build step, no installs, no dependencies.
+- Open `index.html` in a browser for a direct static-file run.
+- To match the Playwright HTTP path, serve the repo with `node tests/support/static-server.mjs 4173`, then open `http://127.0.0.1:4173/`.
+
+## Testing
+
+First-time setup:
+1. `npm install`
+2. `npx playwright install chromium`
+
+Common commands:
+- `npm run test:unit`
+- `npm run test:e2e`
+- `npm test`
+- `npm run test:ci`
+- `npm run test:e2e:ui`
+
+See `docs/Ai/TESTING.md` for details.
 
 ## Deployment
 
-GitHub Pages via `.github/workflows/pages.yml`. Pushes to `main` auto-deploy.
+GitHub Pages deploys via `.github/workflows/pages.yml` on pushes to `main`. Test CI runs separately via `.github/workflows/tests.yml`.
 
 ## Documentation
 
 Read these before making changes:
-1. `docs/Ai/PURPOSE.md` — goals and design principles
-2. `docs/Ai/ARCHITECTURE.md` — structure, runtime flow, data model
-3. `docs/Ai/CHANGELOG.md` — recent changes (avoid rework)
+1. `docs/Ai/PURPOSE.md` — goals and current user intent
+2. `docs/Ai/ARCHITECTURE.md` — structure, runtime flow, and data model
+3. `docs/Ai/CHANGELOG.md` — recent changes and reasons
+4. `docs/Ai/TESTING.md` — test setup and commands
+5. `docs/Ai/CODEBASE_REVIEW.md` — current review findings and residual risks
 
 ## Architecture
 
-Three files comprise the entire app:
-- **`index.html`** — markup: header, controls bar (op toggles, difficulty, speed), game canvas, input bar
-- **`styles.css`** — dark theme with CSS variables, responsive layout
-- **`script.js`** — all game logic (~860 lines): game loop, drop physics, input handling, audio synthesis
-
-### Key Data Structures (in `script.js`)
-- `drops[]` — active falling drops: `{ id, x, y, speed, text, answer, answerText, opKey }`
-- `opConfig` — per-operation config: `{ enabled, difficulty, symbol, label }`
-- `gameSpeed` — global speed (0-100) controlling fall speed and spawn rate
-- `score` — simple correct-answer counter
-
-### Core Mechanics
-- Answers clear on keypress (no Enter key needed) — first matching drop is cleared
-- Each operation has an independent difficulty (1-10) controlling number range
-- Speed slider (0-100) controls spawn rate and fall speed globally
-- Operations can be toggled on/off during gameplay via chit buttons
-- Audio uses Web Audio API (synthesized pop, miss, wrong-input sounds)
+- `index.html` — markup for header, controls, canvas, input bar, touch keypad, feedback form, and overlays.
+- `styles.css` — desktop/mobile layout, dark theme, touch UI, and stats popup styling.
+- `src/game-core.js` — DOM-free game rules exposed as `globalThis.RainMathCore`: operation defaults, problem generation, difficulty ranges, input normalization, SI helpers, factorization, and weighting.
+- `script.js` — browser state, animation loop, canvas drawing, audio, DOM updates, event listeners, touch keypad wiring, and `?test=1` hooks for Playwright.
+- `tests/unit/game-core.test.js` — unit coverage for core rules.
+- `tests/e2e/rain-math.spec.js` — Playwright desktop/mobile browser coverage.
 
 ## Working Rules
 
-- Prefer simple, readable JavaScript over additional tooling
-- Do not rename the `docs/Ai` folder
-- Add a changelog entry in `docs/Ai/CHANGELOG.md` for any player-facing or architectural change
-- Keep documentation in sync with behavioral changes
-- If adding new operations, update `opConfig`, `operators` (or add a generator), and the toggle chits in `index.html`
-- Git: push to `main` branch, GitHub SSH user `david8381`, repo `RainDrops`
+- Prefer simple, readable JavaScript over additional tooling.
+- Keep production dependency-free unless the user explicitly changes that direction.
+- Put pure game rules in `src/game-core.js`; keep DOM/canvas/audio behavior in `script.js`.
+- Do not rename the `docs/Ai` folder.
+- Keep documentation in sync with behavioral changes.
+- Add a changelog entry in `docs/Ai/CHANGELOG.md` for any player-facing or architectural change.
+- If adding new operations, update `src/game-core.js`, operation display labels, `index.html` chits, docs, and tests.
+- GitHub SSH user: `david8381`; repo: `RainDrops`; default branch: `main`.

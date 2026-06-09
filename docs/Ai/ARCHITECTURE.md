@@ -1,35 +1,49 @@
 # Architecture
 
 ## Overview
-This is a standalone, static web game. There is no build step and no external dependencies.
+Rain Math is a static browser game. Production still has no bundler and no runtime dependencies: `index.html` loads `styles.css`, then `src/game-core.js`, then `script.js` as ordinary browser scripts. This keeps the app usable when `index.html` is opened directly from disk.
 
-## Files
-- `index.html`: Markup and layout for the game — header, controls bar, canvas, and input bar.
-- `styles.css`: Visual design, layout, and responsive behavior.
-- `script.js`: Game loop, input handling, drop generation, audio, and UI controls.
+Dev-only tooling exists for tests: Node's built-in test runner covers core logic, and Playwright covers real browser flows.
+
+## Runtime Files
+- `index.html`: Game markup, operation chits, controls, canvas, input bar, touch keypad, feedback form, and overlays.
+- `styles.css`: Dark theme, desktop layout, responsive behavior, stats popup styling, and touch-device layout.
+- `script.js`: Browser state, animation loop, canvas drawing, audio, DOM updates, event listeners, touch keypad wiring, and gated `?test=1` hooks.
+- `src/game-core.js`: DOM-free game rules exposed as `globalThis.RainMathCore`: operation defaults, difficulty ranges, problem generation, mastery weighting, numeric normalization, SI helpers, and factorization helpers.
+
+## Test Files
+- `tests/unit/game-core.test.js`: Deterministic tests for math, problem generation, weighting, and factorization.
+- `tests/e2e/rain-math.spec.js`: Playwright desktop/mobile browser coverage.
+- `tests/support/static-server.mjs`: Tiny local static server used by Playwright.
+- `playwright.config.mjs`: Browser projects, local server, and reporter settings.
+- `.github/workflows/tests.yml`: CI test workflow.
 
 ## Runtime Flow
-1. The game auto-starts on page load. No setup overlay.
-2. The animation loop runs via `requestAnimationFrame`.
-3. Drops are spawned on a timer controlled by the global speed setting.
-4. Typing an answer clears a matching drop immediately (no Enter key).
-5. The user adjusts operations, difficulty, and speed during gameplay via in-game controls.
+1. The browser loads `index.html`, then `src/game-core.js`, then `script.js`.
+2. `src/game-core.js` publishes pure rules to `globalThis.RainMathCore`; `script.js` consumes that object and creates mutable browser state.
+3. `init()` sizes the canvas, syncs controls, sets up touch UI when needed, optionally installs test hooks for `?test=1`, focuses the hidden answer input, and starts `requestAnimationFrame(tick)`.
+4. `tick()` spawns drops according to Rate, updates motion according to Speed/Pace, handles misses, updates effects, and redraws the canvas.
+5. Input handlers clear immediate-answer drops as soon as they match. SI and full factorization answers wait for Enter. Targeted factor drops accept one divisor at a time.
 
-## Data Model (in `script.js`)
-- `drops[]`: active drops with `{ id, x, y, speed, text, answer, answerText, opKey }`.
-- `opConfig`: per-operation configuration: `{ enabled, difficulty, symbol, label }`.
-- `gameSpeed`: global speed 0-100 controlling fall speed and spawn interval.
-- `score`: simple counter of correct answers.
-- `splashes[]`: particle effects from cleared drops.
+## Core Data Model
+- `opConfig`: per-operation `{ enabled, difficulty, symbol, label }`, initialized from `createDefaultOpConfig()`.
+- `drops[]`: active drops with common fields `{ id, x, y, baseSpeed, text, answer, answerText, opKey, statsKey }`; factor drops add `factorOriginal`, `factorRemaining`, `factorCollected`, and `factorComplete`.
+- `problemStats`: per-operation in-memory accuracy maps `{ asked, correct }`, initialized from `createProblemStats()`.
+- `gameSpeed`: 0-100 fall-speed multiplier.
+- `spawnRate`: 0-10 spawn interval control; 0 stops spawning.
+- `pace`: 1-10 fall-time control.
+- `score`: correct-answer counter.
+- `splashes`, `laser`, `groundFlash`: visual effects state.
 
-## Controls
-- **Operation chits**: pill-shaped toggles at the top to enable/disable each operation type during play. At least one must remain enabled.
-- **Difficulty**: per-operation 1-10 setting with +/− buttons. Higher difficulty increases the number range for that operation.
-- **Speed slider**: 0 (frozen) to 100 (fast). Controls both drop fall speed and spawn interval.
-- **Pause**: Escape key or Pause button. Shows a blurred overlay.
-- **Restart**: resets score and drops, keeps current settings.
+## Operation Types
+- Basic arithmetic: `add`, `sub`, `mul`, `div`.
+- Decimal shifting: `f10`.
+- SI metric conversions: `si`.
+- Geometry: `rect` for rectangle perimeter/area and `circ` for circle circumference/area coefficient answers.
+- Prime factorization: `factor`, with full-answer and Tab-targeted stepwise modes.
 
 ## Extensibility Notes
-- If adding new operations, add an entry to `opConfig`, `operators` (or a dedicated generator), and a toggle chit in `index.html`.
-- The factors-of-10 operation (`f10`) uses a dedicated generator for decimal shift problems.
-- Difficulty mapping is in `getDifficultyRange()` — add a branch for new operation types.
+- Add new operation defaults in `src/game-core.js`, a generator/range branch there, display labels in `script.js`, and an operation chit in `index.html`.
+- Keep pure rules in `src/game-core.js`; keep DOM, drawing, audio, and browser event behavior in `script.js`.
+- Update `docs/Ai/CHANGELOG.md` for player-facing or architectural changes.
+- Use `?test=1` hooks only in tests; do not make gameplay depend on them.

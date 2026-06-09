@@ -3,6 +3,18 @@
 ## Purpose
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
+## 2026-06-09
+- Added a dev-only automated test suite: Node unit tests for core game rules and Playwright browser tests for desktop/mobile gameplay flows.
+- Added `src/game-core.js` and moved DOM-free math/problem behavior there so browser code and unit tests share the same implementation.
+- Kept browser loading as classic scripts so opening `index.html` directly from disk still works.
+- Added a gated `?test=1` browser test API for deterministic Playwright setup and assertions.
+- Added GitHub Actions test CI separate from the existing GitHub Pages deploy workflow.
+- Fixed targeted prime-factor mode so typed divisors do not auto-complete a final prime unless the user enters it explicitly.
+- Fixed completed targeted factor drops so pressing Enter clears the drop and increments score.
+- Added a browser regression test for the direct `file://` `index.html` workflow.
+- Switched the GoatCounter loader to an explicit `https://` URL to avoid invalid local-file script URLs.
+- Updated AI docs for the current operation set, touch keypad, stats popup, test commands, and codebase review findings.
+
 ## 2026-03-26
 - Major rewrite: stripped ELO rating system, boss battles (ship/flood), lives, session timer, starting level, game over screen, and setup overlay.
 - Game now auto-starts on page load with no configuration screen.
