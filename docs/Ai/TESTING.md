@@ -8,15 +8,15 @@
 The app has no production build step. These commands install only developer test tooling.
 
 ## Daily Commands
-- `npm run test:unit`: Run deterministic Node unit tests for `src/game-core.js`.
+- `npm run test:unit`: Run deterministic Node unit tests for `src/game-core.js` and `src/player-progress.js`.
 - `npm run test:e2e`: Run Playwright browser tests against a local static server.
 - `npm test`: Run unit tests, then browser tests.
 - `npm run test:ci`: Same test sequence intended for CI.
 - `npm run test:e2e:ui`: Open Playwright's interactive UI for browser debugging.
 
 ## What The Suites Cover
-- Unit tests cover numeric normalization, decimal shifting, difficulty ranges, problem generation, SI conversions, geometry formulas, prime checks, factorization parsing/progression, problem stats, mastery, and weighted selection.
-- Browser tests cover loading, canvas paint, operation toggles, difficulty controls, speed/rate/pace displays, immediate numeric clearing, Enter-required SI and factorization answers, Tab-targeted factorization, pause/restart, feedback, stats overlays, and mobile keypad controls.
+- Unit tests cover numeric normalization, decimal shifting, difficulty ranges, problem generation, SI conversions, geometry formulas, prime checks, factorization parsing/progression, problem stats, mastery, weighted selection, local profile persistence, single-profile migration, local profile create/switch behavior, universe-aware readiness scoring, practice suggestions, and settings sync.
+- Browser tests cover loading, canvas paint, operation toggles, difficulty/readiness controls, Ready-before-level-advance gating, speed/rate/pace displays, immediate numeric clearing, Enter-required SI and factorization answers, Tab-targeted factorization, pause/restart, local login/profile switching, feedback, stats/results overlays, and mobile keypad controls.
 
 ## CI
 `.github/workflows/tests.yml` runs on pushes to `main`, pull requests, and manual dispatch:

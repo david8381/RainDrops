@@ -29,6 +29,7 @@ test("loads without page errors and paints the canvas", async ({ page }) => {
 
   await expect(page).toHaveTitle("Rain Math");
   await expect(page.locator("#canvas")).toBeVisible();
+  await expect(page.locator(".stats .label")).toHaveText("Cleared");
   await expect(page.locator(".op-chit")).toHaveCount(9);
   expect(pageErrors).toEqual([]);
 
@@ -67,8 +68,32 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator('.op-chit[data-op="si"]')).toHaveClass(/active/);
     await expect(page.locator('.op-chit[data-op="factor"]')).toHaveClass(/active/);
     await expect(page.locator(".diff-card")).toHaveCount(2);
+    await expect(page.locator('.diff-card[data-op="si"] .diff-value')).toHaveText("1");
+    await expect(page.locator('.diff-card[data-op="factor"] .diff-value')).toHaveText("1");
+    await expect(page.locator('.diff-card[data-op="si"] .diff-ready')).toHaveText("Ready 0%");
+    await expect(page.locator('.diff-card[data-op="factor"] .diff-ready')).toHaveText("Ready 0%");
     await expect(page.locator("#inputHint")).toContainText("SI: type *1000 or /100 + Enter");
     await expect(page.locator("#inputHint")).toContainText("p·q: type 2^2*3 + Enter");
+  });
+
+  test("requires a Ready click before increasing a level", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    const addCard = page.locator('.diff-card[data-op="add"]');
+
+    await expect(addCard.locator(".diff-value")).toHaveText("1");
+    await addCard.locator(".diff-btn").last().click();
+    await expect(addCard.locator(".diff-value")).toHaveText("1");
+    await expect(addCard.locator(".diff-ready")).toHaveText("Click Ready first");
+
+    await addCard.locator(".diff-ready").click();
+    await expect(addCard.locator(".diff-ready")).toHaveText(/Ready 0% ✓/);
+
+    await addCard.locator(".diff-btn").last().click();
+    await expect(addCard.locator(".diff-value")).toHaveText("2");
+    const state = await invoke(page, "getState");
+    expect(state.progressSummary.skills.add.currentLevel).toBe(2);
+    expect(state.progressSummary.skills.add.bossAttemptedForLevel).toBe(false);
   });
 
   test("updates speed, rate, and pace displays", async ({ page }) => {
@@ -99,6 +124,59 @@ test.describe("desktop gameplay", () => {
     const state = await invoke(page, "getState");
     expect(state.drops).toHaveLength(0);
     expect(state.problemStats.add["3,5"]).toEqual({ asked: 1, correct: 1 });
+  });
+
+  test("results popup shows local readiness progress", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await invoke(page, "addDrop", {
+      opKey: "add",
+      text: "2 + 3",
+      answer: 5,
+      answerText: "5",
+      statsKey: "2,3",
+      y: 120,
+    });
+
+    await page.locator("#answer").fill("5");
+    const state = await invoke(page, "getState");
+    expect(state.progressSummary.skills.add.attempts).toBe(1);
+    expect(state.progressSummary.skills.add.totals.correct).toBe(1);
+    await expect(page.locator('.diff-card[data-op="add"] .diff-ready')).toHaveText(/Ready [1-9]\d?%/);
+
+    await page.locator("#resultsLink").click();
+    await expect(page.locator("#resultsOverlay")).toBeVisible();
+    await expect(page.locator("#resultsOverlay h2")).toHaveText("Learning Results");
+    await expect(page.locator("#resultsOverlay")).toContainText("Add");
+    await expect(page.locator("#resultsOverlay")).toContainText("1 attempts");
+    await expect(page.locator("#resultsOverlay")).toContainText("1/9 seen");
+    await expect(page.locator("#resultsOverlay")).toContainText("0 mastered");
+    await expect(page.locator("#resultsOverlay")).toContainText("Practice next: 2 + 3");
+    await expect(page.locator("#resultsOverlay")).toContainText("(new)");
+  });
+
+  test("creates and switches local player profiles", async ({ page }) => {
+    await openApp(page);
+
+    await expect(page.locator("#loginLink")).toHaveText("Login");
+    await page.locator("#loginLink").click();
+    await expect(page.locator("#loginOverlay")).toBeVisible();
+    await page.locator("#profileNameInput").fill("Ada Lovelace");
+    await page.getByRole("button", { name: "Create" }).click();
+    await expect(page.locator("#loginOverlay")).toHaveCount(0);
+    await expect(page.locator("#loginLink")).toHaveText("Ada Lovelace");
+
+    await page.locator("#loginLink").click();
+    await page.locator("#profileNameInput").fill("Ben");
+    await page.getByRole("button", { name: "Create" }).click();
+    await expect(page.locator("#loginLink")).toHaveText("Ben");
+
+    await page.locator("#loginLink").click();
+    await page.getByRole("button", { name: /Ada Lovelace/ }).click();
+    await expect(page.locator("#loginLink")).toHaveText("Ada Lovelace");
+
+    const state = await invoke(page, "getState");
+    expect(state.progressProfile.user.name).toBe("Ada Lovelace");
   });
 
   test("requires Enter for SI conversion answers", async ({ page }) => {
@@ -223,6 +301,7 @@ test.describe("mobile gameplay", () => {
     });
 
     await expect(page.locator("#touchKeypad")).toBeVisible();
+    await expect(page.locator(".touch-score")).toContainText("Cleared:");
     await page.locator('.kp-key[data-key="1"]').click();
     await page.locator('.kp-key[data-key="2"]').click();
 
@@ -241,5 +320,25 @@ test.describe("mobile gameplay", () => {
     await expect(page.locator("#kpSpeedVal")).toHaveText("40%");
     await expect(page.locator("#kpRateVal")).toHaveText("1");
     await expect(page.locator("#kpPaceVal")).toHaveText("8s");
+  });
+
+  test("opens results from the touch header", async ({ page }) => {
+    await openApp(page);
+
+    await expect(page.locator("#touchResultsLink")).toBeVisible();
+    await page.locator("#touchResultsLink").click();
+
+    await expect(page.locator("#resultsOverlay")).toBeVisible();
+    await expect(page.locator("#resultsOverlay h2")).toHaveText("Learning Results");
+  });
+
+  test("opens login from the touch header", async ({ page }) => {
+    await openApp(page);
+
+    await expect(page.locator("#touchLoginLink")).toBeVisible();
+    await page.locator("#touchLoginLink").click();
+
+    await expect(page.locator("#loginOverlay")).toBeVisible();
+    await expect(page.locator("#loginOverlay h2")).toHaveText("Players");
   });
 });

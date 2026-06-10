@@ -16,15 +16,23 @@ Build a fast, friendly math game where falling drops are cleared by typing answe
 - Enter-required operations: SI metric conversions such as `*1000` or `/100`, and full prime factorization answers such as `2^2*3`.
 - Prime factor drops can also be targeted with Tab and simplified one factor at a time.
 - Each operation can be toggled on/off during gameplay; if none are enabled, no new drops spawn.
-- Each operation has an independent difficulty level from 1-10.
+- Each operation has an independent difficulty level from 1-10, starting at level 1 for new profiles.
+- Current levels are stored in the local profile; increasing to the next level requires clicking Ready for the current level. Ready is a temporary stand-in for a future boss attempt.
 - Global controls include Speed, Rate, and Pace.
-- Scoring is a simple correct-answer counter.
-- Problem accuracy is tracked in-session and shown through per-operation stats popups.
+- The header shows a session-only Cleared counter for correct drops cleared during the current run.
+- The Login link opens a local player selector where players can create or switch named profiles stored in localStorage.
+- A local profile tracks per-operation readiness, per-problem outcomes, and boss-readiness recommendations in localStorage.
+- Existing single-profile localStorage data is migrated into the local profile selector as `david` when it still has the old default player identity.
+- Readiness is universe-aware: it considers how many level problems exist, how many have been seen/mastered, recent accuracy, and fluency.
+- Readiness is visible on per-operation level controls; broader learning progress is shown through the Results popup.
+- Results practice suggestions blend weak seen problems for review with unseen level problems for coverage.
+- Problem accuracy is shown through per-operation stats popups.
 - Touch devices use an on-screen keypad and compact controls.
 - Feedback opens a FormSubmit-backed feedback form.
 
 ## Non-Goals
-- No boss battles, lives, timers, ELO rating, login, persistence, or build pipeline for production.
+- No boss battles, lives, timers, ELO rating, backend sync, or build pipeline for production.
+- Login is currently local profile selection only; it is not authentication.
 - Tests and Playwright are dev-only tooling; the deployed game remains static.
 
 ## Repo Access

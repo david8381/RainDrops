@@ -7,15 +7,15 @@ const operators = {
 };
 
 const operationDefaults = {
-  add: { enabled: false, difficulty: 3, symbol: "+", label: "+" },
-  sub: { enabled: false, difficulty: 3, symbol: "-", label: "-" },
-  mul: { enabled: false, difficulty: 3, symbol: "×", label: "×" },
-  div: { enabled: false, difficulty: 3, symbol: "÷", label: "÷" },
-  f10: { enabled: false, difficulty: 3, symbol: "×10", label: "x10" },
-  si: { enabled: false, difficulty: 3, symbol: "SI", label: "SI" },
-  rect: { enabled: false, difficulty: 3, symbol: "▭", label: "▭" },
-  circ: { enabled: false, difficulty: 3, symbol: "○", label: "○" },
-  factor: { enabled: false, difficulty: 3, symbol: "n!", label: "n!" },
+  add: { enabled: false, difficulty: 1, symbol: "+", label: "+" },
+  sub: { enabled: false, difficulty: 1, symbol: "-", label: "-" },
+  mul: { enabled: false, difficulty: 1, symbol: "×", label: "×" },
+  div: { enabled: false, difficulty: 1, symbol: "÷", label: "÷" },
+  f10: { enabled: false, difficulty: 1, symbol: "×10", label: "x10" },
+  si: { enabled: false, difficulty: 1, symbol: "SI", label: "SI" },
+  rect: { enabled: false, difficulty: 1, symbol: "▭", label: "▭" },
+  circ: { enabled: false, difficulty: 1, symbol: "○", label: "○" },
+  factor: { enabled: false, difficulty: 1, symbol: "n!", label: "n!" },
 };
 
 function createDefaultOpConfig() {

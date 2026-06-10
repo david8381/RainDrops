@@ -41,18 +41,20 @@ Read these before making changes:
 
 ## Architecture
 
-- `index.html` — markup for header, controls, canvas, input bar, touch keypad, feedback form, and overlays.
-- `styles.css` — desktop/mobile layout, dark theme, touch UI, and stats popup styling.
+- `index.html` — markup for header, controls, canvas, input bar, touch keypad, login/results/feedback links, feedback form, and overlays.
+- `styles.css` — desktop/mobile layout, dark theme, touch UI, and login/stats/results popup styling.
 - `src/game-core.js` — DOM-free game rules exposed as `globalThis.RainMathCore`: operation defaults, problem generation, difficulty ranges, input normalization, SI helpers, factorization, and weighting.
-- `script.js` — browser state, animation loop, canvas drawing, audio, DOM updates, event listeners, touch keypad wiring, and `?test=1` hooks for Playwright.
+- `src/player-progress.js` — local player profiles exposed as `globalThis.RainMathProgress`: multi-profile localStorage persistence, legacy single-profile migration, per-problem outcomes, saved current levels, temporary boss-attempt records, level-universe sizing, readiness scoring, practice suggestions, and boss-readiness recommendations.
+- `script.js` — browser state, animation loop, canvas drawing, audio, DOM updates, login/results/stats popups, event listeners, touch keypad wiring, and `?test=1` hooks for Playwright.
 - `tests/unit/game-core.test.js` — unit coverage for core rules.
+- `tests/unit/player-progress.test.js` — unit coverage for local profile persistence and readiness scoring.
 - `tests/e2e/rain-math.spec.js` — Playwright desktop/mobile browser coverage.
 
 ## Working Rules
 
 - Prefer simple, readable JavaScript over additional tooling.
 - Keep production dependency-free unless the user explicitly changes that direction.
-- Put pure game rules in `src/game-core.js`; keep DOM/canvas/audio behavior in `script.js`.
+- Put pure game rules in `src/game-core.js`; keep local profile/readiness logic in `src/player-progress.js`; keep DOM/canvas/audio behavior in `script.js`.
 - Do not rename the `docs/Ai` folder.
 - Keep documentation in sync with behavioral changes.
 - Add a changelog entry in `docs/Ai/CHANGELOG.md` for any player-facing or architectural change.

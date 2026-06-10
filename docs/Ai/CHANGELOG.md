@@ -3,6 +3,18 @@
 ## Purpose
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
+## 2026-06-10
+- Added a backend-shaped local player profile in `src/player-progress.js` with localStorage persistence, per-operation readiness, per-problem outcome history, and boss-readiness recommendation flags.
+- Added a Results popup for current learning progress, including overall readiness, per-operation readiness, attempts, accuracy, recent accuracy, response time, and weak-practice suggestions.
+- Wired correct, wrong, missed, and helped outcomes into the local profile while preserving the existing visible score as a simple correct-answer counter.
+- Tightened readiness scoring so boss recommendations are based on the full current level universe, repeated per-problem mastery, coverage, recent accuracy, and fluency instead of small recent samples.
+- Renamed the visible session counter to Cleared and added per-operation readiness indicators to the level controls.
+- Updated Results practice suggestions to blend weak seen problems with unseen level problems, labeling unseen suggestions as new instead of showing a mastery percentage.
+- Changed new profiles to start every operation at level 1, load saved current levels from the profile at startup, and require a temporary Ready click before advancing to the next level.
+- Added a Login popup for creating and switching named local profiles in localStorage, with old single-profile default data migrated as `david`.
+- Added unit tests for the player progress profile and browser tests for desktop/mobile Results and Login entry points.
+- Updated documentation for the new local profile/readiness architecture.
+
 ## 2026-06-09
 - Added a dev-only automated test suite: Node unit tests for core game rules and Playwright browser tests for desktop/mobile gameplay flows.
 - Added `src/game-core.js` and moved DOM-free math/problem behavior there so browser code and unit tests share the same implementation.

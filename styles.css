@@ -487,6 +487,49 @@ body {
   white-space: nowrap;
 }
 
+.diff-ready {
+  border: none;
+  background: rgba(91, 217, 255, 0.08);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 0.76rem;
+  color: var(--accent);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.diff-ready:hover,
+.kp-diff-ready:hover {
+  background: rgba(91, 217, 255, 0.16);
+}
+
+.diff-ready.is-qualified,
+.kp-diff-ready.is-qualified {
+  color: var(--success);
+}
+
+.diff-ready.needs-ready,
+.kp-diff-ready.needs-ready {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+}
+
+.diff-ready-meter {
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.diff-ready-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-2), var(--success));
+}
+
 /* ── Game canvas ── */
 
 .game {
@@ -790,6 +833,216 @@ button.primary:hover {
   cursor: pointer;
 }
 
+/* ── Results popup ── */
+
+.results-card {
+  max-width: 680px;
+  text-align: left;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 6px;
+}
+
+.results-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.results-overall {
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.results-sub {
+  margin: 0 0 14px 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.results-row {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.results-row-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.results-name {
+  font-weight: 700;
+}
+
+.results-readiness {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.results-meter {
+  height: 7px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  margin-bottom: 6px;
+}
+
+.results-meter-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-2), var(--success));
+}
+
+.results-details,
+.results-weak {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.results-weak {
+  margin-top: 4px;
+}
+
+/* ── Login popup ── */
+
+.login-card {
+  max-width: 420px;
+  text-align: left;
+}
+
+.login-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.login-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.login-active {
+  color: var(--muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.login-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.login-profile-btn {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  text-align: left;
+}
+
+.login-profile-btn.active {
+  border-color: rgba(240, 168, 48, 0.65);
+  background: rgba(240, 168, 48, 0.12);
+}
+
+.login-profile-name {
+  color: var(--text);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.login-profile-meta {
+  color: var(--muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.login-create {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.login-create label {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.login-create-row {
+  display: flex;
+  gap: 8px;
+}
+
+.login-create input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.88rem;
+  font-family: inherit;
+  outline: none;
+}
+
+.login-create input:focus {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 2px rgba(96, 180, 240, 0.15);
+}
+
+.login-error {
+  min-height: 1em;
+  color: var(--danger);
+  font-size: 0.75rem;
+}
+
+.login-close {
+  width: 100%;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.login-close:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
 /* ── Touch keypad ── */
 
 .touch-keypad {
@@ -1035,7 +1288,9 @@ button.primary:hover {
   color: var(--text);
 }
 
-.touch-fb {
+.touch-fb,
+.touch-login,
+.touch-results {
   width: 22px;
   height: 22px;
   display: grid;
@@ -1047,6 +1302,20 @@ button.primary:hover {
   font-weight: 700;
   text-decoration: none;
   flex-shrink: 0;
+}
+
+.touch-login,
+.touch-results {
+  border-radius: 6px;
+  width: auto;
+  padding: 0 6px;
+}
+
+.touch-login {
+  max-width: 66px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Op chits scroll horizontally */
@@ -1263,6 +1532,19 @@ button.primary:hover {
   font-size: 0.78rem;
   min-width: 14px;
   text-align: center;
+}
+
+.kp-diff-ready {
+  border: none;
+  background: rgba(91, 217, 255, 0.08);
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.68rem;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 /* Keypad keys */

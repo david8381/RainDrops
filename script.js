@@ -17,6 +17,20 @@ const {
   lerp,
 } = globalThis.RainMathCore;
 
+const {
+  createStoredProfile,
+  getProfileList,
+  mirrorLegacyProblemStats,
+  readProfile,
+  recordBossAttempt,
+  recordProgressEvent,
+  resetStoredProfile,
+  saveProfile,
+  summarizeProfile,
+  switchStoredProfile,
+  syncSettings,
+} = globalThis.RainMathProgress;
+
 // ============================================================
 // 1. Constants and State
 // ============================================================
@@ -41,6 +55,8 @@ let drops = [];
 let splashes = [];
 let score = 0;
 let gameSpeed = 30;
+let spawnRate = 3;
+let pace = 5;
 let spawnTimer = 0;
 let lastTime = 0;
 let isPaused = false;
@@ -61,12 +77,96 @@ let factorTargetId = null; // id of the targeted factor drop, or null
 // For f10: keyed by problem text.
 // Each entry: { asked: number, correct: number }
 const problemStats = createProblemStats();
+let progressProfile = readProfile();
+
+function applyProfileSettingsToControls() {
+  const settings = progressProfile.settings || {};
+  const savedDifficulties = settings.difficulties || {};
+  for (const opKey of Object.keys(opConfig)) {
+    const savedLevel = savedDifficulties[opKey] ?? progressProfile.skills?.[opKey]?.currentLevel;
+    if (Number.isFinite(savedLevel)) {
+      opConfig[opKey].difficulty = clamp(1, 10, Math.round(savedLevel));
+    }
+  }
+  if (Number.isFinite(settings.speed)) gameSpeed = clamp(0, 100, Math.round(settings.speed));
+  if (Number.isFinite(settings.rate)) spawnRate = clamp(0, 10, Math.round(settings.rate));
+  if (Number.isFinite(settings.pace)) pace = clamp(1, 10, Math.round(settings.pace));
+}
+
+applyProfileSettingsToControls();
+mirrorLegacyProblemStats(progressProfile, problemStats);
+
+function resetRunState({ resume = true, focus = true } = {}) {
+  clearAmbiguousTimer();
+  factorTargetId = null;
+  drops = [];
+  splashes = [];
+  laser = null;
+  score = 0;
+  spawnTimer = 0;
+  lastTime = 0;
+  gameTime = 0;
+  groundFlash = 0;
+  currentInput = "";
+  answerInput.value = "";
+  updateScoreDisplay();
+  updateKpDisplay();
+  if (resume && isPaused) {
+    togglePause();
+  }
+  if (focus) answerInput.focus();
+}
+
+function activateProfile(nextProfile, { resetRun = true } = {}) {
+  progressProfile = nextProfile;
+  applyProfileSettingsToControls();
+  resetProblemStats(problemStats);
+  mirrorLegacyProblemStats(progressProfile, problemStats);
+  if (resetRun) resetRunState({ focus: false });
+  updateOpChits();
+  updateDifficultyDisplays();
+  updateSpeedDisplay();
+  updateScoreDisplay();
+  updateReadinessDisplays();
+  updateLoginLink();
+  drawDrops();
+}
 
 function recordProblemResult(drop, correct) {
   recordProblemResultCore(problemStats, drop, correct);
 }
-let spawnRate = 3;
-let pace = 5;
+
+function getDropResponseMs(drop) {
+  if (!drop || !Number.isFinite(drop.createdAtMs)) return null;
+  return Math.max(0, performance.now() - drop.createdAtMs);
+}
+
+function recordLearningResult(drop, outcome) {
+  if (!drop || !drop.opKey) return;
+  recordProblemResult(drop, outcome === "correct");
+  progressProfile = recordProgressEvent(progressProfile, {
+    opKey: drop.opKey,
+    statsKey: drop.statsKey || drop.text,
+    text: drop.text,
+    outcome,
+    responseMs: getDropResponseMs(drop),
+  });
+  saveProfile(progressProfile);
+  updateReadinessDisplays();
+}
+
+function syncProgressSettings({ persist = true } = {}) {
+  const difficulties = Object.fromEntries(
+    Object.entries(opConfig).map(([opKey, config]) => [opKey, config.difficulty])
+  );
+  progressProfile = syncSettings(progressProfile, {
+    speed: gameSpeed,
+    rate: spawnRate,
+    pace,
+    difficulties,
+  });
+  if (persist) saveProfile(progressProfile);
+}
 
 // ============================================================
 // 2. Utility Functions
@@ -80,18 +180,21 @@ function setSpeed(value) {
   gameSpeed = clamp(0, 100, Math.round(value));
   if (speedSlider) speedSlider.value = gameSpeed;
   if (speedValueEl) speedValueEl.textContent = gameSpeed + "%";
+  syncProgressSettings();
 }
 
 function setRate(value) {
   spawnRate = clamp(0, 10, Math.round(value));
   if (rateSlider) rateSlider.value = spawnRate;
   if (rateValueEl) rateValueEl.textContent = spawnRate;
+  syncProgressSettings();
 }
 
 function setPace(value) {
   pace = clamp(1, 10, Math.round(value));
   if (paceSlider) paceSlider.value = pace;
   if (paceValueEl) paceValueEl.textContent = getMaxFallTime() + "s";
+  syncProgressSettings();
 }
 
 // Drop fall time model:
@@ -148,9 +251,41 @@ function toggleOp(opKey) {
   updateOpChits();
 }
 
-function setDifficulty(opKey, level) {
+function getProgressSkill(opKey) {
+  return summarizeProfile(progressProfile).skills[opKey];
+}
+
+function showReadyRequired(opKey) {
+  const labels = document.querySelectorAll(`.diff-ready[data-op="${opKey}"], .kp-diff-ready[data-op="${opKey}"]`);
+  labels.forEach((label) => {
+    label.classList.add("needs-ready");
+    label.textContent = "Click Ready first";
+  });
+  window.setTimeout(updateReadinessDisplays, 1200);
+}
+
+function canAdvanceDifficulty(opKey, nextLevel) {
+  const currentLevel = opConfig[opKey].difficulty;
+  if (nextLevel <= currentLevel) return true;
+  return Boolean(getProgressSkill(opKey)?.bossAttemptedForLevel);
+}
+
+function markReadyForBoss(opKey) {
+  if (!progressProfile.skills?.[opKey]) return;
+  progressProfile = recordBossAttempt(progressProfile, opKey);
+  saveProfile(progressProfile);
+  updateReadinessDisplays();
+}
+
+function setDifficulty(opKey, level, { force = false } = {}) {
   if (!opConfig[opKey]) return;
-  opConfig[opKey].difficulty = clamp(1, 10, level);
+  const nextLevel = clamp(1, 10, level);
+  if (!force && !canAdvanceDifficulty(opKey, nextLevel)) {
+    showReadyRequired(opKey);
+    return;
+  }
+  opConfig[opKey].difficulty = nextLevel;
+  syncProgressSettings();
   updateDifficultyDisplays();
 }
 
@@ -220,6 +355,7 @@ function createDrop() {
     answerText: problem.answerText || String(problem.answer),
     opKey: problem.opKey,
     statsKey: problem.statsKey || problem.text,
+    createdAtMs: performance.now(),
   };
   // Factor-specific fields
   if (problem.opKey === "factor") {
@@ -246,9 +382,11 @@ function updateDrops(dt) {
 
   for (const drop of drops) {
     if (drop.y >= bottom) {
-      recordProblemResult(drop, false);
+      if (!drop.revealed) {
+        recordLearningResult(drop, "missed");
+        missCount += 1;
+      }
       if (factorTargetId === drop.id) factorTargetId = null;
-      missCount += 1;
     } else {
       survived.push(drop);
     }
@@ -515,6 +653,9 @@ function hitTestDrop(drop, x, y) {
 }
 
 function revealDrop(drop) {
+  if (!drop.revealed) {
+    recordLearningResult(drop, "helped");
+  }
   drop.revealed = true;
 }
 
@@ -577,7 +718,7 @@ function updateScoreDisplay() {
 function handleCorrectAnswer(match) {
   clearAmbiguousTimer();
   if (factorTargetId === match.id) factorTargetId = null;
-  recordProblemResult(match, true);
+  recordLearningResult(match, "correct");
   score += 1;
   updateScoreDisplay();
   drops = drops.filter((d) => d.id !== match.id);
@@ -595,7 +736,7 @@ function handleWrongInput() {
   // Ding every visible non-revealed problem as incorrect
   for (const drop of drops) {
     if (isDropVisible(drop) && !drop.revealed) {
-      recordProblemResult(drop, false);
+      recordLearningResult(drop, "wrong");
     }
   }
   playWrongInput();
@@ -908,6 +1049,15 @@ const opDisplayNames = {
   factor: "Prime Factors",
 };
 
+function formatReadinessPercent(skill) {
+  return `${Math.round(skill?.readiness || 0)}%`;
+}
+
+function formatReadyText(skill) {
+  const suffix = skill?.bossAttemptedForLevel ? " ✓" : "";
+  return `Ready ${formatReadinessPercent(skill)}${suffix}`;
+}
+
 function updateOpChits() {
   document.querySelectorAll(".op-chit").forEach((btn) => {
     const opKey = btn.dataset.op;
@@ -947,16 +1097,18 @@ function buildDiffCards() {
   if (!container) return;
   container.innerHTML = "";
   const enabled = getEnabledOps();
+  const progressSummary = summarizeProfile(progressProfile);
   enabled.forEach((opKey) => {
     const config = opConfig[opKey];
     const range = getDifficultyRange(opKey, config.difficulty);
+    const skill = progressSummary.skills[opKey];
 
     const card = document.createElement("div");
     card.className = "diff-card";
     card.tabIndex = 0;
     card.dataset.op = opKey;
     card.setAttribute("role", "spinbutton");
-    card.setAttribute("aria-label", `${opDisplayNames[opKey]} difficulty`);
+    card.setAttribute("aria-label", `${opDisplayNames[opKey]} difficulty, level ${config.difficulty}, ${formatReadyText(skill)}`);
     card.setAttribute("aria-valuenow", config.difficulty);
     card.setAttribute("aria-valuemin", 1);
     card.setAttribute("aria-valuemax", 10);
@@ -1012,14 +1164,61 @@ function buildDiffCards() {
     rangeText.className = "diff-range";
     rangeText.textContent = `${range.min}\u2013${range.max}`;
 
+    const readyText = document.createElement("button");
+    readyText.type = "button";
+    readyText.className = "diff-ready";
+    readyText.dataset.op = opKey;
+    readyText.textContent = formatReadyText(skill);
+    readyText.setAttribute("aria-pressed", skill.bossAttemptedForLevel ? "true" : "false");
+    readyText.addEventListener("click", (e) => {
+      e.stopPropagation();
+      initAudio();
+      markReadyForBoss(opKey);
+    });
+
+    const readyMeter = document.createElement("div");
+    readyMeter.className = "diff-ready-meter";
+    const readyFill = document.createElement("div");
+    readyFill.className = "diff-ready-fill";
+    readyFill.dataset.op = opKey;
+    readyFill.style.width = formatReadinessPercent(skill);
+    readyMeter.appendChild(readyFill);
+
     card.addEventListener("click", () => {
       showStatsPopup(opKey);
     });
 
     card.appendChild(label);
     card.appendChild(controls);
+    card.appendChild(readyText);
+    card.appendChild(readyMeter);
     card.appendChild(rangeText);
     container.appendChild(card);
+  });
+}
+
+function updateReadinessDisplays() {
+  const progressSummary = summarizeProfile(progressProfile);
+
+  document.querySelectorAll(".diff-ready[data-op]").forEach((el) => {
+    const skill = progressSummary.skills[el.dataset.op];
+    el.textContent = formatReadyText(skill);
+    el.classList.toggle("is-qualified", Boolean(skill?.bossAttemptedForLevel));
+    el.classList.remove("needs-ready");
+    el.setAttribute("aria-pressed", skill?.bossAttemptedForLevel ? "true" : "false");
+  });
+
+  document.querySelectorAll(".diff-ready-fill[data-op]").forEach((el) => {
+    const skill = progressSummary.skills[el.dataset.op];
+    el.style.width = formatReadinessPercent(skill);
+  });
+
+  document.querySelectorAll(".kp-diff-ready[data-op]").forEach((el) => {
+    const skill = progressSummary.skills[el.dataset.op];
+    el.textContent = formatReadyText(skill);
+    el.classList.toggle("is-qualified", Boolean(skill?.bossAttemptedForLevel));
+    el.classList.remove("needs-ready");
+    el.setAttribute("aria-pressed", skill?.bossAttemptedForLevel ? "true" : "false");
   });
 }
 
@@ -1126,6 +1325,280 @@ function showStatsPopup(opKey) {
 
 function closeStatsPopup() {
   const existing = document.getElementById("statsOverlay");
+  if (existing) existing.remove();
+}
+
+// ============================================================
+// 13c. Results Popup
+// ============================================================
+
+function formatPercent(value) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatResponseTime(ms) {
+  if (ms === null || ms === undefined) return "—";
+  return `${(ms / 1000).toFixed(1)}s avg`;
+}
+
+function formatPracticeSuggestion(problem) {
+  if (problem.kind === "new") return `${problem.text} (new)`;
+  return `${problem.text} (${problem.mastery}%)`;
+}
+
+function buildResultsPopup() {
+  closeResultsPopup();
+
+  const summary = summarizeProfile(progressProfile);
+  const overlay = document.createElement("div");
+  overlay.className = "overlay results-overlay";
+  overlay.id = "resultsOverlay";
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) closeResultsPopup();
+  });
+
+  const card = document.createElement("div");
+  card.className = "card results-card";
+
+  const header = document.createElement("div");
+  header.className = "results-header";
+  const title = document.createElement("h2");
+  title.textContent = "Learning Results";
+  const overall = document.createElement("div");
+  overall.className = "results-overall";
+  overall.textContent = `${summary.overallReadiness}% overall readiness`;
+  header.appendChild(title);
+  header.appendChild(overall);
+  card.appendChild(header);
+
+  const sub = document.createElement("p");
+  sub.className = "results-sub";
+  sub.textContent = "Boss readiness is based on broad coverage, repeated mastery, recent accuracy, and fluency for each problem type.";
+  card.appendChild(sub);
+
+  const list = document.createElement("div");
+  list.className = "results-list";
+
+  for (const opKey of Object.keys(opConfig)) {
+    const skill = summary.skills[opKey];
+    const row = document.createElement("div");
+    row.className = "results-row";
+
+    const top = document.createElement("div");
+    top.className = "results-row-top";
+
+    const name = document.createElement("div");
+    name.className = "results-name";
+    name.textContent = opDisplayNames[opKey] || opKey;
+
+    const readiness = document.createElement("div");
+    readiness.className = "results-readiness";
+    readiness.textContent = `${skill.readiness}%`;
+
+    top.appendChild(name);
+    top.appendChild(readiness);
+
+    const meter = document.createElement("div");
+    meter.className = "results-meter";
+    const fill = document.createElement("div");
+    fill.className = "results-meter-fill";
+    fill.style.width = `${skill.readiness}%`;
+    meter.appendChild(fill);
+
+    const details = document.createElement("div");
+    details.className = "results-details";
+    const bossText = skill.bossReady
+      ? "Boss ready"
+      : `${Math.max(0, skill.bossThreshold - skill.readiness)} points to boss`;
+    details.textContent = [
+      `Level ${skill.currentLevel}`,
+      bossText,
+      `${skill.attempts} attempts`,
+      `${skill.distinct}/${skill.universeCount} seen`,
+      `${skill.masteredCount} mastered`,
+      `${formatPercent(skill.accuracy)} accuracy`,
+      `${formatPercent(skill.recentAccuracy)} recent`,
+      formatResponseTime(skill.averageResponseMs),
+    ].join(" · ");
+
+    row.appendChild(top);
+    row.appendChild(meter);
+    row.appendChild(details);
+
+    if (skill.practiceSuggestions.length > 0) {
+      const weak = document.createElement("div");
+      weak.className = "results-weak";
+      weak.textContent = `Practice next: ${skill.practiceSuggestions
+        .map(formatPracticeSuggestion)
+        .join(", ")}`;
+      row.appendChild(weak);
+    }
+
+    list.appendChild(row);
+  }
+
+  card.appendChild(list);
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "primary";
+  closeBtn.textContent = "Close";
+  closeBtn.addEventListener("click", closeResultsPopup);
+  card.appendChild(closeBtn);
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+}
+
+function closeResultsPopup() {
+  const existing = document.getElementById("resultsOverlay");
+  if (existing) existing.remove();
+}
+
+// ============================================================
+// 13d. Login Popup
+// ============================================================
+
+function getActiveProfileName() {
+  return progressProfile?.user?.name || "Login";
+}
+
+function getLoginLinkText() {
+  const name = getActiveProfileName();
+  return name === "Local Player" ? "Login" : name;
+}
+
+function updateLoginLink() {
+  const text = getLoginLinkText();
+  const title = text === "Login" ? "Select or create a player" : `Player: ${text}`;
+  ["loginLink", "touchLoginLink"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    el.title = title;
+    el.setAttribute("aria-label", title);
+  });
+}
+
+function formatProfileUpdatedAt(value) {
+  if (!value) return "No saved practice yet";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Saved locally";
+  return `Updated ${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+}
+
+function buildLoginPopup() {
+  closeLoginPopup();
+  closeStatsPopup();
+  closeResultsPopup();
+
+  const overlay = document.createElement("div");
+  overlay.className = "overlay login-overlay";
+  overlay.id = "loginOverlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Select player");
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) closeLoginPopup();
+  });
+
+  const card = document.createElement("div");
+  card.className = "card login-card";
+
+  const header = document.createElement("div");
+  header.className = "login-header";
+  const title = document.createElement("h2");
+  title.textContent = "Players";
+  const active = document.createElement("div");
+  active.className = "login-active";
+  active.textContent = `Current: ${getActiveProfileName()}`;
+  header.appendChild(title);
+  header.appendChild(active);
+  card.appendChild(header);
+
+  const list = document.createElement("div");
+  list.className = "login-list";
+  const profiles = getProfileList();
+  profiles.forEach((profile) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "login-profile-btn";
+    btn.classList.toggle("active", profile.active);
+    btn.setAttribute("aria-pressed", profile.active ? "true" : "false");
+    btn.addEventListener("click", () => {
+      saveProfile(progressProfile);
+      const selected = switchStoredProfile(profile.id);
+      activateProfile(selected);
+      closeLoginPopup();
+    });
+
+    const name = document.createElement("span");
+    name.className = "login-profile-name";
+    name.textContent = profile.name;
+    const meta = document.createElement("span");
+    meta.className = "login-profile-meta";
+    meta.textContent = profile.active ? "Active" : formatProfileUpdatedAt(profile.updatedAt);
+    btn.appendChild(name);
+    btn.appendChild(meta);
+    list.appendChild(btn);
+  });
+  card.appendChild(list);
+
+  const form = document.createElement("form");
+  form.className = "login-create";
+  const label = document.createElement("label");
+  label.setAttribute("for", "profileNameInput");
+  label.textContent = "Create player";
+  const row = document.createElement("div");
+  row.className = "login-create-row";
+  const input = document.createElement("input");
+  input.id = "profileNameInput";
+  input.type = "text";
+  input.maxLength = 40;
+  input.autocomplete = "off";
+  input.placeholder = "Name";
+  const createBtn = document.createElement("button");
+  createBtn.type = "submit";
+  createBtn.className = "primary";
+  createBtn.textContent = "Create";
+  const error = document.createElement("div");
+  error.className = "login-error";
+  error.setAttribute("role", "alert");
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = input.value.trim();
+    if (!name) {
+      error.textContent = "Enter a player name.";
+      input.focus();
+      return;
+    }
+    saveProfile(progressProfile);
+    const created = createStoredProfile(name);
+    activateProfile(created);
+    closeLoginPopup();
+  });
+
+  row.appendChild(input);
+  row.appendChild(createBtn);
+  form.appendChild(label);
+  form.appendChild(row);
+  form.appendChild(error);
+  card.appendChild(form);
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "login-close";
+  closeBtn.textContent = "Close";
+  closeBtn.addEventListener("click", closeLoginPopup);
+  card.appendChild(closeBtn);
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  input.focus();
+}
+
+function closeLoginPopup() {
+  const existing = document.getElementById("loginOverlay");
   if (existing) existing.remove();
 }
 
@@ -1482,23 +1955,7 @@ function togglePause() {
 }
 
 function restartGame() {
-  clearAmbiguousTimer();
-  factorTargetId = null;
-  drops = [];
-  splashes = [];
-  laser = null;
-  score = 0;
-  spawnTimer = 0;
-  lastTime = 0;
-  gameTime = 0;
-  groundFlash = 0;
-  currentInput = "";
-  answerInput.value = "";
-  updateScoreDisplay();
-  if (isPaused) {
-    togglePause();
-  }
-  answerInput.focus();
+  resetRunState();
 }
 
 // Answer input handler — single path for all input processing
@@ -1562,6 +2019,13 @@ document.addEventListener("keydown", (event) => {
     }
     return;
   }
+  if (document.getElementById("loginOverlay")) {
+    if (event.key === "Escape") {
+      closeLoginPopup();
+      event.preventDefault();
+    }
+    return;
+  }
 
   initAudio();
 
@@ -1593,6 +2057,11 @@ document.addEventListener("keydown", (event) => {
     // Close stats popup first if open
     if (document.getElementById("statsOverlay")) {
       closeStatsPopup();
+      event.preventDefault();
+      return;
+    }
+    if (document.getElementById("resultsOverlay")) {
+      closeResultsPopup();
       event.preventDefault();
       return;
     }
@@ -1711,9 +2180,23 @@ canvas.addEventListener("click", (event) => {
 
 // Feedback popup
 const feedbackOverlay = document.getElementById("feedbackOverlay");
+const loginLink = document.getElementById("loginLink");
+const resultsLink = document.getElementById("resultsLink");
 const feedbackLink = document.getElementById("feedbackLink");
 const fbCancel = document.getElementById("fbCancel");
 
+if (loginLink) {
+  loginLink.addEventListener("click", (e) => {
+    e.preventDefault();
+    buildLoginPopup();
+  });
+}
+if (resultsLink) {
+  resultsLink.addEventListener("click", (e) => {
+    e.preventDefault();
+    buildResultsPopup();
+  });
+}
 if (feedbackLink) {
   feedbackLink.addEventListener("click", (e) => {
     e.preventDefault();
@@ -1767,8 +2250,22 @@ function setupTouchKeypad() {
   if (controlsBar && opChits) {
     const touchBrand = document.createElement("div");
     touchBrand.className = "touch-brand";
-    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score">Score: <span id="touchScore">0</span></div><a href="#" class="touch-fb" id="touchFbLink">?</a>`;
+    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score">Cleared: <span id="touchScore">0</span></div><a href="#" class="touch-login" id="touchLoginLink">Login</a><a href="#" class="touch-results" id="touchResultsLink">R</a><a href="#" class="touch-fb" id="touchFbLink">?</a>`;
     controlsBar.insertBefore(touchBrand, opChits);
+    const touchLoginLink = document.getElementById("touchLoginLink");
+    if (touchLoginLink) {
+      touchLoginLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        buildLoginPopup();
+      });
+    }
+    const touchResultsLink = document.getElementById("touchResultsLink");
+    if (touchResultsLink) {
+      touchResultsLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        buildResultsPopup();
+      });
+    }
     const touchFbLink = document.getElementById("touchFbLink");
     if (touchFbLink) {
       touchFbLink.addEventListener("click", (e) => {
@@ -1848,8 +2345,10 @@ function buildKpDiffStrip() {
   if (!strip) return;
   strip.innerHTML = "";
   const enabled = getEnabledOps();
+  const progressSummary = summarizeProfile(progressProfile);
   enabled.forEach((opKey) => {
     const config = opConfig[opKey];
+    const skill = progressSummary.skills[opKey];
     const item = document.createElement("div");
     item.className = "kp-diff-item";
 
@@ -1866,6 +2365,14 @@ function buildKpDiffStrip() {
     val.className = "kp-diff-val";
     val.textContent = config.difficulty;
 
+    const ready = document.createElement("button");
+    ready.type = "button";
+    ready.className = "kp-diff-ready";
+    ready.dataset.op = opKey;
+    ready.textContent = formatReadyText(skill);
+    ready.setAttribute("aria-pressed", skill.bossAttemptedForLevel ? "true" : "false");
+    wireKpButton(ready, () => markReadyForBoss(opKey));
+
     const upBtn = document.createElement("button");
     upBtn.className = "kp-diff-btn";
     upBtn.textContent = "+";
@@ -1875,10 +2382,11 @@ function buildKpDiffStrip() {
     item.appendChild(downBtn);
     item.appendChild(val);
     item.appendChild(upBtn);
+    item.appendChild(ready);
 
     // Click the item (not buttons) to show stats
     item.addEventListener("click", (e) => {
-      if (e.target === downBtn || e.target === upBtn) return;
+      if (e.target === downBtn || e.target === upBtn || e.target === ready) return;
       showStatsPopup(opKey);
     });
 
@@ -1958,6 +2466,8 @@ function getTestState() {
     drops: drops.map((drop) => ({ ...drop, factorCollected: { ...(drop.factorCollected || {}) } })),
     opConfig: cloneForTest(opConfig),
     problemStats: cloneForTest(problemStats),
+    progressProfile: cloneForTest(progressProfile),
+    progressSummary: cloneForTest(summarizeProfile(progressProfile)),
     gameSpeed,
     spawnRate,
     pace,
@@ -1988,6 +2498,7 @@ function makeTestDrop(overrides = {}) {
     opKey,
     statsKey: overrides.statsKey ?? overrides.text ?? "test",
     revealed: overrides.revealed ?? false,
+    createdAtMs: overrides.createdAtMs ?? performance.now() - 1000,
   };
 
   if (opKey === "factor") {
@@ -2012,7 +2523,10 @@ function installTestHooks() {
     reset({ clearStats = true } = {}) {
       clearAmbiguousTimer();
       resetSettingsForTest();
-      if (clearStats) resetProblemStats(problemStats);
+      if (clearStats) {
+        resetProblemStats(problemStats);
+        progressProfile = resetStoredProfile();
+      }
       drops = [];
       splashes = [];
       laser = null;
@@ -2032,6 +2546,7 @@ function installTestHooks() {
       updateDifficultyDisplays();
       updateSpeedDisplay();
       updateScoreDisplay();
+      updateLoginLink();
       if (pauseBtn) pauseBtn.textContent = "Pause";
       if (pauseOverlayEl) pauseOverlayEl.classList.add("hidden");
       drawDrops();
@@ -2044,8 +2559,12 @@ function installTestHooks() {
       updateOpChits();
       return getTestState();
     },
-    setOpDifficulty(opKey, level) {
-      setDifficulty(opKey, level);
+    setOpDifficulty(opKey, level, options = {}) {
+      setDifficulty(opKey, level, options);
+      return getTestState();
+    },
+    markReady(opKey) {
+      markReadyForBoss(opKey);
       return getTestState();
     },
     setControls({ speed, rate, pace: nextPace } = {}) {
@@ -2095,6 +2614,7 @@ function init() {
   updateDifficultyDisplays();
   updateSpeedDisplay();
   updateScoreDisplay();
+  syncProgressSettings();
   answerInput.tabIndex = -1;
 
   if (pauseOverlayEl) {
@@ -2105,6 +2625,7 @@ function init() {
   }
 
   setupTouchKeypad();
+  updateLoginLink();
   installTestHooks();
   window.__RAIN_MATH_READY__ = true;
   answerInput.focus();
