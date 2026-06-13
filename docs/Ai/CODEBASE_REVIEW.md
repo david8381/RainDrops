@@ -8,16 +8,19 @@ Rain Math is a small static browser game with a focused production surface: HTML
 - The gameplay loop is responsive and direct: immediate clear for simple answers, Enter only for symbolic/multi-step answers.
 - The current operation set is broad for the app size: arithmetic, decimal shifting, SI conversions, geometry, and prime factorization.
 - Core math behavior is now separated into `src/game-core.js`, making regressions much easier to catch.
-- Learning progress is stored in a backend-shaped local profile, so future backend sync can reuse the same event semantics.
+- Learning progress is stored in a backend-shaped local profile, including Speed/Drops settings, derived pressure metadata, boss clears, and Blitz/Wave/Boss challenge attempts and bests, so future backend sync can reuse the same event semantics.
 - Playwright tests exercise real desktop and mobile browser behavior instead of relying only on DOM shims.
 
 ## Changes Made During Review
 - Extracted DOM-free game rules from `script.js` into `src/game-core.js`.
 - Kept browser loading as classic scripts so opening `index.html` directly from disk still works.
 - Added deterministic unit tests for core math/problem behavior.
-- Added a local player progress module for per-problem outcomes, universe-aware readiness scoring, and boss-readiness recommendations.
+- Added a local player progress module for per-problem outcomes, 3-attempt/90%-current-accuracy boss readiness scoring, and boss-readiness recommendations.
 - Added a local Login popup for creating and switching named localStorage profiles.
 - Added a Results popup for current readiness and weak-practice suggestions.
+- Added opt-in boss mode as the current level-advancement test, with Wave 1 shield endurance, Wave 2 load ladder, multi-node mothership parts, answerable bombs, falling part debris, and short stun behavior.
+- Added Spacebar Breather mode as a practice-only way to clear the current board without new spawns or drop motion.
+- Added player-controlled Speed/Drops practice pressure and optional Blitz fluency tracking without making higher pressure block content-level advancement.
 - Added deterministic unit tests for the player progress profile.
 - Added Playwright browser tests for desktop input flows and mobile keypad flows.
 - Added a gated `?test=1` API for deterministic browser tests.
@@ -32,7 +35,7 @@ Rain Math is a small static browser game with a focused production surface: HTML
 - Cache-buster query strings in `index.html` are still manual.
 - External services are not end-to-end tested: FormSubmit submission and GoatCounter analytics are intentionally not exercised by Playwright.
 - Canvas tests are smoke-level only. They verify that the canvas paints, not exact rendering.
-- Progress persists locally only. There is no backend sync, authentication, or player-facing reset/export flow yet.
+- Progress persists locally only. There is no backend sync, authentication, or player-facing export flow yet.
 - The game has no lint/formatter policy. The current preference remains simple readable JavaScript over more tooling.
 
 ## Current Test Posture

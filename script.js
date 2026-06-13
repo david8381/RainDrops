@@ -3,6 +3,8 @@ const {
   clamp,
   createDefaultOpConfig,
   createProblemStats,
+  expDiffToConversion,
+  generateCircleOfType,
   generateWeightedProblem: generateCoreWeightedProblem,
   getDifficultyRange,
   getFactorRemainingText,
@@ -19,10 +21,17 @@ const {
 
 const {
   createStoredProfile,
+  getPressureTier,
   getProfileList,
+  getSkillUniverseProblems,
+  isBossMasteredProblem,
   mirrorLegacyProblemStats,
+  problemCurrentAccuracy,
+  problemMastery: getProgressProblemMastery,
   readProfile,
+  recordBlitzAttempt,
   recordBossAttempt,
+  recordChallengeAttempt,
   recordProgressEvent,
   resetStoredProfile,
   saveProfile,
@@ -43,23 +52,50 @@ const pauseBtn = document.getElementById("pauseBtn");
 const restartBtn = document.getElementById("restartBtn");
 const speedSlider = document.getElementById("speedSlider");
 const speedValueEl = document.getElementById("speedValue");
-const rateSlider = document.getElementById("rateSlider");
-const rateValueEl = document.getElementById("rateValue");
-const paceSlider = document.getElementById("paceSlider");
-const paceValueEl = document.getElementById("paceValue");
-const pauseOverlayEl = document.getElementById("pauseOverlay");
+const dropLimitSlider = document.getElementById("dropLimitSlider");
+const dropLimitValueEl = document.getElementById("dropLimitValue");
+const bossHudEl = document.getElementById("bossHud");
+const bossHudTitleEl = document.getElementById("bossHudTitle");
+const bossHudStatusEl = document.getElementById("bossHudStatus");
+const bossHudMetaEl = document.getElementById("bossHudMeta");
+const breatherHudEl = document.getElementById("breatherHud");
 
 const opConfig = createDefaultOpConfig();
+
+const BOSS_ANNOUNCE_MS = 1300;
+const BOSS_STUN_MS = 1400;
+const BOSS_VICTORY_MS = 1800;
+const DEFAULT_MAX_FALL_TIME_SEC = 10;
+const BLITZ_RAMP_MS = 70000;
+const BLITZ_START_SPEED = 20;
+const BLITZ_START_DROPS = 2;
+const BLITZ_MAX_DROPS = 10;
+const WAVE_TWO_BASE_SPEED = 42;
+const CHALLENGE_TRANSITION_MS = 1800;
+const BOSS_HUD_FRESH_MS = 3600;
+const BLITZ_SHIELD_START = 20;
+const BLITZ_SHIELD_MAX = 30;
+const BLITZ_CORRECT_SHIELD_GAIN = 1;
+const BLITZ_MISTAKE_SHIELD_LOSS = 5;
+const BLITZ_SHIELD_PULSE_MS = 260;
+const BLITZ_SHIELD_HIT_MS = 360;
+const WAVE_TWO_STEP_CLEARS = 2;
+const BOSS_PART_DEFS = [
+  { id: "shield", name: "Shields", kind: "shield", problemCount: 3, quartile: 0 },
+  { id: "guns", name: "Guns", kind: "cannon", problemCount: 4, quartile: 1 },
+  { id: "wings", name: "Wings", kind: "wing", problemCount: 4, quartile: 2 },
+  { id: "core", name: "Core", kind: "core", problemCount: 4, quartile: 3 },
+];
 
 let drops = [];
 let splashes = [];
 let score = 0;
 let gameSpeed = 30;
-let spawnRate = 3;
-let pace = 5;
+let dropLimit = 3;
 let spawnTimer = 0;
 let lastTime = 0;
 let isPaused = false;
+let isBreatherMode = false;
 let audioCtx = null;
 let nextDropId = 0;
 let canvasW = 0;
@@ -71,6 +107,7 @@ let laser = null;
 let ambiguousTimer = null;
 const AMBIGUOUS_DELAY_MS = 400;
 let factorTargetId = null; // id of the targeted factor drop, or null
+let bossMode = null;
 
 // Problem stats: tracks every problem ever seen.
 // For add/sub/mul/div: keyed by "a,b" (for div: "quotient,divisor").
@@ -88,9 +125,8 @@ function applyProfileSettingsToControls() {
       opConfig[opKey].difficulty = clamp(1, 10, Math.round(savedLevel));
     }
   }
-  if (Number.isFinite(settings.speed)) gameSpeed = clamp(0, 100, Math.round(settings.speed));
-  if (Number.isFinite(settings.rate)) spawnRate = clamp(0, 10, Math.round(settings.rate));
-  if (Number.isFinite(settings.pace)) pace = clamp(1, 10, Math.round(settings.pace));
+  gameSpeed = clamp(0, 100, Math.round(Number.isFinite(settings.speed) ? settings.speed : 30));
+  dropLimit = clamp(0, 10, Math.round(Number.isFinite(settings.rate) ? settings.rate : 3));
 }
 
 applyProfileSettingsToControls();
@@ -98,6 +134,8 @@ mirrorLegacyProblemStats(progressProfile, problemStats);
 
 function resetRunState({ resume = true, focus = true } = {}) {
   clearAmbiguousTimer();
+  bossMode = null;
+  isBreatherMode = false;
   factorTargetId = null;
   drops = [];
   splashes = [];
@@ -111,6 +149,8 @@ function resetRunState({ resume = true, focus = true } = {}) {
   answerInput.value = "";
   updateScoreDisplay();
   updateKpDisplay();
+  updateBossHud();
+  updateBreatherHud();
   if (resume && isPaused) {
     togglePause();
   }
@@ -125,7 +165,7 @@ function activateProfile(nextProfile, { resetRun = true } = {}) {
   if (resetRun) resetRunState({ focus: false });
   updateOpChits();
   updateDifficultyDisplays();
-  updateSpeedDisplay();
+  updateControlDisplay();
   updateScoreDisplay();
   updateReadinessDisplays();
   updateLoginLink();
@@ -143,6 +183,7 @@ function getDropResponseMs(drop) {
 
 function recordLearningResult(drop, outcome) {
   if (!drop || !drop.opKey) return;
+  if (isBossActive()) return;
   recordProblemResult(drop, outcome === "correct");
   progressProfile = recordProgressEvent(progressProfile, {
     opKey: drop.opKey,
@@ -150,9 +191,54 @@ function recordLearningResult(drop, outcome) {
     text: drop.text,
     outcome,
     responseMs: getDropResponseMs(drop),
+    pressureTier: getActivePressure().key,
+    speedPercent: getActivePressure().speed,
+    spawnRate: getActivePressure().rate,
   });
   saveProfile(progressProfile);
   updateReadinessDisplays();
+}
+
+function getUnclearedDrops() {
+  return drops.filter((drop) => isDropVisible(drop) && !drop.revealed);
+}
+
+function updateBreatherHud() {
+  if (!breatherHudEl) return;
+  breatherHudEl.classList.toggle("hidden", !isBreatherMode);
+  if (isBreatherMode) {
+    const remaining = getUnclearedDrops().length;
+    breatherHudEl.textContent = remaining > 0
+      ? `Breather: clear ${remaining} to resume`
+      : "Breather cleared";
+  }
+}
+
+function maybeExitBreatherMode() {
+  if (!isBreatherMode) return;
+  if (getUnclearedDrops().length > 0) {
+    updateBreatherHud();
+    return;
+  }
+  isBreatherMode = false;
+  spawnTimer = 0;
+  lastTime = 0;
+  updateBreatherHud();
+}
+
+function enterBreatherMode() {
+  if (isPaused || isBossActive() || isBreatherMode || getUnclearedDrops().length === 0) return false;
+  isBreatherMode = true;
+  clearAmbiguousTimer();
+  answerInput.focus();
+  updateBreatherHud();
+  return true;
+}
+
+function exitBreatherMode() {
+  if (!isBreatherMode) return;
+  isBreatherMode = false;
+  updateBreatherHud();
 }
 
 function syncProgressSettings({ persist = true } = {}) {
@@ -160,9 +246,9 @@ function syncProgressSettings({ persist = true } = {}) {
     Object.entries(opConfig).map(([opKey, config]) => [opKey, config.difficulty])
   );
   progressProfile = syncSettings(progressProfile, {
+    pressureTier: getPressureTier(gameSpeed).key,
     speed: gameSpeed,
-    rate: spawnRate,
-    pace,
+    rate: dropLimit,
     difficulties,
   });
   if (persist) saveProfile(progressProfile);
@@ -173,40 +259,44 @@ function syncProgressSettings({ persist = true } = {}) {
 // ============================================================
 
 // ============================================================
-// 3. Speed Control
+// 3. Practice Controls
 // ============================================================
 
-function setSpeed(value) {
-  gameSpeed = clamp(0, 100, Math.round(value));
-  if (speedSlider) speedSlider.value = gameSpeed;
-  if (speedValueEl) speedValueEl.textContent = gameSpeed + "%";
-  syncProgressSettings();
+function getCurrentPressure() {
+  const tier = getPressureTier(gameSpeed);
+  const speedRatio = gameSpeed / 100;
+  return {
+    ...tier,
+    key: tier.key,
+    label: tier.label,
+    speed: gameSpeed,
+    rate: dropLimit,
+    maxActiveDrops: dropLimit,
+    waveMaxActive: clamp(1, 10, Math.max(1, dropLimit)),
+    waveDelayMinMs: Math.round(lerp(900, 260, speedRatio)),
+    waveDelayMaxMs: Math.round(lerp(1400, 560, speedRatio)),
+    bossSpeedMultiplier: lerp(0.55, 1.35, speedRatio),
+    bombIntervalMultiplier: lerp(1.35, 0.7, speedRatio),
+  };
 }
 
-function setRate(value) {
-  spawnRate = clamp(0, 10, Math.round(value));
-  if (rateSlider) rateSlider.value = spawnRate;
-  if (rateValueEl) rateValueEl.textContent = spawnRate;
-  syncProgressSettings();
+function getActivePressure() {
+  return bossMode?.pressure || getCurrentPressure();
 }
 
-function setPace(value) {
-  pace = clamp(1, 10, Math.round(value));
-  if (paceSlider) paceSlider.value = pace;
-  if (paceValueEl) paceValueEl.textContent = getMaxFallTime() + "s";
-  syncProgressSettings();
+function setPracticeControls({ speed = gameSpeed, drops = dropLimit } = {}, { persist = true } = {}) {
+  gameSpeed = clamp(0, 100, Math.round(Number.isFinite(speed) ? speed : gameSpeed));
+  dropLimit = clamp(0, 10, Math.round(Number.isFinite(drops) ? drops : dropLimit));
+  if (persist) syncProgressSettings();
+  updateControlDisplay();
+  updateReadinessDisplays();
 }
 
 // Drop fall time model:
-//   Pace slider 1-10 controls the max fall time (slowest drop).
-//   Pace 1 (bottom) => max 15s (easy). Pace 10 (top) => max 3s (hard).
-//   Each drop gets a random fall time between 3s and maxFallTime.
-//   baseSpeed (px/sec) = canvasH / fallTime.
-//   gameSpeed (0-100%) is then applied as a multiplier on top.
+//   Each normal drop gets a random fall time between 3s and a fixed max.
+//   baseSpeed (px/sec) = canvasH / fallTime, then Speed applies as a multiplier.
 function getMaxFallTime() {
-  // pace 1 => 15s, pace 10 => 3s
-  const t = (pace - 1) / 9;
-  return Math.round(lerp(15, 3, t));
+  return DEFAULT_MAX_FALL_TIME_SEC;
 }
 
 function getRandomBaseSpeed() {
@@ -220,16 +310,29 @@ function getSpeedMultiplier() {
   return gameSpeed / 100;
 }
 
+function getBossSpeedMultiplier() {
+  if (bossMode?.phase === "challenge") {
+    return getBlitzBombSpeedMultiplier();
+  }
+  return getActivePressure().bossSpeedMultiplier;
+}
+
 function getSpawnInterval() {
-  if (spawnRate === 0) return Infinity;
-  // rate 1 => ~4000ms, rate 5 => ~1000ms, rate 10 => ~350ms
-  const t = (spawnRate - 1) / 9; // 0..1
-  return lerp(4000, 350, t);
+  if (dropLimit === 0) return Infinity;
+  return lerp(2200, 500, gameSpeed / 100);
 }
 
 function getMaxDrops() {
-  // Scale max active drops with rate: rate 1 => 4, rate 10 => 16
-  return Math.round(lerp(4, 16, (spawnRate - 1) / 9));
+  return dropLimit;
+}
+
+function getBossWaveMaxActive() {
+  return getActivePressure().waveMaxActive;
+}
+
+function getBossWaveDelayMs() {
+  const pressure = getActivePressure();
+  return randInt(pressure.waveDelayMinMs, pressure.waveDelayMaxMs);
 }
 
 // ============================================================
@@ -259,9 +362,18 @@ function showReadyRequired(opKey) {
   const labels = document.querySelectorAll(`.diff-ready[data-op="${opKey}"], .kp-diff-ready[data-op="${opKey}"]`);
   labels.forEach((label) => {
     label.classList.add("needs-ready");
-    label.textContent = "Click Ready first";
+    label.textContent = "Beat Boss first";
   });
   window.setTimeout(updateReadinessDisplays, 1200);
+}
+
+function showBossLocked(opKey) {
+  const labels = document.querySelectorAll(`.diff-ready[data-op="${opKey}"], .kp-diff-ready[data-op="${opKey}"]`);
+  labels.forEach((label) => {
+    label.classList.add("needs-ready");
+    label.textContent = "Reach 80% mastery";
+  });
+  window.setTimeout(updateReadinessDisplays, 1400);
 }
 
 function canAdvanceDifficulty(opKey, nextLevel) {
@@ -272,7 +384,12 @@ function canAdvanceDifficulty(opKey, nextLevel) {
 
 function markReadyForBoss(opKey) {
   if (!progressProfile.skills?.[opKey]) return;
-  progressProfile = recordBossAttempt(progressProfile, opKey);
+  const pressure = getCurrentPressure();
+  progressProfile = recordBossAttempt(progressProfile, opKey, {
+    pressureTier: pressure.key,
+    speedPercent: pressure.speed,
+    spawnRate: pressure.rate,
+  });
   saveProfile(progressProfile);
   updateReadinessDisplays();
 }
@@ -293,14 +410,904 @@ function setDifficulty(opKey, level, { force = false } = {}) {
 // 6. Problem Generation
 // ============================================================
 
+function getProfileMasteryForGeneration(opKey, statsKey) {
+  const problem = progressProfile.skills?.[opKey]?.problems?.[statsKey];
+  return problem ? getProgressProblemMastery(problem) / 100 : null;
+}
+
 function generateWeightedProblem(opKey) {
-  return generateCoreWeightedProblem(opKey, opConfig, problemStats);
+  return generateCoreWeightedProblem(opKey, opConfig, problemStats, Math.random, getProfileMasteryForGeneration);
 }
 
 function pickRandomEnabledOp() {
   const enabled = getEnabledOps();
   if (enabled.length === 0) return null;
   return enabled[Math.floor(Math.random() * enabled.length)];
+}
+
+// ============================================================
+// 6b. Boss Mode
+// ============================================================
+
+function isBossActive() {
+  return Boolean(bossMode?.active);
+}
+
+function isBossStunned() {
+  return Boolean(bossMode?.active && bossMode.stunMs > 0);
+}
+
+function copyProblemToTarget(problem, target) {
+  target.text = problem.text;
+  target.answer = problem.answer;
+  target.answerText = problem.answerText || String(problem.answer);
+  target.opKey = problem.opKey;
+  target.statsKey = problem.statsKey || problem.text;
+  target.createdAtMs = performance.now();
+  if (problem.opKey === "factor") {
+    target.answer = null;
+    target.answerText = null;
+    target.factorOriginal = problem.factorOriginal;
+    target.factorRemaining = problem.factorRemaining;
+    target.factorCollected = { ...problem.factorCollected };
+    target.factorLastPrime = null;
+    target.factorComplete = false;
+  }
+  return target;
+}
+
+function getProblemAnswerKey(problem) {
+  if (problem.opKey === "factor") return `factor:${problem.factorOriginal}`;
+  return String(problem.answerText || problem.answer);
+}
+
+function getProblemIdentityKey(problem) {
+  if (problem.opKey === "factor") return `factor:${problem.factorOriginal}`;
+  return problem.statsKey || problem.text || getProblemAnswerKey(problem);
+}
+
+function makeProblemFromUniverseEntry(opKey, entry, level = opConfig[opKey]?.difficulty) {
+  if (!entry) return null;
+  const statsKey = entry.statsKey;
+  if (["add", "sub", "mul", "div"].includes(opKey)) {
+    const [a, b] = statsKey.split(",").map(Number);
+    const op = operators[opKey];
+    const left = opKey === "div" ? a * b : a;
+    const answer = opKey === "div" ? a : op.fn(a, b);
+    return {
+      text: `${left} ${op.symbol} ${b}`,
+      answer,
+      answerText: String(answer),
+      opKey,
+      statsKey,
+    };
+  }
+  if (opKey === "rect") {
+    const [prefix, l, w] = statsKey.split(",");
+    const length = Number(l);
+    const width = Number(w);
+    const answer = prefix === "P" ? 2 * (length + width) : length * width;
+    return {
+      text: `${prefix}▭ ${length}×${width}`,
+      answer,
+      answerText: String(answer),
+      opKey,
+      statsKey,
+    };
+  }
+  if (opKey === "circ") {
+    const [subtype, value] = statsKey.split(",");
+    return generateCircleOfType(subtype, Number(value));
+  }
+  if (opKey === "si") {
+    const [fromSym, toSym] = statsKey.split(",");
+    const prefixes = getSIPrefixesForDifficulty(level);
+    const from = prefixes.find((prefix) => (prefix.sym || "base") === fromSym);
+    const to = prefixes.find((prefix) => (prefix.sym || "base") === toSym);
+    if (!from || !to) return null;
+    const baseUnit = "m";
+    const answerText = entry.answerText || expDiffToConversion(from.exp - to.exp);
+    return {
+      text: `${from.sym}${baseUnit} → ${to.sym}${baseUnit}`,
+      answer: answerText,
+      answerText,
+      opKey,
+      statsKey,
+    };
+  }
+  if (opKey === "factor") {
+    const n = Number(statsKey);
+    return {
+      text: String(n),
+      answer: null,
+      answerText: null,
+      opKey,
+      statsKey: String(n),
+      factorOriginal: n,
+      factorRemaining: n,
+      factorCollected: {},
+      factorLastPrime: null,
+    };
+  }
+  return null;
+}
+
+function getRankedLevelProblems(opKey, level) {
+  return getSkillUniverseProblems(opKey, level)
+    .map((entry) => {
+      const problem = getProgressProblem(opKey, entry.statsKey);
+      const mastery = problem ? getProgressProblemMastery(problem) : 0;
+      return {
+        ...entry,
+        mastery,
+        attempts: problem?.attempts || 0,
+      };
+    })
+    .sort((a, b) => b.mastery - a.mastery || b.attempts - a.attempts || a.statsKey.localeCompare(b.statsKey));
+}
+
+function getBossProblemPool(opKey, level, quartile = 3) {
+  const ranked = getRankedLevelProblems(opKey, level);
+  if (ranked.length === 0) return [];
+  const bucketSize = Math.max(1, Math.ceil(ranked.length / 4));
+  const start = Math.min(ranked.length - 1, Math.max(0, quartile) * bucketSize);
+  const end = quartile >= 3 ? ranked.length : Math.min(ranked.length, start + bucketSize);
+  return ranked.slice(start, end);
+}
+
+function makeBossProblem(opKey, usedKeys = new Set(), getKey = getProblemAnswerKey, level = opConfig[opKey]?.difficulty) {
+  let fallback = null;
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const originalLevel = opConfig[opKey]?.difficulty;
+    if (Number.isFinite(level)) opConfig[opKey].difficulty = level;
+    const problem = generateWeightedProblem(opKey);
+    if (Number.isFinite(originalLevel)) opConfig[opKey].difficulty = originalLevel;
+    if (!problem) continue;
+    fallback = fallback || problem;
+    const key = getKey(problem);
+    if (!usedKeys.has(key)) {
+      usedKeys.add(key);
+      return problem;
+    }
+  }
+  return fallback;
+}
+
+function makeBossProblemFromPool(opKey, pool, usedKeys = new Set(), getKey = getProblemAnswerKey, level = opConfig[opKey]?.difficulty) {
+  const candidates = Array.isArray(pool) ? pool : [];
+  for (let attempt = 0; attempt < Math.max(24, candidates.length * 2); attempt += 1) {
+    const entry = candidates.length ? candidates[randInt(0, candidates.length - 1)] : null;
+    const problem = makeProblemFromUniverseEntry(opKey, entry, level);
+    if (!problem) break;
+    const key = getKey(problem);
+    if (!usedKeys.has(key)) {
+      usedKeys.add(key);
+      return problem;
+    }
+  }
+  return makeBossProblem(opKey, usedKeys, getKey, level);
+}
+
+function makeBossDrop(problem, bossKind, index = 0, total = 1) {
+  const padding = 54;
+  const randomX = randInt(padding, Math.max(padding, canvasW - padding));
+  const span = Math.max(1, total - 1);
+  const evenX = total === 1
+    ? canvasW / 2
+    : padding + ((canvasW - padding * 2) * index) / span;
+  const isWave = bossKind?.startsWith("wave");
+  const fallSeconds = bossKind === "bomb"
+    ? getBossBombFallSeconds()
+    : isWave
+      ? randInt(58, 88) / 10
+      : 7.5;
+  const drop = copyProblemToTarget(problem, {
+    id: nextDropId++,
+    x: isWave ? randomX : evenX,
+    y: isWave ? -30 - randInt(0, 80) : -30 - index * 6,
+    baseSpeed: canvasH / fallSeconds,
+    bossKind,
+  });
+  return drop;
+}
+
+function buildBossParts(opKey, level = opConfig[opKey]?.difficulty) {
+  const usedProblems = new Set();
+  return BOSS_PART_DEFS.map((partDef) => {
+    const pool = getBossProblemPool(opKey, level, partDef.quartile);
+    const part = {
+      id: partDef.id,
+      name: partDef.name,
+      kind: partDef.kind,
+      destroyed: false,
+      locked: partDef.id !== "shield",
+      x: canvasW / 2,
+      y: 90,
+      w: 90,
+      h: 42,
+      problems: [],
+    };
+    for (let i = 0; i < partDef.problemCount; i += 1) {
+      const problem = makeBossProblemFromPool(opKey, pool, usedProblems, getProblemIdentityKey, level);
+      part.problems.push(copyProblemToTarget(problem, {
+        targetType: "bossProblem",
+        id: `${partDef.id}-${i}`,
+        partId: partDef.id,
+        partName: partDef.name,
+        partKind: partDef.kind,
+        slotIndex: i,
+        destroyed: false,
+        locked: part.locked,
+        x: canvasW / 2,
+        y: 90,
+        w: 62,
+        h: 30,
+      }));
+    }
+    return part;
+  });
+}
+
+function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficulty, force = false } = {}) {
+  if (!opConfig[opKey]) return;
+  if (mode === "full" && !force && !getProgressSkill(opKey)?.bossReady) {
+    showBossLocked(opKey);
+    return false;
+  }
+  const pressure = getCurrentPressure();
+  exitBreatherMode();
+  closeStatsPopup();
+  closeResultsPopup();
+  closeLoginPopup();
+  clearAmbiguousTimer();
+  drops = [];
+  splashes = [];
+  laser = null;
+  factorTargetId = null;
+  currentInput = "";
+  answerInput.value = "";
+  spawnTimer = 0;
+  lastTime = 0;
+  gameTime = 0;
+  groundFlash = 0;
+  score = 0;
+  const startsWithChallenge = mode === "full" || mode === "blitz" || mode === "wave";
+  bossMode = {
+    active: true,
+    mode,
+    opKey,
+    level,
+    pressure: { ...pressure },
+    phase: startsWithChallenge ? "announce" : "announce",
+    announceMs: BOSS_ANNOUNCE_MS,
+    nextAction: startsWithChallenge ? "challenge" : "boss",
+    message: mode === "wave"
+      ? "Wave 2: load ladder"
+      : mode === "boss"
+        ? "Mothership incoming"
+        : mode === "blitz"
+          ? "Blitz: shield endurance"
+          : "Wave 1: shields up",
+    parts: buildBossParts(opKey, level),
+    debris: [],
+    bombTimerMs: 500,
+    stunMs: 0,
+    victoryMs: 0,
+    transitionMs: 0,
+    transitionAction: null,
+    burstMs: 0,
+    challengeType: mode === "wave" ? "wave" : "blitz",
+    challengeElapsedMs: 0,
+    challengeLoad: mode === "wave" ? 1 : BLITZ_START_DROPS,
+    blitzElapsedMs: 0,
+    blitzScore: 0,
+    blitzClearedCount: 0,
+    blitzShield: BLITZ_SHIELD_START,
+    blitzShieldMax: BLITZ_SHIELD_MAX,
+    blitzShieldPulseMs: 0,
+    blitzShieldHitMs: 0,
+    blitzHits: 0,
+    blitzFinalScore: 0,
+    blitzFinalSpeed: 0,
+    blitzFinalDrops: 0,
+    blitzFinalShields: BLITZ_SHIELD_START,
+    waveTwoSpeedPercent: WAVE_TWO_BASE_SPEED,
+    hudFreshMs: BOSS_HUD_FRESH_MS,
+    lastHudMessage: null,
+    bossStartedAtMs: 0,
+  };
+  updateBossPartLocks();
+  updateScoreDisplay();
+  updateKpDisplay();
+  updateBossHud();
+  updateControlDisplay();
+  answerInput.focus();
+  drawDrops();
+  return true;
+}
+
+function getBlitzUnlockedLevel(opKey) {
+  return summarizeProfile(progressProfile).skills[opKey]?.blitzUnlockedLevel || 0;
+}
+
+function startBlitzMode(opKey) {
+  const level = getBlitzUnlockedLevel(opKey);
+  if (level <= 0) return false;
+  startBossMode(opKey, { mode: "blitz", level });
+  return true;
+}
+
+function startWaveMode(opKey) {
+  const level = getBlitzUnlockedLevel(opKey);
+  if (level <= 0) return false;
+  startBossMode(opKey, { mode: "wave", level });
+  return true;
+}
+
+function startBossReplayMode(opKey) {
+  const level = getBlitzUnlockedLevel(opKey);
+  if (level <= 0) return false;
+  startBossMode(opKey, { mode: "boss", level, force: true });
+  return true;
+}
+
+function startBossAnnouncement(message, nextAction = "boss") {
+  bossMode.phase = "announce";
+  bossMode.message = message;
+  bossMode.announceMs = BOSS_ANNOUNCE_MS;
+  bossMode.nextAction = nextAction;
+  updateBossHud();
+}
+
+function startChallenge(type = "blitz") {
+  drops = [];
+  bossMode.phase = "challenge";
+  bossMode.challengeType = type === "wave" ? "wave" : "blitz";
+  bossMode.message = bossMode.challengeType === "wave"
+    ? "Wave 2: load ladder"
+    : bossMode.mode === "blitz"
+      ? "Blitz: shield endurance"
+      : "Wave 1: shield endurance";
+  bossMode.challengeElapsedMs = 0;
+  bossMode.blitzElapsedMs = 0;
+  bossMode.blitzScore = 0;
+  bossMode.blitzClearedCount = 0;
+  bossMode.blitzShield = BLITZ_SHIELD_START;
+  bossMode.blitzShieldPulseMs = 0;
+  bossMode.blitzShieldHitMs = 0;
+  bossMode.blitzHits = 0;
+  bossMode.blitzFinalScore = 0;
+  bossMode.challengeLoad = bossMode.challengeType === "wave" ? 1 : BLITZ_START_DROPS;
+  bossMode.bombTimerMs = 250;
+  if (bossMode.challengeType === "wave" && !Number.isFinite(bossMode.waveTwoSpeedPercent)) {
+    bossMode.waveTwoSpeedPercent = WAVE_TWO_BASE_SPEED;
+  }
+  updateBossHud();
+}
+
+function startBossFight() {
+  drops = [];
+  bossMode.phase = "boss";
+  bossMode.message = "Take down the mothership";
+  bossMode.bombTimerMs = 900;
+  bossMode.bossStartedAtMs = performance.now();
+  updateBossPartLocks();
+  updateBossHud();
+}
+
+function updateBossPartLocks() {
+  if (!bossMode?.parts) return;
+  const order = ["shield", "guns", "wings", "core"];
+  let locked = false;
+  for (const id of order) {
+    const part = bossMode.parts.find((candidate) => candidate.id === id);
+    if (!part) continue;
+    part.locked = locked;
+    part.problems.forEach((problem) => {
+      problem.locked = locked;
+    });
+    if (!part.destroyed) locked = true;
+  }
+}
+
+function updateBossPartPositions() {
+  if (!bossMode?.parts) return;
+  const shipW = Math.min(560, Math.max(340, canvasW * 0.74));
+  const shipH = Math.min(185, Math.max(138, canvasH * 0.32));
+  const left = (canvasW - shipW) / 2;
+  const top = 48;
+  const positions = {
+    shield: { x: left + shipW * 0.5, y: top + shipH * 0.2, w: 220, h: 54 },
+    guns: { x: left + shipW * 0.5, y: top + shipH * 0.45, w: 250, h: 52 },
+    wings: { x: left + shipW * 0.5, y: top + shipH * 0.66, w: shipW * 0.78, h: 58 },
+    core: { x: left + shipW * 0.5, y: top + shipH * 0.52, w: 154, h: 62 },
+  };
+  bossMode.shipBounds = { left, top, w: shipW, h: shipH };
+  for (const part of bossMode.parts) {
+    Object.assign(part, positions[part.id] || positions.core);
+    positionBossProblems(part);
+  }
+}
+
+function positionBossProblems(part) {
+  const liveProblems = part.problems.filter((problem) => !problem.destroyed);
+  const count = liveProblems.length;
+  liveProblems.forEach((problem, index) => {
+    problem.w = part.kind === "core" ? 58 : 54;
+    problem.h = 28;
+    if (part.kind === "cannon") {
+      const spacing = part.w / Math.max(5, count + 1);
+      problem.x = part.x - part.w / 2 + spacing * (index + 1);
+      problem.y = part.y + (index % 2 === 0 ? -8 : 10);
+    } else if (part.kind === "wing") {
+      const spacing = part.w / Math.max(5, count + 1);
+      problem.x = part.x - part.w / 2 + spacing * (index + 1);
+      problem.y = part.y + (index % 2 === 0 ? -12 : 12);
+    } else if (part.kind === "shield") {
+      const spacing = part.w / Math.max(4, count + 1);
+      problem.x = part.x - part.w / 2 + spacing * (index + 1);
+      problem.y = part.y - (index % 2 === 0 ? 6 : -8);
+    } else {
+      const offsets = [
+        [-34, -13],
+        [34, -13],
+        [-34, 15],
+        [34, 15],
+      ];
+      const [dx, dy] = offsets[index] || [0, 0];
+      problem.x = part.x + dx;
+      problem.y = part.y + dy;
+    }
+    problem.locked = part.locked;
+  });
+}
+
+function getActiveBossParts() {
+  if (!bossMode?.active || bossMode.phase !== "boss") return [];
+  updateBossPartLocks();
+  updateBossPartPositions();
+  return bossMode.parts
+    .filter((part) => !part.destroyed && !part.locked)
+    .flatMap((part) => part.problems.filter((problem) => !problem.destroyed && !problem.locked));
+}
+
+function getBlitzProgress() {
+  if (!bossMode?.active) return 0;
+  return clamp(0, 1, (bossMode.challengeElapsedMs || bossMode.blitzElapsedMs || 0) / BLITZ_RAMP_MS);
+}
+
+function getBlitzScore() {
+  if (bossMode?.challengeType === "wave") {
+    return Math.min(999, Math.round((Math.max(1, bossMode.challengeLoad || 1) - 1) * 10 + (bossMode.blitzClearedCount || 0)));
+  }
+  return Math.round(getBlitzProgress() * 100);
+}
+
+function getBlitzSpeedPercent() {
+  if (bossMode?.challengeType === "wave") {
+    return clamp(25, 65, Math.round(Number.isFinite(bossMode.waveTwoSpeedPercent) ? bossMode.waveTwoSpeedPercent : WAVE_TWO_BASE_SPEED));
+  }
+  return Math.round(lerp(BLITZ_START_SPEED, 100, getBlitzProgress()));
+}
+
+function getBlitzDropLimit() {
+  if (bossMode?.challengeType === "wave") {
+    return clamp(1, BLITZ_MAX_DROPS, Math.max(1, bossMode.challengeLoad || 1));
+  }
+  return BLITZ_START_DROPS;
+}
+
+function getBlitzBombSpeedMultiplier() {
+  if (bossMode?.challengeType === "wave") {
+    return lerp(0.78, 1.05, getBlitzSpeedPercent() / 100);
+  }
+  return lerp(0.65, 1.75, getBlitzProgress());
+}
+
+function getBlitzShieldRatio() {
+  if (!bossMode?.active || !["challenge", "challengeComplete"].includes(bossMode.phase)) return 0;
+  const max = bossMode.blitzShieldMax || BLITZ_SHIELD_MAX;
+  const shield = Number.isFinite(bossMode.blitzShield) ? bossMode.blitzShield : BLITZ_SHIELD_START;
+  return max > 0 ? clamp(0, 1, shield / max) : 0;
+}
+
+function changeBlitzShield(delta, reason = "hit") {
+  if (!bossMode?.active || bossMode.phase !== "challenge") return;
+  const max = bossMode.blitzShieldMax || BLITZ_SHIELD_MAX;
+  const current = Number.isFinite(bossMode.blitzShield) ? bossMode.blitzShield : BLITZ_SHIELD_START;
+  const next = clamp(0, max, current + delta);
+  bossMode.blitzShield = next;
+
+  if (delta > 0) {
+    bossMode.blitzClearedCount += 1;
+    bossMode.blitzShieldPulseMs = BLITZ_SHIELD_PULSE_MS;
+    bossMode.message = next >= max ? "Shields at maximum" : `Shields reinforced +${delta}`;
+  } else if (delta < 0) {
+    bossMode.blitzHits += 1;
+    bossMode.blitzShieldHitMs = BLITZ_SHIELD_HIT_MS;
+    bossMode.message = reason === "wrong"
+      ? `Wrong answer: shields ${delta}`
+      : `Bomb hit: shields ${delta}`;
+  }
+
+  if (next <= 0 && delta < 0) {
+    completeChallengeFailure();
+  } else {
+    updateBossHud();
+  }
+}
+
+function getBossPartCount() {
+  if (!bossMode?.parts) return { remaining: 0, total: 0, problemsRemaining: 0, problemsTotal: 0 };
+  const total = bossMode.parts.length;
+  const remaining = bossMode.parts.filter((part) => !part.destroyed).length;
+  const problemsTotal = bossMode.parts.reduce((sum, part) => sum + part.problems.length, 0);
+  const problemsRemaining = bossMode.parts.reduce(
+    (sum, part) => sum + part.problems.filter((problem) => !problem.destroyed).length,
+    0
+  );
+  return { remaining, total, problemsRemaining, problemsTotal };
+}
+
+function createBossDebris(part) {
+  if (!bossMode?.debris) return;
+  bossMode.debris.push({
+    id: `${part.id}-${Date.now()}-${bossMode.debris.length}`,
+    kind: part.kind,
+    x: part.x,
+    y: part.y,
+    w: part.w,
+    h: part.h,
+    vx: randInt(-45, 45),
+    vy: randInt(110, 170),
+    rotation: randInt(-20, 20) / 100,
+    spin: randInt(-120, 120) / 1000,
+    life: 3200,
+    maxLife: 3200,
+    grounded: false,
+  });
+}
+
+function updateBossDebris(dt) {
+  if (!bossMode?.debris?.length) return;
+  const groundY = canvasH - 42;
+  bossMode.debris.forEach((piece) => {
+    piece.life -= dt;
+    if (!piece.grounded) {
+      piece.x += (piece.vx * dt) / 1000;
+      piece.y += (piece.vy * dt) / 1000;
+      piece.vy += (260 * dt) / 1000;
+      piece.rotation += piece.spin * dt;
+      if (piece.y + piece.h / 2 >= groundY) {
+        piece.y = groundY - piece.h / 2;
+        piece.vx *= 0.25;
+        piece.vy = 0;
+        piece.spin *= 0.35;
+        piece.grounded = true;
+      }
+    } else {
+      piece.rotation += piece.spin * dt;
+    }
+  });
+  bossMode.debris = bossMode.debris.filter((piece) => piece.life > 0);
+}
+
+function getBossBombFallSeconds() {
+  if (bossMode?.phase === "challenge") {
+    if (bossMode.challengeType === "wave") {
+      return lerp(5.0, 3.4, getBlitzSpeedPercent() / 100);
+    }
+    return lerp(4.6, 1.25, getBlitzProgress());
+  }
+  if (!bossMode?.parts) return 3.4;
+  const wingsAlive = bossMode.parts.some((part) => part.id === "wings" && !part.destroyed);
+  return wingsAlive ? 2.8 : 4.2;
+}
+
+function getBossBombIntervalMs() {
+  if (bossMode?.phase === "challenge") {
+    if (bossMode.challengeType === "wave") {
+      return Math.max(360, 1150 - (getBlitzDropLimit() - 1) * 90);
+    }
+    return Math.round(lerp(2100, 430, getBlitzProgress()));
+  }
+  if (!bossMode?.parts) return 2200;
+  const gunsAlive = bossMode.parts.some((part) => part.id === "guns" && !part.destroyed);
+  const wingsAlive = bossMode.parts.some((part) => part.id === "wings" && !part.destroyed);
+  if (!gunsAlive) return Infinity;
+  const base = Math.max(1300, 2600 - (wingsAlive ? 350 : 0));
+  return Math.max(900, Math.round(base * getActivePressure().bombIntervalMultiplier));
+}
+
+function spawnBossBomb() {
+  if (!bossMode?.active || !["boss", "challenge"].includes(bossMode.phase)) return false;
+  const interval = getBossBombIntervalMs();
+  if (!Number.isFinite(interval)) return false;
+  const usedAnswers = new Set([...drops, ...getActiveBossParts()].map((target) => getProblemAnswerKey(target)));
+  const missilePool = bossMode.phase === "boss"
+    ? getBossProblemPool(bossMode.opKey, bossMode.level, 3)
+    : null;
+  const problem = missilePool
+    ? makeBossProblemFromPool(bossMode.opKey, missilePool, usedAnswers, getProblemAnswerKey, bossMode.level)
+    : makeBossProblem(bossMode.opKey, usedAnswers, getProblemAnswerKey, bossMode.level);
+  const bomb = makeBossDrop(problem, "bomb", 0, 1);
+  const source = bossMode.phase === "boss"
+    ? bossMode.parts.find((part) => part.id === "guns" && !part.destroyed)
+    : null;
+  bomb.x = source ? source.x + randInt(-80, 80) : randInt(54, Math.max(54, canvasW - 54));
+  bomb.y = source ? source.y + 28 : -28;
+  bomb.baseSpeed = canvasH / getBossBombFallSeconds();
+  drops.push(bomb);
+  return true;
+}
+
+function recordActiveChallengeAttempt(result = "survived") {
+  if (!bossMode?.active) return;
+  const type = bossMode.challengeType === "wave" ? "wave" : "blitz";
+  bossMode.blitzFinalScore = getBlitzScore();
+  bossMode.blitzFinalSpeed = getBlitzSpeedPercent();
+  bossMode.blitzFinalDrops = getBlitzDropLimit();
+  bossMode.blitzFinalShields = Math.max(0, Math.round(bossMode.blitzShield || 0));
+  if (type === "blitz") {
+    bossMode.waveTwoSpeedPercent = clamp(32, 58, Math.round(34 + bossMode.blitzFinalScore * 0.24));
+  }
+  if (type === "blitz") {
+    progressProfile = recordBlitzAttempt(progressProfile, bossMode.opKey, {
+      level: bossMode.level,
+      score: bossMode.blitzFinalScore,
+      speedPercent: bossMode.blitzFinalSpeed,
+      spawnRate: bossMode.blitzFinalDrops,
+      clearedCount: bossMode.blitzClearedCount || 0,
+      cleared: false,
+      result,
+    });
+  } else {
+    progressProfile = recordChallengeAttempt(progressProfile, bossMode.opKey, {
+      type,
+      level: bossMode.level,
+      score: bossMode.blitzFinalScore,
+      clearedCount: bossMode.blitzClearedCount || 0,
+      cleared: false,
+      result,
+    });
+  }
+  saveProfile(progressProfile);
+  updateReadinessDisplays();
+}
+
+function completeChallengeFailure() {
+  if (!bossMode?.active || bossMode.phase !== "challenge") return;
+  const type = bossMode.challengeType === "wave" ? "wave" : "blitz";
+  recordActiveChallengeAttempt("shields-down");
+  bossMode.phase = "challengeComplete";
+  bossMode.burstMs = CHALLENGE_TRANSITION_MS;
+  bossMode.transitionMs = CHALLENGE_TRANSITION_MS;
+  drops = [];
+  if (bossMode.mode === "full" && type === "blitz") {
+    bossMode.message = "Shields are down. Backup power online. Nuclear burst clearing the sky.";
+    bossMode.transitionAction = "wave";
+  } else if (bossMode.mode === "full" && type === "wave") {
+    bossMode.message = "Backup shields are down. Target lock acquired. The mothership is exposed.";
+    bossMode.transitionAction = "boss";
+  } else {
+    bossMode.message = type === "wave"
+      ? `Backup shields are down. Wave 2 score: ${bossMode.blitzFinalScore}`
+      : `Shields are down. Blitz score: ${bossMode.blitzFinalScore}`;
+    bossMode.transitionAction = "end";
+  }
+  updateBossHud();
+}
+
+function applyBossStun() {
+  if (!bossMode?.active) return;
+  if (bossMode.phase === "challenge") {
+    changeBlitzShield(-BLITZ_MISTAKE_SHIELD_LOSS, "bomb");
+    return;
+  }
+  bossMode.stunMs = BOSS_STUN_MS;
+  bossMode.message = "Bomb hit: stunned";
+  answerInput.value = "";
+  currentInput = "";
+  updateKpDisplay();
+  updateBossHud();
+}
+
+function updateBossMode(dt) {
+  if (!bossMode?.active) return;
+  bossMode.hudFreshMs = Math.max(0, (bossMode.hudFreshMs || 0) - dt);
+  updateBossDebris(dt);
+  if (bossMode.phase === "challenge" || bossMode.phase === "challengeComplete") {
+    bossMode.blitzShieldPulseMs = Math.max(0, (bossMode.blitzShieldPulseMs || 0) - dt);
+    bossMode.blitzShieldHitMs = Math.max(0, (bossMode.blitzShieldHitMs || 0) - dt);
+    bossMode.burstMs = Math.max(0, (bossMode.burstMs || 0) - dt);
+  }
+
+  if (bossMode.stunMs > 0) {
+    bossMode.stunMs = Math.max(0, bossMode.stunMs - dt);
+    if (bossMode.stunMs === 0 && bossMode.phase === "boss") {
+      bossMode.message = "Destroy the ship parts";
+      bossMode.bombTimerMs = Math.max(bossMode.bombTimerMs, 900);
+    }
+    updateBossHud();
+    return;
+  }
+
+  if (bossMode.phase === "announce") {
+    bossMode.announceMs -= dt;
+    if (bossMode.announceMs <= 0) {
+      if (bossMode.nextAction === "challenge") {
+        startChallenge(bossMode.challengeType);
+      } else {
+        startBossFight();
+      }
+    }
+    return;
+  }
+
+  if (bossMode.phase === "challenge") {
+    bossMode.challengeElapsedMs += dt;
+    bossMode.blitzElapsedMs = bossMode.challengeElapsedMs;
+    bossMode.blitzScore = getBlitzScore();
+    bossMode.bombTimerMs -= dt;
+    const activeBombs = drops.filter((drop) => drop.bossKind === "bomb").length;
+    if (bossMode.bombTimerMs <= 0 && activeBombs < getBlitzDropLimit()) {
+      spawnBossBomb();
+      bossMode.bombTimerMs = getBossBombIntervalMs();
+    }
+    updateBossHud();
+    return;
+  }
+
+  if (bossMode.phase === "challengeComplete") {
+    bossMode.transitionMs -= dt;
+    if (bossMode.transitionMs <= 0) {
+      if (bossMode.transitionAction === "wave") {
+        startChallenge("wave");
+      } else if (bossMode.transitionAction === "boss") {
+        startBossFight();
+      } else {
+        bossMode = null;
+        updateBossHud();
+        updateControlDisplay();
+      }
+    } else {
+      updateBossHud();
+    }
+    return;
+  }
+
+  if (bossMode.phase === "boss") {
+    updateBossPartLocks();
+    bossMode.bombTimerMs -= dt;
+    if (bossMode.bombTimerMs <= 0) {
+      spawnBossBomb();
+      bossMode.bombTimerMs = getBossBombIntervalMs();
+    }
+    return;
+  }
+
+  if (bossMode.phase === "victory") {
+    bossMode.victoryMs -= dt;
+    if (bossMode.victoryMs <= 0) {
+      bossMode = null;
+      updateBossHud();
+      updateControlDisplay();
+    }
+  }
+}
+
+function handleBossProblemDestroyed(problem) {
+  problem.destroyed = true;
+  const part = bossMode.parts.find((candidate) => candidate.id === problem.partId);
+  if (!part) return;
+  const partCleared = part.problems.every((target) => target.destroyed);
+  if (partCleared) {
+    createBossDebris(part);
+    part.destroyed = true;
+  }
+  updateBossPartLocks();
+  if (partCleared && part.id === "core") {
+    completeBossVictory();
+    return;
+  }
+  const { remaining, problemsRemaining } = getBossPartCount();
+  if (partCleared) {
+    bossMode.message = remaining === 1 ? "Core exposed" : `${part.name} destroyed`;
+  } else {
+    bossMode.message = `${problemsRemaining} ship problems left`;
+  }
+  updateBossHud();
+}
+
+function completeBossVictory() {
+  if (!bossMode?.active) return;
+  const { opKey, level, pressure, mode } = bossMode;
+  drops = [];
+  const durationMs = bossMode.bossStartedAtMs
+    ? Math.max(0, performance.now() - bossMode.bossStartedAtMs)
+    : null;
+  progressProfile = recordChallengeAttempt(progressProfile, opKey, {
+    type: "boss",
+    level,
+    durationMs,
+    score: durationMs ? Math.max(1, Math.round(300000 / Math.max(1000, durationMs))) : 0,
+    cleared: true,
+    result: "cleared",
+  });
+  if (mode === "full") {
+    progressProfile = recordBossAttempt(progressProfile, opKey, {
+      pressureTier: pressure.key,
+      speedPercent: pressure.speed,
+      spawnRate: pressure.rate,
+    });
+    saveProfile(progressProfile);
+    if (level < 10) {
+      setDifficulty(opKey, level + 1, { force: true });
+    } else {
+      syncProgressSettings();
+    }
+  } else {
+    saveProfile(progressProfile);
+  }
+  bossMode.phase = "victory";
+  bossMode.message = mode === "full"
+    ? level < 10 ? `Boss cleared: Level ${level + 1} unlocked` : "Boss cleared"
+    : `Boss time: ${formatDuration(durationMs)}`;
+  bossMode.victoryMs = BOSS_VICTORY_MS;
+  updateBossHud();
+  updateReadinessDisplays();
+  updateControlDisplay();
+}
+function updateBossHud() {
+  if (!bossHudEl) return;
+  if (!bossMode?.active) {
+    bossHudEl.classList.add("hidden");
+    bossHudEl.classList.remove("is-quiet", "is-stunned");
+    return;
+  }
+  if (bossMode.lastHudMessage !== bossMode.message) {
+    bossMode.lastHudMessage = bossMode.message;
+    bossMode.hudFreshMs = BOSS_HUD_FRESH_MS;
+  }
+  bossHudEl.classList.remove("hidden");
+  bossHudEl.classList.toggle("is-stunned", isBossStunned());
+  bossHudEl.classList.toggle("is-quiet", !isBossStunned() && (bossMode.hudFreshMs || 0) <= 0);
+  const opName = opDisplayNames[bossMode.opKey] || bossMode.opKey;
+  const titleMode = bossMode.mode === "wave"
+    ? "Wave 2"
+    : bossMode.mode === "blitz"
+      ? "Blitz"
+      : "Boss";
+  bossHudTitleEl.textContent = `${opName} ${titleMode} · Level ${bossMode.level}`;
+  bossHudStatusEl.textContent = bossMode.message;
+  if (isBossStunned()) {
+    bossHudMetaEl.textContent = `Stunned ${(bossMode.stunMs / 1000).toFixed(1)}s`;
+    return;
+  }
+  if (bossMode.phase === "challenge") {
+    const bombs = drops.filter((drop) => drop.bossKind === "bomb").length;
+    const shield = Math.round(bossMode.blitzShield || 0);
+    const shieldMax = bossMode.blitzShieldMax || BLITZ_SHIELD_MAX;
+    if (bossMode.challengeType === "wave") {
+      bossHudMetaEl.textContent = `Shields ${shield}/${shieldMax} · Load score ${getBlitzScore()} · ${getBlitzDropLimit()} at once · fixed ${getBlitzSpeedPercent()}% speed · ${bombs} bombs`;
+    } else {
+      bossHudMetaEl.textContent = `Shields ${shield}/${shieldMax} · Speed score ${getBlitzScore()} · ${getBlitzSpeedPercent()}% speed · ${getBlitzDropLimit()} at once · ${bombs} bombs`;
+    }
+    return;
+  }
+  if (bossMode.phase === "challengeComplete") {
+    bossHudMetaEl.textContent = bossMode.transitionAction === "end"
+      ? "Challenge recorded"
+      : "Clearing the board";
+    return;
+  }
+  if (bossMode.phase === "boss" || bossMode.phase === "victory") {
+    const { remaining, total, problemsRemaining, problemsTotal } = getBossPartCount();
+    const bombs = drops.filter((drop) => drop.bossKind === "bomb").length;
+    bossHudMetaEl.textContent = `${Math.max(0, remaining)}/${total} parts · ${problemsRemaining}/${problemsTotal} nodes · ${bombs} bombs`;
+    return;
+  }
+  bossHudMetaEl.textContent = "Get ready";
 }
 
 // ============================================================
@@ -369,9 +1376,9 @@ function createDrop() {
 }
 
 function updateDrops(dt) {
-  if (gameSpeed === 0) return;
+  if (!isBossActive() && gameSpeed === 0) return;
 
-  const mult = getSpeedMultiplier();
+  const mult = isBossActive() ? getBossSpeedMultiplier() : getSpeedMultiplier();
   for (const drop of drops) {
     drop.y += (drop.baseSpeed * mult * dt) / 1000;
   }
@@ -379,12 +1386,20 @@ function updateDrops(dt) {
   const bottom = canvasH - 30;
   const survived = [];
   let missCount = 0;
+  let endedBlitz = false;
 
   for (const drop of drops) {
     if (drop.y >= bottom) {
       if (!drop.revealed) {
         recordLearningResult(drop, "missed");
         missCount += 1;
+        if (drop.bossKind === "bomb") {
+          applyBossStun();
+          if (bossMode?.phase === "challengeComplete") {
+            endedBlitz = true;
+            break;
+          }
+        }
       }
       if (factorTargetId === drop.id) factorTargetId = null;
     } else {
@@ -397,7 +1412,55 @@ function updateDrops(dt) {
     playMiss();
   }
 
+  if (endedBlitz) {
+    drops = [];
+    updateBossHud();
+    return;
+  }
+
   drops = survived;
+  updateBossHud();
+}
+
+function getDropStats(drop) {
+  if (!drop?.opKey) return null;
+  const statsKey = drop.statsKey || drop.text;
+  return problemStats[drop.opKey]?.[statsKey] || null;
+}
+
+function getDropAccuracyVisual(drop) {
+  const entry = getDropStats(drop);
+  const asked = entry?.asked || 0;
+  const correct = entry?.correct || 0;
+  const statsKey = drop.statsKey || drop.text;
+  const accuracy = getVisualAccuracy(drop.opKey, statsKey, asked, correct);
+  const rgb = getAccuracyRGB(accuracy, asked > 0);
+
+  if (!rgb) {
+    return {
+      asked,
+      correct,
+      legendColor: getAccuracyColor(asked, correct, drop.opKey, statsKey),
+      fillColor: "rgba(26, 26, 46, 0.92)",
+      strokeColor: "rgba(148, 163, 184, 0.82)",
+      shadowColor: "rgba(148, 163, 184, 0.34)",
+      label: "Never asked",
+    };
+  }
+
+  const evidence = getEvidenceRatio(asked);
+  const fillAlpha = clamp(0.24, 0.9, 0.18 + evidence * 0.72);
+  const strokeAlpha = clamp(0.42, 0.96, 0.34 + evidence * 0.62);
+  const shadowAlpha = clamp(0.12, 0.42, 0.08 + evidence * 0.34);
+  return {
+    asked,
+    correct,
+    legendColor: getAccuracyColor(asked, correct, drop.opKey, statsKey),
+    fillColor: `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${fillAlpha.toFixed(2)})`,
+    strokeColor: `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${strokeAlpha.toFixed(2)})`,
+    shadowColor: `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${shadowAlpha.toFixed(2)})`,
+    label: getAccuracyText(asked, correct),
+  };
 }
 
 function drawDrops() {
@@ -411,6 +1474,8 @@ function drawDrops() {
   }
 
   drawSplashes();
+  drawBossShip();
+  drawChallengeBurst();
 
   const inputNum = currentInput !== "" ? Number(currentInput) : NaN;
   const hasNumMatch = !Number.isNaN(inputNum);
@@ -426,23 +1491,24 @@ function drawDrops() {
       ? currentInput === drop.answerText
       : hasNumMatch && drop.answer === inputNum);
 
-    let fillColor, strokeColor;
+    let fillColor, strokeColor, masteryShadowColor;
     if (drop.revealed) {
       fillColor = "rgba(148, 163, 184, 0.35)";
       strokeColor = "rgba(148, 163, 184, 0.25)";
     } else if (isFactor && factorComplete) {
       fillColor = "rgba(52, 211, 153, 0.88)";
       strokeColor = "rgba(110, 231, 183, 0.9)";
-    } else if (isFactor) {
-      fillColor = "rgba(192, 160, 255, 0.88)";
-      strokeColor = "rgba(216, 200, 255, 0.9)";
     } else {
-      fillColor = "rgba(125, 211, 252, 0.92)";
-      strokeColor = "rgba(186, 230, 253, 0.9)";
+      const visual = getDropAccuracyVisual(drop);
+      fillColor = visual.fillColor;
+      strokeColor = visual.strokeColor;
+      masteryShadowColor = visual.shadowColor;
     }
 
     if (isHighlighted || isTargeted) {
-      ctx.shadowColor = isFactor ? "rgba(192, 160, 255, 0.9)" : "rgba(125, 211, 252, 0.8)";
+      ctx.shadowColor = isFactor
+        ? "rgba(192, 160, 255, 0.9)"
+        : masteryShadowColor || "rgba(125, 211, 252, 0.8)";
       ctx.shadowBlur = isTargeted ? 24 : 18;
     }
 
@@ -522,6 +1588,258 @@ function drawDrops() {
 
   drawLaser();
   drawGun();
+  drawBossStunOverlay();
+}
+
+function fillRoundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  if (typeof ctx.roundRect === "function") {
+    ctx.roundRect(x, y, w, h, r);
+  } else {
+    ctx.rect(x, y, w, h);
+  }
+  ctx.fill();
+}
+
+function strokeRoundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  if (typeof ctx.roundRect === "function") {
+    ctx.roundRect(x, y, w, h, r);
+  } else {
+    ctx.rect(x, y, w, h);
+  }
+  ctx.stroke();
+}
+
+function drawBossShip() {
+  if (!bossMode?.active || !["boss", "victory"].includes(bossMode.phase)) return;
+  updateBossPartPositions();
+  const { left, top, w, h } = bossMode.shipBounds;
+
+  ctx.save();
+  ctx.shadowColor = "rgba(96, 180, 240, 0.24)";
+  ctx.shadowBlur = 18;
+  const hull = ctx.createLinearGradient(left, top, left, top + h);
+  hull.addColorStop(0, "rgba(40, 52, 86, 0.96)");
+  hull.addColorStop(0.55, "rgba(24, 34, 62, 0.96)");
+  hull.addColorStop(1, "rgba(9, 14, 28, 0.96)");
+  ctx.fillStyle = hull;
+  ctx.strokeStyle = "rgba(125, 211, 252, 0.34)";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(left + w * 0.5, top);
+  ctx.lineTo(left + w * 0.93, top + h * 0.48);
+  ctx.lineTo(left + w * 0.78, top + h * 0.82);
+  ctx.lineTo(left + w * 0.61, top + h * 0.94);
+  ctx.lineTo(left + w * 0.39, top + h * 0.94);
+  ctx.lineTo(left + w * 0.22, top + h * 0.82);
+  ctx.lineTo(left + w * 0.07, top + h * 0.48);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "rgba(96, 180, 240, 0.12)";
+  ctx.beginPath();
+  ctx.ellipse(left + w * 0.5, top + h * 0.48, w * 0.19, h * 0.24, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(240, 168, 48, 0.26)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(left + w * 0.18, top + h * 0.58);
+  ctx.lineTo(left + w * 0.82, top + h * 0.58);
+  ctx.stroke();
+
+  for (const part of bossMode.parts) {
+    drawBossPart(part);
+  }
+  drawBossDebris();
+  ctx.restore();
+}
+
+function drawChallengeBurst() {
+  if (!bossMode?.active || !bossMode.burstMs) return;
+  const progress = clamp(0, 1, 1 - bossMode.burstMs / CHALLENGE_TRANSITION_MS);
+  const alpha = Math.max(0, 1 - progress);
+  const radius = Math.max(canvasW, canvasH) * (0.16 + progress * 0.9);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const gradient = ctx.createRadialGradient(canvasW / 2, canvasH * 0.58, 10, canvasW / 2, canvasH * 0.58, radius);
+  gradient.addColorStop(0, "rgba(255, 255, 255, 0.9)");
+  gradient.addColorStop(0.35, "rgba(91, 217, 255, 0.36)");
+  gradient.addColorStop(1, "rgba(251, 191, 36, 0)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvasW, canvasH);
+  ctx.restore();
+}
+
+function drawBossPart(part) {
+  if (part.destroyed) return;
+  const x = part.x - part.w / 2;
+  const y = part.y - part.h / 2;
+
+  if (part.kind === "cannon") {
+    ctx.save();
+    ctx.translate(part.x, part.y);
+    ctx.fillStyle = "rgba(240, 168, 48, 0.74)";
+    ctx.strokeStyle = "rgba(255, 232, 170, 0.84)";
+    ctx.lineWidth = 2;
+    fillRoundRect(-part.w / 2, -part.h / 2, part.w, part.h, 14);
+    strokeRoundRect(-part.w / 2, -part.h / 2, part.w, part.h, 14);
+    for (const offset of [-0.32, 0, 0.32]) {
+      fillRoundRect(part.w * offset - 20, -part.h / 2 - 8, 40, 22, 8);
+      strokeRoundRect(part.w * offset - 20, -part.h / 2 - 8, 40, 22, 8);
+    }
+    ctx.restore();
+  } else if (part.kind === "wing") {
+    ctx.fillStyle = part.locked ? "rgba(71, 85, 105, 0.38)" : "rgba(129, 140, 248, 0.46)";
+    ctx.strokeStyle = part.locked ? "rgba(148, 163, 184, 0.42)" : "rgba(199, 210, 254, 0.72)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(part.x - part.w / 2, part.y);
+    ctx.lineTo(part.x - part.w * 0.24, part.y - part.h / 2);
+    ctx.lineTo(part.x + part.w * 0.24, part.y - part.h / 2);
+    ctx.lineTo(part.x + part.w / 2, part.y);
+    ctx.lineTo(part.x + part.w * 0.24, part.y + part.h / 2);
+    ctx.lineTo(part.x - part.w * 0.24, part.y + part.h / 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else if (part.kind === "shield") {
+    ctx.fillStyle = part.locked ? "rgba(96, 180, 240, 0.16)" : "rgba(96, 180, 240, 0.32)";
+    ctx.strokeStyle = "rgba(186, 230, 253, 0.62)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(part.x, part.y, part.w / 2, part.h / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = part.locked ? "rgba(71, 85, 105, 0.46)" : "rgba(240, 96, 96, 0.7)";
+    ctx.strokeStyle = part.locked ? "rgba(148, 163, 184, 0.42)" : "rgba(255, 190, 190, 0.82)";
+    ctx.lineWidth = 2.5;
+    fillRoundRect(x, y, part.w, part.h, 16);
+    strokeRoundRect(x, y, part.w, part.h, 16);
+  }
+
+  if (part.locked) {
+    return;
+  }
+
+  part.problems.filter((problem) => !problem.destroyed).forEach(drawBossProblemNode);
+}
+
+function drawBossDebris() {
+  if (!bossMode?.debris?.length) return;
+  bossMode.debris.forEach(drawBossDebrisPiece);
+}
+
+function drawBossDebrisPiece(piece) {
+  const lifeRatio = clamp(0, 1, piece.life / piece.maxLife);
+  const blink = piece.grounded ? 0.55 + Math.sin(piece.life / 80) * 0.18 : 1;
+  const alpha = Math.max(0.14, lifeRatio * blink * 0.72);
+  const x = -piece.w / 2;
+  const y = -piece.h / 2;
+
+  ctx.save();
+  ctx.translate(piece.x, piece.y);
+  ctx.rotate(piece.rotation);
+  ctx.globalAlpha = alpha;
+  ctx.lineWidth = 2;
+
+  if (piece.kind === "cannon") {
+    ctx.fillStyle = "rgba(240, 168, 48, 0.62)";
+    ctx.strokeStyle = "rgba(255, 232, 170, 0.62)";
+    fillRoundRect(x, y, piece.w * 0.7, piece.h, 10);
+    strokeRoundRect(x, y, piece.w * 0.7, piece.h, 10);
+    fillRoundRect(x + piece.w * 0.44, y + piece.h * 0.3, piece.w * 0.44, piece.h * 0.38, 8);
+    strokeRoundRect(x + piece.w * 0.44, y + piece.h * 0.3, piece.w * 0.44, piece.h * 0.38, 8);
+  } else if (piece.kind === "wing") {
+    ctx.fillStyle = "rgba(129, 140, 248, 0.34)";
+    ctx.strokeStyle = "rgba(199, 210, 254, 0.5)";
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x + piece.w * 0.25, y);
+    ctx.lineTo(x + piece.w * 0.75, y);
+    ctx.lineTo(x + piece.w, 0);
+    ctx.lineTo(x + piece.w * 0.75, y + piece.h);
+    ctx.lineTo(x + piece.w * 0.25, y + piece.h);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else if (piece.kind === "shield") {
+    ctx.fillStyle = "rgba(96, 180, 240, 0.22)";
+    ctx.strokeStyle = "rgba(186, 230, 253, 0.5)";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, piece.w / 2, piece.h / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = "rgba(240, 96, 96, 0.48)";
+    ctx.strokeStyle = "rgba(255, 190, 190, 0.58)";
+    fillRoundRect(x, y, piece.w, piece.h, 16);
+    strokeRoundRect(x, y, piece.w, piece.h, 16);
+  }
+
+  ctx.strokeStyle = "rgba(2, 6, 23, 0.72)";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(x + piece.w * 0.22, y + piece.h * 0.32);
+  ctx.lineTo(x + piece.w * 0.42, y + piece.h * 0.55);
+  ctx.lineTo(x + piece.w * 0.33, y + piece.h * 0.72);
+  ctx.moveTo(x + piece.w * 0.62, y + piece.h * 0.24);
+  ctx.lineTo(x + piece.w * 0.74, y + piece.h * 0.48);
+  ctx.stroke();
+
+  if (piece.grounded) {
+    ctx.fillStyle = "rgba(251, 191, 36, 0.6)";
+    ctx.beginPath();
+    ctx.arc(piece.w * 0.28, -piece.h * 0.22, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawBossProblemNode(problem) {
+  const x = problem.x - problem.w / 2;
+  const y = problem.y - problem.h / 2;
+  ctx.fillStyle = problem.partKind === "core"
+    ? "rgba(248, 113, 113, 0.92)"
+    : "rgba(15, 23, 42, 0.9)";
+  ctx.strokeStyle = problem.partKind === "shield"
+    ? "rgba(186, 230, 253, 0.86)"
+    : "rgba(255, 255, 255, 0.42)";
+  ctx.lineWidth = 1.8;
+  fillRoundRect(x, y, problem.w, problem.h, 8);
+  strokeRoundRect(x, y, problem.w, problem.h, 8);
+
+  const label = problem.text;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "700 12px Space Grotesk";
+  ctx.lineWidth = 3.5;
+  ctx.strokeStyle = "rgba(2, 6, 23, 0.85)";
+  ctx.fillStyle = "#f8fafc";
+  ctx.strokeText(label, problem.x, problem.y + 1);
+  ctx.fillText(label, problem.x, problem.y + 1);
+}
+
+function drawBossStunOverlay() {
+  if (!isBossStunned()) return;
+  ctx.save();
+  ctx.fillStyle = "rgba(248, 113, 113, 0.16)";
+  ctx.fillRect(0, 0, canvasW, canvasH);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "700 24px Space Grotesk";
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = "rgba(2, 6, 23, 0.9)";
+  ctx.fillStyle = "#f8fafc";
+  const text = `Stunned ${(bossMode.stunMs / 1000).toFixed(1)}s`;
+  ctx.strokeText(text, canvasW / 2, canvasH / 2);
+  ctx.fillText(text, canvasW / 2, canvasH / 2);
+  ctx.restore();
 }
 
 // ============================================================
@@ -618,9 +1936,51 @@ function drawLaser() {
   ctx.restore();
 }
 
+function drawBlitzShield() {
+  if (!bossMode?.active || !["challenge", "challengeComplete"].includes(bossMode.phase)) return;
+  const gunY = canvasH - 20;
+  const gunX = canvasW / 2;
+  const ratio = bossMode.phase === "challengeComplete" ? 0 : getBlitzShieldRatio();
+  const pulse = clamp(0, 1, (bossMode.blitzShieldPulseMs || 0) / BLITZ_SHIELD_PULSE_MS);
+  const hit = clamp(0, 1, (bossMode.blitzShieldHitMs || 0) / BLITZ_SHIELD_HIT_MS);
+  const low = ratio <= 0.28 || bossMode.phase === "challengeComplete";
+  const color = low ? "248, 113, 113" : "56, 189, 248";
+  const arcW = 62 + ratio * 32 + pulse * 6;
+  const arcH = 26 + ratio * 16 + pulse * 4;
+
+  ctx.save();
+  ctx.fillStyle = `rgba(${color}, ${(0.03 + ratio * 0.1 + pulse * 0.05).toFixed(2)})`;
+  ctx.strokeStyle = `rgba(${color}, ${(0.36 + ratio * 0.44 + pulse * 0.18).toFixed(2)})`;
+  ctx.lineWidth = 2.5 + ratio * 8 + pulse * 3;
+  ctx.shadowColor = `rgba(${color}, ${(0.22 + ratio * 0.36).toFixed(2)})`;
+  ctx.shadowBlur = 10 + ratio * 18 + pulse * 14;
+  ctx.beginPath();
+  ctx.ellipse(gunX, gunY - 11, arcW, arcH, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  if (hit > 0 || bossMode.phase === "challengeComplete") {
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = `rgba(254, 202, 202, ${(0.36 + hit * 0.46).toFixed(2)})`;
+    ctx.lineWidth = 2;
+    const crack = 18 + hit * 10;
+    ctx.beginPath();
+    ctx.moveTo(gunX - 22, gunY - 34);
+    ctx.lineTo(gunX - 8, gunY - 20);
+    ctx.lineTo(gunX - 16, gunY - 7);
+    ctx.moveTo(gunX + 20, gunY - 33);
+    ctx.lineTo(gunX + 7, gunY - 18);
+    ctx.lineTo(gunX + crack, gunY - 9);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
 function drawGun() {
   const gunY = canvasH - 20;
   const gunX = canvasW / 2;
+  drawBlitzShield();
   ctx.fillStyle = "#1f2937";
   ctx.beginPath();
   if (typeof ctx.roundRect === "function") {
@@ -641,6 +2001,17 @@ function isDropVisible(drop) {
   return drop.y > 0;
 }
 
+function isAnswerTargetVisible(target) {
+  if (target.targetType === "bossProblem") {
+    return isBossActive() && bossMode.phase === "boss" && !target.destroyed && !target.locked;
+  }
+  return isDropVisible(target) && !target.revealed;
+}
+
+function getAnswerTargets() {
+  return [...drops, ...getActiveBossParts()];
+}
+
 function isDropClickable(drop) {
   return isDropVisible(drop) && !drop.revealed;
 }
@@ -657,6 +2028,7 @@ function revealDrop(drop) {
     recordLearningResult(drop, "helped");
   }
   drop.revealed = true;
+  maybeExitBreatherMode();
 }
 
 function findDropMatch(value, { enterPressed = false } = {}) {
@@ -666,9 +2038,8 @@ function findDropMatch(value, { enterPressed = false } = {}) {
   const numericValue = Number(value);
   const hasNumeric = !Number.isNaN(numericValue);
 
-  for (const drop of drops) {
-    if (!isDropVisible(drop)) continue;
-    if (drop.revealed) continue;
+  for (const drop of getAnswerTargets()) {
+    if (!isAnswerTargetVisible(drop)) continue;
     // Factor drops require Enter + typed factorization
     if (drop.opKey === "factor") {
       if (enterPressed && matchesFactorDrop(value, drop)) return drop;
@@ -695,11 +2066,11 @@ function isInputPossible(inputValue) {
   // If input contains ^ or *, it's a factorization attempt — always possible (checked on Enter)
   if (inputValue.includes("^") || inputValue.includes("*")) return true;
   // If factor drops are visible, any digit input could be the start of a factorization
-  const hasFactorDrops = drops.some((d) => d.opKey === "factor" && isDropVisible(d) && !d.revealed);
+  const hasFactorDrops = getAnswerTargets().some((d) => d.opKey === "factor" && isAnswerTargetVisible(d));
   if (hasFactorDrops && /^\d+$/.test(inputValue)) return true;
   const typed = normalizeTypedValue(inputValue, { allowIncomplete: true });
   if (!typed) return true;
-  const visible = drops.filter((d) => isDropVisible(d) && !d.revealed && d.opKey !== "si" && d.opKey !== "factor");
+  const visible = getAnswerTargets().filter((d) => isAnswerTargetVisible(d) && d.opKey !== "si" && d.opKey !== "factor");
   return visible.some((drop) => {
     const text = drop.answerText || String(drop.answer);
     const normalizedAnswer = normalizeTypedValue(text, {
@@ -716,28 +2087,65 @@ function updateScoreDisplay() {
 }
 
 function handleCorrectAnswer(match) {
+  if (isBossStunned()) return;
   clearAmbiguousTimer();
   if (factorTargetId === match.id) factorTargetId = null;
   recordLearningResult(match, "correct");
-  score += 1;
+  if (bossMode?.phase === "challenge" && match.bossKind === "bomb") {
+    changeBlitzShield(BLITZ_CORRECT_SHIELD_GAIN, "correct");
+    if (
+      bossMode?.challengeType === "wave"
+      && bossMode.blitzClearedCount > 0
+      && bossMode.blitzClearedCount % WAVE_TWO_STEP_CLEARS === 0
+    ) {
+      bossMode.challengeLoad = Math.min(BLITZ_MAX_DROPS, Math.max(bossMode.challengeLoad + 1, Math.ceil(bossMode.challengeLoad * 1.1)));
+      bossMode.message = `Wave 2 load: ${bossMode.challengeLoad} at once`;
+    }
+  }
+  if (!isBossActive()) score += 1;
   updateScoreDisplay();
-  drops = drops.filter((d) => d.id !== match.id);
+  if (match.targetType === "bossProblem") {
+    handleBossProblemDestroyed(match);
+  } else {
+    drops = drops.filter((d) => d.id !== match.id);
+  }
   createSplash(match);
   fireLaser(match);
   playPop();
   answerInput.value = "";
   currentInput = "";
   updateKpDisplay();
+  maybeExitBreatherMode();
 }
 
-function handleWrongInput() {
-  if (isPaused) return;
+function getMostUrgentVisibleTarget(candidates = getAnswerTargets()) {
+  const visible = candidates.filter((drop) => isAnswerTargetVisible(drop));
+  if (visible.length === 0) return null;
+  return visible.reduce((lowest, drop) => (drop.y > lowest.y ? drop : lowest));
+}
+
+function getWrongSubmissionTargets() {
+  const visibleTargets = getAnswerTargets().filter((drop) => isAnswerTargetVisible(drop));
+  if (visibleTargets.length === 0) return [];
+  const enterRequired = visibleTargets.filter((drop) => drop.opKey === "si" || drop.opKey === "factor");
+  const target = getMostUrgentVisibleTarget(enterRequired.length ? enterRequired : visibleTargets);
+  return target ? [target] : [];
+}
+
+function handleWrongInput({ targets = null } = {}) {
+  if (isPaused || isBossStunned()) return;
   clearAmbiguousTimer();
-  // Ding every visible non-revealed problem as incorrect
-  for (const drop of drops) {
-    if (isDropVisible(drop) && !drop.revealed) {
-      recordLearningResult(drop, "wrong");
-    }
+  const visibleTargets = getAnswerTargets().filter((drop) => isAnswerTargetVisible(drop));
+  const targetsToRecord = Array.isArray(targets)
+    ? targets.filter(Boolean)
+    : bossMode?.phase === "challenge" && visibleTargets.length > 0
+      ? [getMostUrgentVisibleTarget(visibleTargets)]
+      : [];
+  for (const drop of targetsToRecord) {
+    recordLearningResult(drop, "wrong");
+  }
+  if (bossMode?.phase === "challenge" && visibleTargets.length > 0) {
+    changeBlitzShield(-BLITZ_MISTAKE_SHIELD_LOSS, "wrong");
   }
   playWrongInput();
   answerInput.value = "";
@@ -749,7 +2157,7 @@ function hasLongerMatch(value) {
   // Check if the typed value is a prefix of a DIFFERENT visible drop's answer
   const typed = normalizeTypedValue(value, { allowIncomplete: true });
   if (!typed) return false;
-  const visible = drops.filter(isDropVisible);
+  const visible = getAnswerTargets().filter(isAnswerTargetVisible);
   return visible.some((drop) => {
     const text = normalizeTypedValue(drop.answerText || String(drop.answer), {
       allowIncomplete: false,
@@ -767,7 +2175,7 @@ function clearAmbiguousTimer() {
 }
 
 function processInput(value) {
-  if (isPaused) return;
+  if (isPaused || isBossStunned()) return;
   if (!value) return;
   clearAmbiguousTimer();
 
@@ -787,9 +2195,9 @@ function processInput(value) {
       currentInput = "";
     } else if (isValidDivisor && target.factorRemaining % typedNum !== 0) {
       // Valid number but doesn't divide remaining
-      handleWrongInput();
+      handleWrongInput({ targets: [target] });
     } else if (!couldMatchTargetedFactor(value)) {
-      handleWrongInput();
+      handleWrongInput({ targets: [target] });
     }
     return;
   }
@@ -900,8 +2308,12 @@ function tick(timestamp) {
   if (!isPaused) {
     gameTime += dt;
 
-    // Spawn drops
-    if (spawnRate > 0) {
+    if (isBossActive()) {
+      updateBossMode(dt);
+    } else if (isBreatherMode) {
+      maybeExitBreatherMode();
+    } else if (dropLimit > 0) {
+      // Spawn drops
       spawnTimer += dt;
       const interval = getSpawnInterval();
       let spawns = 0;
@@ -923,7 +2335,9 @@ function tick(timestamp) {
       }
     }
 
-    updateDrops(dt);
+    if (!isBossStunned() && !isBreatherMode) {
+      updateDrops(dt);
+    }
     updateSplashes(dt);
     updateLaser(dt);
     if (groundFlash > 0) groundFlash = Math.max(0, groundFlash - dt);
@@ -1053,9 +2467,47 @@ function formatReadinessPercent(skill) {
   return `${Math.round(skill?.readiness || 0)}%`;
 }
 
+function formatDuration(ms) {
+  if (!Number.isFinite(ms)) return "--";
+  const seconds = Math.max(0, ms / 1000);
+  return seconds >= 60
+    ? `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, "0")}`
+    : `${seconds.toFixed(1)}s`;
+}
+
 function formatReadyText(skill) {
   const suffix = skill?.bossAttemptedForLevel ? " ✓" : "";
-  return `Ready ${formatReadinessPercent(skill)}${suffix}`;
+  return `Mastered: ${formatReadinessPercent(skill)}${suffix}`;
+}
+
+function shouldPromptBossAttempt(skill) {
+  return Boolean(skill?.bossReady && !skill?.bossAttemptedForLevel);
+}
+
+function getBossButtonTitle(skill) {
+  if (skill?.bossReady) return "Start boss mode";
+  return "Boss unlocks when 80% of current-level problems have at least 3 attempts and 90% current accuracy.";
+}
+
+function formatBlitzText(skill) {
+  if (!skill?.blitzUnlockedLevel) return "";
+  const best = skill.challengeBests?.blitz || skill.blitzBest;
+  if (!best) return `Blitz L${skill.blitzUnlockedLevel}`;
+  return `Blitz L${skill.blitzUnlockedLevel} best ${best.score}`;
+}
+
+function formatWaveText(skill) {
+  if (!skill?.blitzUnlockedLevel) return "";
+  const best = skill.challengeBests?.wave;
+  if (!best) return `Wave L${skill.blitzUnlockedLevel}`;
+  return `Wave L${skill.blitzUnlockedLevel} best ${best.score}`;
+}
+
+function formatBossReplayText(skill) {
+  if (!skill?.blitzUnlockedLevel) return "";
+  const best = skill.challengeBests?.boss;
+  if (!best?.durationMs) return `Boss L${skill.blitzUnlockedLevel}`;
+  return `Boss L${skill.blitzUnlockedLevel} ${formatDuration(best.durationMs)}`;
 }
 
 function updateOpChits() {
@@ -1074,7 +2526,9 @@ function updateInputHint() {
   if (!el) return;
   const enabled = getEnabledOps();
   if (enabled.length === 0) {
-    el.textContent = "Select a problem type to begin.";
+    const text = "Select a problem type to begin. Spacebar: pause drops until the board is clear.";
+    el.textContent = text;
+    if (kpHint) kpHint.textContent = text;
     return;
   }
   const hints = [];
@@ -1087,6 +2541,7 @@ function updateInputHint() {
   if (hasCirc) hints.push("○: type π coefficient");
   if (hasSI) hints.push("SI: type *1000 or /100 + Enter");
   if (hasFactor) hints.push("p·q: type 2^2*3 + Enter, or Tab to factor");
+  hints.push("Spacebar: pause drops until clear");
   const text = hints.join(" · ");
   el.textContent = text;
   if (kpHint) kpHint.textContent = text;
@@ -1107,15 +2562,29 @@ function buildDiffCards() {
     card.className = "diff-card";
     card.tabIndex = 0;
     card.dataset.op = opKey;
+    card.title = "Click for problem accuracy grid";
     card.setAttribute("role", "spinbutton");
-    card.setAttribute("aria-label", `${opDisplayNames[opKey]} difficulty, level ${config.difficulty}, ${formatReadyText(skill)}`);
+    card.setAttribute("aria-label", `${opDisplayNames[opKey]} difficulty, level ${config.difficulty}, ${formatReadyText(skill)}. Click or press Enter for problem accuracy grid.`);
     card.setAttribute("aria-valuenow", config.difficulty);
     card.setAttribute("aria-valuemin", 1);
     card.setAttribute("aria-valuemax", 10);
 
+    const header = document.createElement("div");
+    header.className = "diff-card-head";
+
     const label = document.createElement("div");
     label.className = "diff-card-label";
     label.textContent = opDisplayLabels[opKey] || opKey;
+
+    const gridHint = document.createElement("div");
+    gridHint.className = "diff-grid-hint";
+    gridHint.textContent = "Grid";
+    gridHint.setAttribute("role", "button");
+    gridHint.setAttribute("aria-label", `${opDisplayNames[opKey]} problem accuracy grid`);
+    gridHint.addEventListener("click", (e) => {
+      e.stopPropagation();
+      showStatsPopup(opKey);
+    });
 
     const controls = document.createElement("div");
     controls.className = "diff-card-controls";
@@ -1153,6 +2622,11 @@ function buildDiffCards() {
         event.preventDefault();
         initAudio();
         setDifficulty(opKey, opConfig[opKey].difficulty - 1);
+      } else if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        event.stopPropagation();
+        initAudio();
+        showStatsPopup(opKey);
       }
     });
 
@@ -1169,11 +2643,16 @@ function buildDiffCards() {
     readyText.className = "diff-ready";
     readyText.dataset.op = opKey;
     readyText.textContent = formatReadyText(skill);
+    readyText.classList.toggle("is-qualified", Boolean(skill.bossAttemptedForLevel));
+    readyText.classList.toggle("is-locked", !skill.bossReady);
+    readyText.classList.toggle("is-ready-attention", shouldPromptBossAttempt(skill));
+    readyText.disabled = !skill.bossReady;
+    readyText.title = getBossButtonTitle(skill);
     readyText.setAttribute("aria-pressed", skill.bossAttemptedForLevel ? "true" : "false");
     readyText.addEventListener("click", (e) => {
       e.stopPropagation();
       initAudio();
-      markReadyForBoss(opKey);
+      startBossMode(opKey);
     });
 
     const readyMeter = document.createElement("div");
@@ -1184,13 +2663,64 @@ function buildDiffCards() {
     readyFill.style.width = formatReadinessPercent(skill);
     readyMeter.appendChild(readyFill);
 
+    const blitzBtn = document.createElement("button");
+    blitzBtn.type = "button";
+    blitzBtn.className = "diff-challenge diff-blitz";
+    blitzBtn.dataset.op = opKey;
+    blitzBtn.dataset.challenge = "blitz";
+    blitzBtn.textContent = formatBlitzText(skill);
+    blitzBtn.hidden = !skill.blitzUnlockedLevel;
+    blitzBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      initAudio();
+      startBlitzMode(opKey);
+    });
+
+    const waveBtn = document.createElement("button");
+    waveBtn.type = "button";
+    waveBtn.className = "diff-challenge diff-wave";
+    waveBtn.dataset.op = opKey;
+    waveBtn.dataset.challenge = "wave";
+    waveBtn.textContent = formatWaveText(skill);
+    waveBtn.hidden = !skill.blitzUnlockedLevel;
+    waveBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      initAudio();
+      startWaveMode(opKey);
+    });
+
+    const bossReplayBtn = document.createElement("button");
+    bossReplayBtn.type = "button";
+    bossReplayBtn.className = "diff-challenge diff-boss";
+    bossReplayBtn.dataset.op = opKey;
+    bossReplayBtn.dataset.challenge = "boss";
+    bossReplayBtn.textContent = formatBossReplayText(skill);
+    bossReplayBtn.hidden = !skill.blitzUnlockedLevel;
+    bossReplayBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      initAudio();
+      startBossReplayMode(opKey);
+    });
+
+    const challengeRow = document.createElement("div");
+    challengeRow.className = "diff-challenge-row";
+    challengeRow.appendChild(blitzBtn);
+    challengeRow.appendChild(waveBtn);
+    challengeRow.appendChild(bossReplayBtn);
+
     card.addEventListener("click", () => {
       showStatsPopup(opKey);
     });
 
-    card.appendChild(label);
+    header.appendChild(label);
+    header.appendChild(gridHint);
+    card.appendChild(header);
     card.appendChild(controls);
     card.appendChild(readyText);
+    card.appendChild(challengeRow);
     card.appendChild(readyMeter);
     card.appendChild(rangeText);
     container.appendChild(card);
@@ -1204,7 +2734,11 @@ function updateReadinessDisplays() {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatReadyText(skill);
     el.classList.toggle("is-qualified", Boolean(skill?.bossAttemptedForLevel));
+    el.classList.toggle("is-locked", !skill?.bossReady);
+    el.classList.toggle("is-ready-attention", shouldPromptBossAttempt(skill));
     el.classList.remove("needs-ready");
+    el.disabled = !skill?.bossReady;
+    el.title = getBossButtonTitle(skill);
     el.setAttribute("aria-pressed", skill?.bossAttemptedForLevel ? "true" : "false");
   });
 
@@ -1213,12 +2747,52 @@ function updateReadinessDisplays() {
     el.style.width = formatReadinessPercent(skill);
   });
 
+  document.querySelectorAll(".diff-blitz[data-op]").forEach((el) => {
+    const skill = progressSummary.skills[el.dataset.op];
+    el.textContent = formatBlitzText(skill);
+    el.hidden = !skill?.blitzUnlockedLevel;
+  });
+
+  document.querySelectorAll(".diff-wave[data-op]").forEach((el) => {
+    const skill = progressSummary.skills[el.dataset.op];
+    el.textContent = formatWaveText(skill);
+    el.hidden = !skill?.blitzUnlockedLevel;
+  });
+
+  document.querySelectorAll(".diff-boss[data-op]").forEach((el) => {
+    const skill = progressSummary.skills[el.dataset.op];
+    el.textContent = formatBossReplayText(skill);
+    el.hidden = !skill?.blitzUnlockedLevel;
+  });
+
   document.querySelectorAll(".kp-diff-ready[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatReadyText(skill);
     el.classList.toggle("is-qualified", Boolean(skill?.bossAttemptedForLevel));
+    el.classList.toggle("is-locked", !skill?.bossReady);
+    el.classList.toggle("is-ready-attention", shouldPromptBossAttempt(skill));
     el.classList.remove("needs-ready");
+    el.disabled = !skill?.bossReady;
+    el.title = getBossButtonTitle(skill);
     el.setAttribute("aria-pressed", skill?.bossAttemptedForLevel ? "true" : "false");
+  });
+
+  document.querySelectorAll(".kp-diff-blitz[data-op]").forEach((el) => {
+    const skill = progressSummary.skills[el.dataset.op];
+    el.textContent = formatBlitzText(skill);
+    el.hidden = !skill?.blitzUnlockedLevel;
+  });
+
+  document.querySelectorAll(".kp-diff-wave[data-op]").forEach((el) => {
+    const skill = progressSummary.skills[el.dataset.op];
+    el.textContent = formatWaveText(skill);
+    el.hidden = !skill?.blitzUnlockedLevel;
+  });
+
+  document.querySelectorAll(".kp-diff-boss[data-op]").forEach((el) => {
+    const skill = progressSummary.skills[el.dataset.op];
+    el.textContent = formatBossReplayText(skill);
+    el.hidden = !skill?.blitzUnlockedLevel;
   });
 }
 
@@ -1226,25 +2800,42 @@ function updateReadinessDisplays() {
 // 13b. Stats Popup
 // ============================================================
 
-function getAccuracyRGB(asked, correct) {
-  if (asked === 0) return null; // never asked
-  const pct = correct / asked;
-  if (pct >= 0.95) return [34, 197, 94];   // bright green
-  if (pct >= 0.85) return [74, 222, 128];   // green
-  if (pct >= 0.75) return [134, 239, 172];  // light green
-  if (pct >= 0.65) return [251, 191, 36];   // yellow
-  if (pct >= 0.50) return [249, 115, 22];   // orange
-  return [239, 68, 68];                      // red
+function getVisualAccuracy(opKey, statsKey, asked, correct) {
+  const problem = opKey && statsKey ? getProgressProblem(opKey, statsKey) : null;
+  if (problem?.attempts > 0) return problemCurrentAccuracy(problem);
+  if (!asked) return 0;
+  return correct / asked;
+}
+
+function mixRGB(from, to, t) {
+  const ratio = clamp(0, 1, t);
+  return from.map((value, index) => Math.round(lerp(value, to[index], ratio)));
+}
+
+function getAccuracyRGB(accuracy, attempted = false) {
+  if (!attempted) return null;
+  const red = [239, 68, 68];
+  const yellow = [250, 204, 21];
+  const green = [34, 197, 94];
+  const score = clamp(0, 1, accuracy);
+  return score < 0.5
+    ? mixRGB(red, yellow, score / 0.5)
+    : mixRGB(yellow, green, (score - 0.5) / 0.5);
+}
+
+function getEvidenceRatio(asked) {
+  if (asked <= 0) return 0;
+  return clamp(0, 1, asked / 5);
 }
 
 function getConfidenceAlpha(asked) {
   if (asked === 0) return 0;
-  // 1 attempt => 0.2, 10+ => 1.0
-  return clamp(0.2, 1, 0.2 + (Math.min(asked, 10) - 1) * (0.8 / 9));
+  return clamp(0.18, 1, 0.18 + getEvidenceRatio(asked) * 0.82);
 }
 
-function getAccuracyColor(asked, correct) {
-  const rgb = getAccuracyRGB(asked, correct);
+function getAccuracyColor(asked, correct, opKey = null, statsKey = null) {
+  const accuracy = getVisualAccuracy(opKey, statsKey, asked, correct);
+  const rgb = getAccuracyRGB(accuracy, asked > 0);
   if (!rgb) return "#1a1a2e"; // never asked — dark
   const alpha = getConfidenceAlpha(asked);
   return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha.toFixed(2)})`;
@@ -1253,6 +2844,84 @@ function getAccuracyColor(asked, correct) {
 function getAccuracyText(asked, correct) {
   if (asked === 0) return "—";
   return `${Math.round((correct / asked) * 100)}% (${correct}/${asked})`;
+}
+
+function formatStatsPercent(value) {
+  return `${Math.round(clamp(0, 1, value) * 100)}%`;
+}
+
+function getProgressProblem(opKey, statsKey) {
+  return progressProfile.skills?.[opKey]?.problems?.[statsKey] || null;
+}
+
+function getStatsTooltip(opKey, statsKey, label, asked, correct) {
+  const problem = getProgressProblem(opKey, statsKey);
+  const attempts = problem?.attempts ?? asked;
+  const correctCount = problem?.correct ?? correct;
+  const wrong = problem?.wrong ?? 0;
+  const missed = problem?.missed ?? 0;
+  const helped = problem?.helped ?? 0;
+  const lifetime = attempts > 0 ? correctCount / attempts : 0;
+  const current = problem ? problemCurrentAccuracy(problem) : lifetime;
+  const bossMastered = problem ? isBossMasteredProblem(problem) : attempts >= 3 && lifetime >= 0.9;
+  const lines = [
+    label,
+    attempts > 0 ? `Attempts: ${attempts}` : "No attempts yet",
+    `Correct: ${correctCount}`,
+  ];
+  if (attempts > 0) {
+    lines.push(`Wrong: ${wrong}`);
+    lines.push(`Missed: ${missed}`);
+    if (helped > 0) lines.push(`Helped: ${helped}`);
+    lines.push(`Lifetime accuracy: ${formatStatsPercent(lifetime)}`);
+    lines.push(`Current accuracy: ${formatStatsPercent(current)}`);
+    lines.push(`Boss mastered: ${bossMastered ? "yes" : "no"} (needs 3 attempts and 90% current accuracy)`);
+  }
+  return lines.join("\n");
+}
+
+function closeStatsTooltip() {
+  const tooltip = document.getElementById("statsHoverTooltip");
+  if (tooltip) tooltip.remove();
+}
+
+function positionStatsTooltip(tooltip, event = null) {
+  const margin = 12;
+  const x = event?.clientX ?? window.innerWidth / 2;
+  const y = event?.clientY ?? window.innerHeight / 2;
+  const rect = tooltip.getBoundingClientRect();
+  const left = Math.min(window.innerWidth - rect.width - margin, Math.max(margin, x + 14));
+  const top = Math.min(window.innerHeight - rect.height - margin, Math.max(margin, y + 14));
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = `${top}px`;
+}
+
+function showStatsTooltip(text, event = null) {
+  if (!text) return;
+  let tooltip = document.getElementById("statsHoverTooltip");
+  if (!tooltip) {
+    tooltip = document.createElement("div");
+    tooltip.id = "statsHoverTooltip";
+    tooltip.className = "stats-hover-tooltip";
+    tooltip.setAttribute("role", "tooltip");
+    document.body.appendChild(tooltip);
+  }
+  tooltip.textContent = text;
+  tooltip.hidden = false;
+  positionStatsTooltip(tooltip, event);
+}
+
+function attachStatsTooltip(el, text) {
+  el.dataset.tooltip = text;
+  el.setAttribute("aria-label", text);
+  el.addEventListener("pointerenter", (event) => showStatsTooltip(text, event));
+  el.addEventListener("pointermove", (event) => {
+    const tooltip = document.getElementById("statsHoverTooltip");
+    if (tooltip && !tooltip.hidden) positionStatsTooltip(tooltip, event);
+  });
+  el.addEventListener("pointerleave", closeStatsTooltip);
+  el.addEventListener("focus", () => showStatsTooltip(text));
+  el.addEventListener("blur", closeStatsTooltip);
 }
 
 function showStatsPopup(opKey) {
@@ -1274,6 +2943,11 @@ function showStatsPopup(opKey) {
   header.textContent = `${opDisplayNames[opKey]} — Problem Accuracy`;
   card.appendChild(header);
 
+  const note = document.createElement("p");
+  note.className = "stats-note";
+  note.textContent = "These colors match the falling drops: black is unseen, hue shows accuracy from red to yellow to green, and brighter color means more attempts.";
+  card.appendChild(note);
+
   if (opKey === "si") {
     card.appendChild(buildSIReferenceTable());
     card.appendChild(buildListStats(opKey, stats));
@@ -1292,12 +2966,13 @@ function showStatsPopup(opKey) {
   legend.className = "stats-legend";
   const items = [
     ["#1a1a2e", "Never asked"],
-    ["#ef4444", "<50%"],
-    ["#f97316", "50–64%"],
-    ["#fbbf24", "65–74%"],
-    ["#86efac", "75–84%"],
-    ["#4ade80", "85–94%"],
-    ["#22c55e", "95–100%"],
+    ["#ef4444", "0% accuracy"],
+    ["#f59e0b", "25%"],
+    ["#facc15", "50%"],
+    ["#84cc16", "75%"],
+    ["#22c55e", "100%"],
+    ["rgba(34, 197, 94, 0.34)", "1 try"],
+    ["rgba(34, 197, 94, 1)", "5+ tries"],
   ];
   items.forEach(([color, text]) => {
     const item = document.createElement("div");
@@ -1326,6 +3001,7 @@ function showStatsPopup(opKey) {
 function closeStatsPopup() {
   const existing = document.getElementById("statsOverlay");
   if (existing) existing.remove();
+  closeStatsTooltip();
 }
 
 // ============================================================
@@ -1344,6 +3020,30 @@ function formatResponseTime(ms) {
 function formatPracticeSuggestion(problem) {
   if (problem.kind === "new") return `${problem.text} (new)`;
   return `${problem.text} (${problem.mastery}%)`;
+}
+
+function buildChallengeRow(skill) {
+  if (!skill.blitzUnlockedLevel) return null;
+  const row = document.createElement("div");
+  row.className = "results-pressure-row";
+
+  const label = document.createElement("span");
+  label.className = "results-pressure-label";
+  label.textContent = "Challenges:";
+  row.appendChild(label);
+
+  const chip = document.createElement("span");
+  chip.className = "results-pressure-chip is-cleared";
+  const bests = skill.challengeBests || {};
+  const parts = [
+    bests.blitz ? `Blitz ${bests.blitz.score}` : "Blitz ready",
+    bests.wave ? `Wave ${bests.wave.score}` : "Wave ready",
+    bests.boss?.durationMs ? `Boss ${formatDuration(bests.boss.durationMs)}` : "Boss ready",
+  ];
+  chip.textContent = `L${skill.blitzUnlockedLevel}: ${parts.join(" · ")}`;
+  row.appendChild(chip);
+
+  return row;
 }
 
 function buildResultsPopup() {
@@ -1373,7 +3073,7 @@ function buildResultsPopup() {
 
   const sub = document.createElement("p");
   sub.className = "results-sub";
-  sub.textContent = "Boss readiness is based on broad coverage, repeated mastery, recent accuracy, and fluency for each problem type.";
+  sub.textContent = "Mastered % is the share of current-level problems with at least 3 attempts and at least 90% current accuracy. Boss unlocks at 80%.";
   card.appendChild(sub);
 
   const list = document.createElement("div");
@@ -1407,9 +3107,9 @@ function buildResultsPopup() {
 
     const details = document.createElement("div");
     details.className = "results-details";
-    const bossText = skill.bossReady
+  const bossText = skill.bossReady
       ? "Boss ready"
-      : `${Math.max(0, skill.bossThreshold - skill.readiness)} points to boss`;
+      : `${Math.max(0, skill.bossThreshold - skill.readiness)}% to boss`;
     details.textContent = [
       `Level ${skill.currentLevel}`,
       bossText,
@@ -1424,6 +3124,8 @@ function buildResultsPopup() {
     row.appendChild(top);
     row.appendChild(meter);
     row.appendChild(details);
+    const challengeRow = buildChallengeRow(skill);
+    if (challengeRow) row.appendChild(challengeRow);
 
     if (skill.practiceSuggestions.length > 0) {
       const weak = document.createElement("div");
@@ -1585,12 +3287,28 @@ function buildLoginPopup() {
   form.appendChild(error);
   card.appendChild(form);
 
+  const actions = document.createElement("div");
+  actions.className = "login-actions";
+
+  const clearBtn = document.createElement("button");
+  clearBtn.type = "button";
+  clearBtn.className = "login-clear";
+  clearBtn.textContent = "Clear Current Stats";
+  clearBtn.addEventListener("click", () => {
+    const resetProfile = resetStoredProfile();
+    activateProfile(resetProfile);
+    closeLoginPopup();
+  });
+
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
   closeBtn.className = "login-close";
   closeBtn.textContent = "Close";
   closeBtn.addEventListener("click", closeLoginPopup);
-  card.appendChild(closeBtn);
+
+  actions.appendChild(clearBtn);
+  actions.appendChild(closeBtn);
+  card.appendChild(actions);
 
   overlay.appendChild(card);
   document.body.appendChild(overlay);
@@ -1645,11 +3363,12 @@ function buildGridStats(opKey, stats) {
       const correct = entry ? entry.correct : 0;
 
       const inRange = a <= currentRange.max && b <= currentRange.max;
-      td.className = "stats-cell" + (inRange ? "" : " stats-cell-outside");
-      td.style.background = getAccuracyColor(asked, correct);
-      td.title = `${a} ${operators[opKey]?.symbol || ""} ${b} = ${
+      const label = `${a} ${operators[opKey]?.symbol || ""} ${b} = ${
         opKey === "div" ? a : operators[opKey].fn(a, b)
-      }\n${getAccuracyText(asked, correct)}`;
+      }`;
+      td.className = "stats-cell" + (inRange ? "" : " stats-cell-outside");
+      td.style.background = getAccuracyColor(asked, correct, opKey, key);
+      attachStatsTooltip(td, getStatsTooltip(opKey, key, label, asked, correct));
 
       tr.appendChild(td);
     }
@@ -1713,9 +3432,10 @@ function buildRectStats(stats) {
         const correct = entry ? entry.correct : 0;
         const inRange = a <= currentRange.max && b <= currentRange.max;
         td.className = "stats-cell" + (inRange ? "" : " stats-cell-outside");
-        td.style.background = getAccuracyColor(asked, correct);
+        td.style.background = getAccuracyColor(asked, correct, "rect", key);
         const ans = prefix === "P" ? 2 * (a + b) : a * b;
-        td.title = `${prefix}▭ ${a}×${b} = ${ans}\n${getAccuracyText(asked, correct)}`;
+        const title = `${prefix}▭ ${a}×${b} = ${ans}`;
+        attachStatsTooltip(td, getStatsTooltip("rect", key, title, asked, correct));
         tr.appendChild(td);
       }
       table.appendChild(tr);
@@ -1768,8 +3488,8 @@ function buildCircStats(stats) {
       const correct = entry ? entry.correct : 0;
       const inRange = v <= currentRange.max;
       td.className = "stats-cell" + (inRange ? "" : " stats-cell-outside");
-      td.style.background = getAccuracyColor(asked, correct);
-      td.title = `${row.desc(v)}\n${getAccuracyText(asked, correct)}`;
+      td.style.background = getAccuracyColor(asked, correct, "circ", statsKey);
+      attachStatsTooltip(td, getStatsTooltip("circ", statsKey, row.desc(v), asked, correct));
       tr.appendChild(td);
     }
     table.appendChild(tr);
@@ -1901,11 +3621,13 @@ function buildListStats(opKey, stats) {
   entries.forEach(([text, entry]) => {
     const row = document.createElement("div");
     row.className = "stats-f10-row";
-    row.style.borderLeft = `4px solid ${getAccuracyColor(entry.asked, entry.correct)}`;
+    row.style.borderLeft = `4px solid ${getAccuracyColor(entry.asked, entry.correct, opKey, text)}`;
+    const label = opKey === "si" ? formatSIStatsKey(text) : text;
+    attachStatsTooltip(row, getStatsTooltip(opKey, text, label, entry.asked, entry.correct));
 
     const problem = document.createElement("span");
     problem.className = "stats-f10-text";
-    problem.textContent = opKey === "si" ? formatSIStatsKey(text) : text;
+    problem.textContent = label;
 
     const pct = document.createElement("span");
     pct.className = "stats-f10-pct";
@@ -1931,22 +3653,35 @@ function updateDifficultyDisplays() {
   }
 }
 
-function updateSpeedDisplay() {
-  if (speedSlider) speedSlider.value = gameSpeed;
-  if (speedValueEl) speedValueEl.textContent = gameSpeed + "%";
-  if (rateSlider) rateSlider.value = spawnRate;
-  if (rateValueEl) rateValueEl.textContent = spawnRate;
-  if (paceSlider) paceSlider.value = pace;
-  if (paceValueEl) paceValueEl.textContent = getMaxFallTime() + "s";
+function updateControlDisplay() {
+  if (speedSlider) {
+    speedSlider.value = String(gameSpeed);
+    speedSlider.disabled = isBossActive();
+  }
+  if (speedValueEl) {
+    speedValueEl.textContent = `${gameSpeed}%`;
+  }
+  if (dropLimitSlider) {
+    dropLimitSlider.value = String(dropLimit);
+    dropLimitSlider.disabled = isBossActive();
+  }
+  if (dropLimitValueEl) {
+    dropLimitValueEl.textContent = String(dropLimit);
+  }
+  const kpSpeedVal = document.getElementById("kpSpeedVal");
+  if (kpSpeedVal) kpSpeedVal.textContent = `${gameSpeed}%`;
+  const kpDropsVal = document.getElementById("kpDropsVal");
+  if (kpDropsVal) kpDropsVal.textContent = String(dropLimit);
+  document.querySelectorAll(".kp-sbtn").forEach((btn) => {
+    btn.disabled = isBossActive();
+  });
 }
 
 function togglePause() {
   isPaused = !isPaused;
+  if (isPaused) exitBreatherMode();
   if (pauseBtn) {
     pauseBtn.textContent = isPaused ? "Resume" : "Pause";
-  }
-  if (pauseOverlayEl) {
-    pauseOverlayEl.classList.toggle("hidden", !isPaused);
   }
   if (!isPaused) {
     lastTime = 0;
@@ -1970,6 +3705,10 @@ answerInput.addEventListener("input", (event) => {
 
   currentInput = answerInput.value;
   processInput(currentInput);
+  if (isBossStunned()) {
+    answerInput.value = "";
+    currentInput = "";
+  }
 });
 
 // Input keydown for Enter, Backspace, and space prevention
@@ -1985,7 +3724,7 @@ answerInput.addEventListener("keydown", (event) => {
   }
   if (event.key === "Enter") {
     event.preventDefault();
-    if (isPaused) return;
+    if (isPaused || isBossStunned()) return;
 
     if (isInFactorTargetMode()) {
       const target = getTargetedFactorDrop();
@@ -2004,7 +3743,7 @@ answerInput.addEventListener("keydown", (event) => {
     if (match) {
       handleCorrectAnswer(match);
     } else {
-      handleWrongInput();
+      handleWrongInput({ targets: getWrongSubmissionTargets() });
     }
   }
 });
@@ -2026,8 +3765,28 @@ document.addEventListener("keydown", (event) => {
     }
     return;
   }
+  if (document.getElementById("statsOverlay")) {
+    if (event.key === "Escape") {
+      closeStatsPopup();
+      event.preventDefault();
+    }
+    return;
+  }
+  if (document.getElementById("resultsOverlay")) {
+    if (event.key === "Escape") {
+      closeResultsPopup();
+      event.preventDefault();
+    }
+    return;
+  }
 
   initAudio();
+
+  if ((event.code === "Space" || event.key === " ") && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    enterBreatherMode();
+    event.preventDefault();
+    return;
+  }
 
   // Tab / Shift+Tab: cycle through factor drops in targeting mode
   if (event.key === "Tab" && !isPaused) {
@@ -2054,17 +3813,6 @@ document.addEventListener("keydown", (event) => {
   }
 
   if (event.key === "Escape") {
-    // Close stats popup first if open
-    if (document.getElementById("statsOverlay")) {
-      closeStatsPopup();
-      event.preventDefault();
-      return;
-    }
-    if (document.getElementById("resultsOverlay")) {
-      closeResultsPopup();
-      event.preventDefault();
-      return;
-    }
     // Exit factor targeting mode
     if (isInFactorTargetMode()) {
       exitFactorTargeting();
@@ -2085,6 +3833,7 @@ document.addEventListener("keydown", (event) => {
   // Focus input and insert character when not paused and input not focused
   if (
     !isPaused &&
+    !isBossStunned() &&
     document.activeElement !== answerInput &&
     event.key.length === 1 &&
     !event.ctrlKey &&
@@ -2116,24 +3865,20 @@ if (restartBtn) {
   });
 }
 
-// Speed slider
+// Practice controls
 if (speedSlider) {
   speedSlider.addEventListener("input", () => {
-    setSpeed(Number(speedSlider.value));
+    if (isBossActive()) return;
+    initAudio();
+    setPracticeControls({ speed: Number(speedSlider.value) });
   });
 }
 
-// Rate slider
-if (rateSlider) {
-  rateSlider.addEventListener("input", () => {
-    setRate(Number(rateSlider.value));
-  });
-}
-
-// Pace slider
-if (paceSlider) {
-  paceSlider.addEventListener("input", () => {
-    setPace(Number(paceSlider.value));
+if (dropLimitSlider) {
+  dropLimitSlider.addEventListener("input", () => {
+    if (isBossActive()) return;
+    initAudio();
+    setPracticeControls({ drops: Number(dropLimitSlider.value) });
   });
 }
 
@@ -2147,13 +3892,6 @@ document.querySelectorAll(".op-chit").forEach((btn) => {
     answerInput.focus();
   });
 });
-
-// Pause overlay click to resume
-if (pauseOverlayEl) {
-  pauseOverlayEl.addEventListener("click", () => {
-    if (isPaused) togglePause();
-  });
-}
 
 // Canvas click — reveal answer on a drop
 canvas.addEventListener("click", (event) => {
@@ -2304,39 +4042,20 @@ function setupTouchKeypad() {
     if (kpPauseBtn) kpPauseBtn.textContent = "Pause";
   });
 
-  // Wire inline slider +/- buttons
-  function syncKpSliderDisplays() {
-    const sv = document.getElementById("kpSpeedVal");
-    const rv = document.getElementById("kpRateVal");
-    const pv = document.getElementById("kpPaceVal");
-    if (sv) sv.textContent = gameSpeed + "%";
-    if (rv) rv.textContent = spawnRate;
-    if (pv) pv.textContent = getMaxFallTime() + "s";
-  }
   wireKpButton(document.getElementById("kpSpeedDn"), () => {
-    setSpeed(gameSpeed - 10);
-    syncKpSliderDisplays();
+    if (!isBossActive()) setPracticeControls({ speed: gameSpeed - 10 });
   });
   wireKpButton(document.getElementById("kpSpeedUp"), () => {
-    setSpeed(gameSpeed + 10);
-    syncKpSliderDisplays();
+    if (!isBossActive()) setPracticeControls({ speed: gameSpeed + 10 });
   });
-  wireKpButton(document.getElementById("kpRateDn"), () => {
-    setRate(spawnRate - 1);
-    syncKpSliderDisplays();
+  wireKpButton(document.getElementById("kpDropsDn"), () => {
+    if (!isBossActive()) setPracticeControls({ drops: dropLimit - 1 });
   });
-  wireKpButton(document.getElementById("kpRateUp"), () => {
-    setRate(spawnRate + 1);
-    syncKpSliderDisplays();
+  wireKpButton(document.getElementById("kpDropsUp"), () => {
+    if (!isBossActive()) setPracticeControls({ drops: dropLimit + 1 });
   });
-  wireKpButton(document.getElementById("kpPaceDn"), () => {
-    setPace(pace - 1);
-    syncKpSliderDisplays();
-  });
-  wireKpButton(document.getElementById("kpPaceUp"), () => {
-    setPace(pace + 1);
-    syncKpSliderDisplays();
-  });
+
+  updateControlDisplay();
 }
 
 // Build inline diff items in the keypad controls row
@@ -2356,6 +4075,10 @@ function buildKpDiffStrip() {
     label.className = "kp-diff-label";
     label.textContent = opDisplayLabels[opKey] || opKey;
 
+    const gridHint = document.createElement("span");
+    gridHint.className = "kp-grid-hint";
+    gridHint.textContent = "Grid";
+
     const downBtn = document.createElement("button");
     downBtn.className = "kp-diff-btn";
     downBtn.textContent = "\u2212";
@@ -2370,8 +4093,36 @@ function buildKpDiffStrip() {
     ready.className = "kp-diff-ready";
     ready.dataset.op = opKey;
     ready.textContent = formatReadyText(skill);
+    ready.classList.toggle("is-qualified", Boolean(skill.bossAttemptedForLevel));
+    ready.classList.toggle("is-locked", !skill.bossReady);
+    ready.disabled = !skill.bossReady;
+    ready.title = getBossButtonTitle(skill);
     ready.setAttribute("aria-pressed", skill.bossAttemptedForLevel ? "true" : "false");
-    wireKpButton(ready, () => markReadyForBoss(opKey));
+    wireKpButton(ready, () => startBossMode(opKey));
+
+    const blitz = document.createElement("button");
+    blitz.type = "button";
+    blitz.className = "kp-diff-challenge kp-diff-blitz";
+    blitz.dataset.op = opKey;
+    blitz.textContent = formatBlitzText(skill);
+    blitz.hidden = !skill.blitzUnlockedLevel;
+    wireKpButton(blitz, () => startBlitzMode(opKey));
+
+    const wave = document.createElement("button");
+    wave.type = "button";
+    wave.className = "kp-diff-challenge kp-diff-wave";
+    wave.dataset.op = opKey;
+    wave.textContent = formatWaveText(skill);
+    wave.hidden = !skill.blitzUnlockedLevel;
+    wireKpButton(wave, () => startWaveMode(opKey));
+
+    const bossReplay = document.createElement("button");
+    bossReplay.type = "button";
+    bossReplay.className = "kp-diff-challenge kp-diff-boss";
+    bossReplay.dataset.op = opKey;
+    bossReplay.textContent = formatBossReplayText(skill);
+    bossReplay.hidden = !skill.blitzUnlockedLevel;
+    wireKpButton(bossReplay, () => startBossReplayMode(opKey));
 
     const upBtn = document.createElement("button");
     upBtn.className = "kp-diff-btn";
@@ -2379,14 +4130,18 @@ function buildKpDiffStrip() {
     wireKpButton(upBtn, () => setDifficulty(opKey, opConfig[opKey].difficulty + 1));
 
     item.appendChild(label);
+    item.appendChild(gridHint);
     item.appendChild(downBtn);
     item.appendChild(val);
     item.appendChild(upBtn);
     item.appendChild(ready);
+    item.appendChild(blitz);
+    item.appendChild(wave);
+    item.appendChild(bossReplay);
 
     // Click the item (not buttons) to show stats
     item.addEventListener("click", (e) => {
-      if (e.target === downBtn || e.target === upBtn || e.target === ready) return;
+      if ([downBtn, upBtn, ready, blitz, wave, bossReplay].includes(e.target)) return;
       showStatsPopup(opKey);
     });
 
@@ -2400,6 +4155,13 @@ function updateKpDisplay() {
 }
 
 function handleKeypadPress(key) {
+  if (isBossStunned()) {
+    answerInput.value = "";
+    currentInput = "";
+    updateKpDisplay();
+    return;
+  }
+
   if (key === "Backspace") {
     clearAmbiguousTimer();
     answerInput.value = "";
@@ -2425,7 +4187,7 @@ function handleKeypadPress(key) {
     if (match) {
       handleCorrectAnswer(match);
     } else {
-      handleWrongInput();
+      handleWrongInput({ targets: getWrongSubmissionTargets() });
     }
     updateKpDisplay();
     return;
@@ -2468,10 +4230,12 @@ function getTestState() {
     problemStats: cloneForTest(problemStats),
     progressProfile: cloneForTest(progressProfile),
     progressSummary: cloneForTest(summarizeProfile(progressProfile)),
+    bossMode: cloneForTest(bossMode),
+    currentPressure: cloneForTest(getCurrentPressure()),
     gameSpeed,
-    spawnRate,
-    pace,
+    dropLimit,
     isPaused,
+    isBreatherMode,
     factorTargetId,
     currentInput,
   };
@@ -2500,6 +4264,7 @@ function makeTestDrop(overrides = {}) {
     revealed: overrides.revealed ?? false,
     createdAtMs: overrides.createdAtMs ?? performance.now() - 1000,
   };
+  if (overrides.bossKind) drop.bossKind = overrides.bossKind;
 
   if (opKey === "factor") {
     drop.answer = null;
@@ -2530,6 +4295,8 @@ function installTestHooks() {
       drops = [];
       splashes = [];
       laser = null;
+      bossMode = null;
+      isBreatherMode = false;
       score = 0;
       spawnTimer = 0;
       lastTime = 0;
@@ -2539,16 +4306,15 @@ function installTestHooks() {
       factorTargetId = null;
       answerInput.value = "";
       isPaused = false;
-      setSpeed(30);
-      setRate(0);
-      setPace(5);
+      setPracticeControls({ speed: 30, drops: 3 }, { persist: false });
       updateOpChits();
       updateDifficultyDisplays();
-      updateSpeedDisplay();
+      updateControlDisplay();
       updateScoreDisplay();
       updateLoginLink();
+      updateBossHud();
+      updateBreatherHud();
       if (pauseBtn) pauseBtn.textContent = "Pause";
-      if (pauseOverlayEl) pauseOverlayEl.classList.add("hidden");
       drawDrops();
       return getTestState();
     },
@@ -2567,11 +4333,89 @@ function installTestHooks() {
       markReadyForBoss(opKey);
       return getTestState();
     },
-    setControls({ speed, rate, pace: nextPace } = {}) {
-      if (speed !== undefined) setSpeed(speed);
-      if (rate !== undefined) setRate(rate);
-      if (nextPace !== undefined) setPace(nextPace);
-      updateSpeedDisplay();
+    masterCurrentLevel(opKey, { attempts = 3, responseMs = 900 } = {}) {
+      const skill = progressProfile.skills?.[opKey];
+      if (!skill) return getTestState();
+      const problems = getSkillUniverseProblems(opKey, opConfig[opKey].difficulty);
+      for (const problem of problems) {
+        for (let i = 0; i < attempts; i += 1) {
+          progressProfile = recordProgressEvent(progressProfile, {
+            opKey,
+            statsKey: problem.statsKey,
+            text: problem.text,
+            outcome: "correct",
+            responseMs,
+          });
+        }
+      }
+      resetProblemStats(problemStats);
+      mirrorLegacyProblemStats(progressProfile, problemStats);
+      saveProfile(progressProfile);
+      updateReadinessDisplays();
+      return getTestState();
+    },
+    startBoss(opKey) {
+      startBossMode(opKey, { force: true });
+      return getTestState();
+    },
+    startBlitz(opKey) {
+      startBlitzMode(opKey);
+      return getTestState();
+    },
+    startWave(opKey) {
+      startWaveMode(opKey);
+      return getTestState();
+    },
+    startBossReplay(opKey) {
+      startBossReplayMode(opKey);
+      return getTestState();
+    },
+    advanceBossTime(ms = 0) {
+      if (bossMode?.active) {
+        updateBossMode(Math.max(0, Number(ms) || 0));
+      }
+      drawDrops();
+      return getTestState();
+    },
+    skipToBossFight() {
+      if (bossMode?.active) {
+        startBossFight();
+        updateBossPartPositions();
+      }
+      drawDrops();
+      return getTestState();
+    },
+    forceBossVictory() {
+      if (bossMode?.active) {
+        const core = bossMode.parts.find((part) => part.id === "core");
+        if (core) {
+          core.locked = false;
+          core.problems.forEach((problem) => {
+            problem.locked = false;
+            problem.destroyed = true;
+          });
+          core.destroyed = true;
+        }
+        completeBossVictory();
+      }
+      drawDrops();
+      return getTestState();
+    },
+    triggerBossBombHit() {
+      if (bossMode?.active) {
+        applyBossStun();
+      }
+      drawDrops();
+      return getTestState();
+    },
+    setControls({ speed, drops, pressure, pressureTier } = {}) {
+      if (pressure !== undefined || pressureTier !== undefined) {
+        const tier = getPressureTier(pressure ?? pressureTier);
+        setPracticeControls({ speed: tier.speed, drops: tier.rate });
+      } else {
+        setPracticeControls({ speed, drops });
+      }
+      updateControlDisplay();
       return getTestState();
     },
     addDrop(overrides) {
@@ -2580,9 +4424,19 @@ function installTestHooks() {
       drawDrops();
       return cloneForTest(drop);
     },
+    clearDrops() {
+      drops = [];
+      factorTargetId = null;
+      drawDrops();
+      return getTestState();
+    },
     seedStats(opKey, stats) {
       problemStats[opKey] = cloneForTest(stats);
       return getTestState();
+    },
+    getDropVisual(id) {
+      const drop = drops.find((candidate) => candidate.id === id);
+      return drop ? cloneForTest(getDropAccuracyVisual(drop)) : null;
     },
     submit(value, { enter = false } = {}) {
       answerInput.value = String(value);
@@ -2592,7 +4446,7 @@ function installTestHooks() {
         if (match) {
           handleCorrectAnswer(match);
         } else {
-          handleWrongInput();
+          handleWrongInput({ targets: getWrongSubmissionTargets() });
         }
       } else {
         processInput(currentInput);
@@ -2612,14 +4466,11 @@ function init() {
   resizeCanvas();
   updateOpChits();
   updateDifficultyDisplays();
-  updateSpeedDisplay();
+  updateControlDisplay();
   updateScoreDisplay();
   syncProgressSettings();
   answerInput.tabIndex = -1;
 
-  if (pauseOverlayEl) {
-    pauseOverlayEl.classList.add("hidden");
-  }
   if (pauseBtn) {
     pauseBtn.textContent = "Pause";
   }

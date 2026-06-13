@@ -436,17 +436,22 @@ function generateProblem(opKey, opConfig, rng = Math.random) {
   };
 }
 
-function getMastery(problemStats, opKey, statsKey) {
+function getMastery(problemStats, opKey, statsKey, masteryLookup = null) {
+  if (typeof masteryLookup === "function") {
+    const mastery = masteryLookup(opKey, statsKey);
+    if (Number.isFinite(mastery)) return clamp(0, 1, mastery);
+  }
   const stats = problemStats[opKey];
   const entry = stats ? stats[statsKey] : null;
   if (!entry || entry.asked === 0) return 0;
-  const confidence = Math.min(entry.asked, 10) / 10;
+  const confidence = Math.min(entry.asked, 3) / 3;
   const accuracy = entry.correct / entry.asked;
-  return accuracy * confidence;
+  return Math.min(1, accuracy / 0.9) * confidence;
 }
 
 function getSelectionWeight(mastery) {
-  return 1 - mastery * 0.8;
+  const gap = 1 - clamp(0, 1, mastery);
+  return 1 + gap * gap * 14;
 }
 
 function weightedPick(items, rng = Math.random) {
@@ -460,7 +465,7 @@ function weightedPick(items, rng = Math.random) {
   return items[items.length - 1].value;
 }
 
-function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.random) {
+function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.random, masteryLookup = null) {
   const config = opConfig[opKey];
   const range = getDifficultyRange(opKey, config.difficulty);
 
@@ -469,7 +474,7 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
     for (let n = range.min; n <= range.max; n += 1) {
       if (!isComposite(n)) continue;
       const key = String(n);
-      const mastery = getMastery(problemStats, "factor", key);
+      const mastery = getMastery(problemStats, "factor", key, masteryLookup);
       composites.push({ n, weight: getSelectionWeight(mastery) });
     }
     if (composites.length === 0) return generateFactorProblem(config.difficulty, rng);
@@ -496,7 +501,7 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
       for (let w = range.min; w <= range.max; w += 1) {
         for (const prefix of ["P", "A"]) {
           const key = `${prefix},${l},${w}`;
-          const mastery = getMastery(problemStats, "rect", key);
+          const mastery = getMastery(problemStats, "rect", key, masteryLookup);
           pairs.push({ l, w, prefix, statsKey: key, weight: getSelectionWeight(mastery) });
         }
       }
@@ -521,7 +526,7 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
     for (let v = range.min; v <= range.max; v += 1) {
       for (const sub of ["Cr", "Cd", "Ar", "Ad"]) {
         const key = `${sub},${v}`;
-        const mastery = getMastery(problemStats, "circ", key);
+        const mastery = getMastery(problemStats, "circ", key, masteryLookup);
         items.push({ sub, val: v, statsKey: key, weight: getSelectionWeight(mastery) });
       }
     }
@@ -540,7 +545,7 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
       for (let j = 0; j < prefixes.length; j += 1) {
         if (i === j) continue;
         const key = `${prefixes[i].sym || "base"},${prefixes[j].sym || "base"}`;
-        const mastery = getMastery(problemStats, "si", key);
+        const mastery = getMastery(problemStats, "si", key, masteryLookup);
         pairs.push({
           from: prefixes[i],
           to: prefixes[j],
@@ -570,7 +575,7 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
     const candidates = [];
     for (let i = 0; i < 8; i += 1) {
       const problem = generateFactorsOfTenProblem(range.max, config.difficulty, rng);
-      const mastery = getMastery(problemStats, "f10", problem.text);
+      const mastery = getMastery(problemStats, "f10", problem.text, masteryLookup);
       candidates.push({ problem, weight: getSelectionWeight(mastery) });
     }
     return weightedPick(
@@ -593,7 +598,7 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
       } else {
         statsKey = `${a},${b}`;
       }
-      const mastery = getMastery(problemStats, opKey, statsKey);
+      const mastery = getMastery(problemStats, opKey, statsKey, masteryLookup);
       pairs.push({ a, b, statsKey, weight: getSelectionWeight(mastery) });
     }
   }

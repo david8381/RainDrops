@@ -3,6 +3,54 @@
 ## Purpose
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
+## 2026-06-12
+- Changed falling-drop and stats-grid colors so hue reflects accuracy, while opacity reflects number of attempts; unseen problems remain black and one correct attempt is faint green.
+- Split Wave 1 and Wave 2 pressure semantics: Wave 1 ramps speed with fixed load, while Wave 2 ramps load at a fixed readable speed.
+- Made the boss HUD compact and fading so it announces changes briefly, then becomes a low-opacity corner status instead of covering the top of the playfield.
+- Removed the large "shielded" labels from locked mothership parts so they no longer obscure the ship/problem area.
+- Redesigned boss mode into Wave 1 shield endurance, Wave 2 load ladder, and a final mothership fight with Shields, Guns, Wings, and Core parts.
+- Added separate persisted challenge records for Blitz score, Wave score, and Boss time; replay buttons unlock after a level boss clear and do not advance content level.
+- Made full boss-mode challenge problems excluded from ordinary mastery stats, while final mothership victory remains the only path that advances the operation level.
+- Added a light pulsing state for Mastered controls when an operation is boss-ready but the current level boss has not been beaten yet.
+- Tightened the falling-drop/stats-grid visual palette so color and opacity reflect learning evidence instead of showing unseen and lightly seen problems the same way.
+- Renamed the visible Boss readiness percentage to Mastered, added a real stats-grid hover tooltip, and hardened the visible Blitz button click path.
+- Excluded Boss, Blitz, and Wave problem answers/misses from ordinary mastery stats and the session Cleared counter.
+- Changed Mastered % to the percentage of current-level problems with at least 3 attempts and at least 90% current accuracy, and locked boss starts until that value reaches 80%.
+- Added recent-weighted current accuracy so old misses fade over time while lifetime accuracy still contributes to mastery.
+- Increased practice weighting for unmastered, low-accuracy, and under-attempted problems so weak spots appear more often, using the profile's current-weighted mastery when available.
+- Added hover/tap title details to stats-grid cells and softened impossible typed input so it no longer penalizes every visible drop.
+- Added a Spacebar Breather note to the input hint and a Login-menu button to clear the current player's saved practice stats.
+- Clarified challenge labels and summaries so Blitz/Wave/Boss results show the level they apply to.
+- Changed Blitz from a one-hit shield failure into shield endurance: correct Blitz bombs add +1 shield, wrong attempts or landed bombs subtract -5, and shield collapse records the score.
+- Added a visible Blitz shield around the player base whose thickness/brightness reflects current shield strength.
+- Restored explicit Speed (0-100%) and Drops (0-10) controls for ordinary practice, replacing the single visible Pressure selector while keeping derived pressure metadata for saved progress compatibility.
+- Boss attempts now lock the Speed/Drops snapshot at start and disable those controls during the attempt so mid-boss changes cannot alter credited settings.
+- Added Blitz mode after a level boss clear as a standalone shield-endurance challenge.
+- Blitz attempts and best scores are stored per operation/level in the local profile and shown in Results/level controls without advancing content level.
+- Results now focuses on readiness, practice suggestions, and challenge unlock/best status instead of a visible pressure-clear ladder.
+
+## 2026-06-11
+- Added a visible Grid hint to operation level cards and a stats-popup note explaining that grid colors match falling-drop colors.
+- Falling drops now use the same per-problem accuracy palette as the stats popup, giving live visual feedback for untested, weak, and mastered problems.
+- Added a Spacebar Breather mode for ordinary practice: current visible drops stop moving, new drops stop spawning, and play resumes automatically after the board is cleared.
+- Renamed the boss prelude from generic Wave 1/Wave 2 language to guard-screen messaging to clarify its purpose as a current-level retrieval check before the boss ship.
+- Destroyed boss parts now fall away as damaged fading debris instead of simply disappearing.
+- Replaced separate Speed and Rate controls with one Pressure selector (`Calm`, `Steady`, `Quick`, `Blitz`) that combines fall speed, spawn rate, active-drop cap, and boss pressure.
+- Boss mode now locks the selected Pressure recipe at attempt start, so changing pressure mid-boss cannot change the credited tier.
+- Boss clears now cascade downward: clearing a higher pressure records lower pressure tiers for that content level and lower content levels.
+- Results now show per-operation pressure clear badges, and Boss readiness controls include the current pressure tier.
+- Progress events now store pressure tier plus raw speed/rate values and aggregate pressure-tier practice stats at skill and problem level for future reporting/backend sync.
+- Made Pause non-modal: it stops gameplay without covering the playfield, so settings and Results remain accessible.
+- Removed the Pace slider from desktop/mobile controls; pressure now owns both speed and rate behavior.
+- Expanded boss waves and changed them from simultaneous rows into staggered randomized problem arrivals.
+- Boss waves now avoid duplicate answers among currently active wave drops, while boss ship nodes try to avoid repeating the exact same problem.
+- Reworked the boss ship visuals so each part contains multiple problem nodes and is destroyed only once all of its nodes are solved.
+- Added browser test coverage for multi-node boss parts staying alive until all nodes on that part are solved.
+- Added an opt-in boss mode from each operation's readiness control: two announced problem waves lead into a multi-part boss ship.
+- Boss ship parts now contain current-level problems; destroying the core records a boss clear and advances that operation to the next level.
+- Added fast problem bombs from active boss cannons. Solving bombs clears them; landed bombs briefly stun input without cascading further damage.
+- Added a compact boss HUD, browser test coverage for boss start/victory/stun behavior, and docs for the new boss-mode architecture.
+
 ## 2026-06-10
 - Added a backend-shaped local player profile in `src/player-progress.js` with localStorage persistence, per-operation readiness, per-problem outcome history, and boss-readiness recommendation flags.
 - Added a Results popup for current learning progress, including overall readiness, per-operation readiness, attempts, accuracy, recent accuracy, response time, and weak-practice suggestions.

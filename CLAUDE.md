@@ -42,10 +42,10 @@ Read these before making changes:
 ## Architecture
 
 - `index.html` — markup for header, controls, canvas, input bar, touch keypad, login/results/feedback links, feedback form, and overlays.
-- `styles.css` — desktop/mobile layout, dark theme, touch UI, and login/stats/results popup styling.
+- `styles.css` — desktop/mobile layout, dark theme, touch UI, boss/breather HUDs, and login/stats/results popup styling.
 - `src/game-core.js` — DOM-free game rules exposed as `globalThis.RainMathCore`: operation defaults, problem generation, difficulty ranges, input normalization, SI helpers, factorization, and weighting.
-- `src/player-progress.js` — local player profiles exposed as `globalThis.RainMathProgress`: multi-profile localStorage persistence, legacy single-profile migration, per-problem outcomes, saved current levels, temporary boss-attempt records, level-universe sizing, readiness scoring, practice suggestions, and boss-readiness recommendations.
-- `script.js` — browser state, animation loop, canvas drawing, audio, DOM updates, login/results/stats popups, event listeners, touch keypad wiring, and `?test=1` hooks for Playwright.
+- `src/player-progress.js` — local player profiles exposed as `globalThis.RainMathProgress`: multi-profile localStorage persistence, legacy single-profile migration, per-problem outcomes, saved Speed/Drops settings, pressure-tier compatibility stats, saved current levels, boss-completion records, Blitz attempts/bests, level-universe sizing, readiness scoring, practice suggestions, and boss-readiness recommendations.
+- `script.js` — browser state, animation loop, canvas drawing, Speed/Drops practice controls, boss/Blitz/Breather-mode state, audio, DOM updates, login/results/stats popups, event listeners, touch keypad wiring, and `?test=1` hooks for Playwright.
 - `tests/unit/game-core.test.js` — unit coverage for core rules.
 - `tests/unit/player-progress.test.js` — unit coverage for local profile persistence and readiness scoring.
 - `tests/e2e/rain-math.spec.js` — Playwright desktop/mobile browser coverage.

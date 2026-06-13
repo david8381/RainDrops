@@ -1,7 +1,7 @@
 (() => {
 const STORAGE_KEY = "rainMath.profile.v1";
 const PROFILE_STORE_KEY = "rainMath.profiles.v1";
-const PROFILE_VERSION = 2;
+const PROFILE_VERSION = 3;
 const PROFILE_STORE_VERSION = 1;
 const RECENT_LIMIT = 20;
 const BOSS_READY_SCORE = 80;
@@ -14,7 +14,69 @@ const MIN_COVERAGE_FOR_READY = 0.75;
 const MIN_MASTERED_FOR_READY = 0.65;
 const MIN_RECENT_ACCURACY_FOR_READY = 0.85;
 const MIN_ACCURACY_FOR_READY = 0.85;
+const BOSS_MASTERY_MIN_ATTEMPTS = 3;
+const BOSS_MASTERY_MIN_ACCURACY = 0.9;
+const RECENT_ACCURACY_BLEND = 0.7;
+const RECENT_ACCURACY_WEIGHTS = [0.3, 0.2, 0.15, 0.1, 0.08, 0.06, 0.04, 0.03, 0.02, 0.02];
 const PROBLEM_MASTERY_THRESHOLD = 80;
+const PRESSURE_TIERS = [
+  {
+    key: "calm",
+    label: "Calm",
+    min: 0,
+    max: 20,
+    speed: 15,
+    rate: 1,
+    maxActiveDrops: 4,
+    waveMaxActive: 3,
+    waveDelayMinMs: 700,
+    waveDelayMaxMs: 1200,
+    bossSpeedMultiplier: 0.55,
+    bombIntervalMultiplier: 1.25,
+  },
+  {
+    key: "steady",
+    label: "Steady",
+    min: 21,
+    max: 45,
+    speed: 30,
+    rate: 3,
+    maxActiveDrops: 7,
+    waveMaxActive: 5,
+    waveDelayMinMs: 500,
+    waveDelayMaxMs: 900,
+    bossSpeedMultiplier: 0.8,
+    bombIntervalMultiplier: 1,
+  },
+  {
+    key: "quick",
+    label: "Quick",
+    min: 46,
+    max: 70,
+    speed: 55,
+    rate: 6,
+    maxActiveDrops: 10,
+    waveMaxActive: 7,
+    waveDelayMinMs: 350,
+    waveDelayMaxMs: 700,
+    bossSpeedMultiplier: 1.08,
+    bombIntervalMultiplier: 0.85,
+  },
+  {
+    key: "blitz",
+    label: "Blitz",
+    min: 71,
+    max: 100,
+    speed: 80,
+    rate: 8,
+    maxActiveDrops: 13,
+    waveMaxActive: 9,
+    waveDelayMinMs: 250,
+    waveDelayMaxMs: 550,
+    bossSpeedMultiplier: 1.3,
+    bombIntervalMultiplier: 0.72,
+  },
+];
 
 const {
   expDiffToConversion,
@@ -35,6 +97,58 @@ const OUTCOME_WEIGHTS = {
 function nowIso(nowMs = Date.now()) {
   return new Date(nowMs).toISOString();
 }
+
+function normalizeSpeedPercent(value) {
+  return clamp(0, 100, Math.round(Number.isFinite(value) ? value : 30));
+}
+
+function normalizeLoad(value) {
+  return clamp(0, 10, Math.round(Number.isFinite(value) ? value : 3));
+}
+
+function getPressureTierForSpeed(speedPercent = 30) {
+  const speed = normalizeSpeedPercent(speedPercent);
+  return PRESSURE_TIERS.find((tier) => speed >= tier.min && speed <= tier.max) || PRESSURE_TIERS[1];
+}
+
+function getPressureTier(value = "steady") {
+  if (value && typeof value === "object" && value.key) return getPressureTier(value.key);
+  if (typeof value === "number") return getPressureTierForSpeed(value);
+  const key = String(value || "steady");
+  return PRESSURE_TIERS.find((tier) => tier.key === key) || getPressureTierForSpeed(Number(value));
+}
+
+function getPressureTierIndex(key) {
+  return Math.max(0, PRESSURE_TIERS.findIndex((tier) => tier.key === getPressureTier(key).key));
+}
+
+function createPressureTierStats() {
+  return {
+    attempts: 0,
+    correct: 0,
+    wrong: 0,
+    missed: 0,
+    helped: 0,
+    totalResponseMs: 0,
+    responseCount: 0,
+  };
+}
+
+function createPressureTierStatsMap(raw = {}) {
+  return Object.fromEntries(
+    PRESSURE_TIERS.map((tier) => [
+      tier.key,
+      {
+        ...createPressureTierStats(),
+        ...(raw[tier.key] || {}),
+      },
+    ])
+  );
+}
+
+// Backward-compatible aliases for profiles created while this axis was named "speed".
+const SPEED_TIERS = PRESSURE_TIERS;
+const getSpeedTier = getPressureTierForSpeed;
 
 function makeUserId(name, existingIds = []) {
   const base = String(name || "player")
@@ -71,6 +185,9 @@ function createEmptySkill(opKey, nowMs = Date.now()) {
     },
     recent: [],
     problems: {},
+    pressureTiers: createPressureTierStatsMap(),
+    blitzAttempts: [],
+    challengeAttempts: [],
     createdAt: nowIso(nowMs),
     updatedAt: nowIso(nowMs),
   };
@@ -209,7 +326,7 @@ function createDefaultProfile(nowMs = Date.now()) {
     settings: {
       speed: 30,
       rate: 3,
-      pace: 5,
+      pressureTier: getPressureTierForSpeed(30).key,
       difficulties: Object.fromEntries(
         Object.entries(operationDefaults).map(([key, value]) => [key, value.difficulty])
       ),
@@ -251,14 +368,86 @@ function normalizeMigratedProfile(profile, nowMs = Date.now()) {
   return next;
 }
 
+function normalizeBossAttempts(attempts = []) {
+  if (!Array.isArray(attempts)) return [];
+  return attempts.map((attempt) => {
+    const pressure = getPressureTier(
+      attempt.pressureTier
+        || attempt.pressureKey
+        || attempt.speedTier
+        || attempt.speedPercent
+    );
+    return {
+      ...attempt,
+      pressureTier: pressure.key,
+      pressureTierLabel: pressure.label,
+      speedPercent: Number.isFinite(attempt.speedPercent) ? attempt.speedPercent : pressure.speed,
+      spawnRate: Number.isFinite(attempt.spawnRate) ? attempt.spawnRate : pressure.rate,
+    };
+  });
+}
+
+function normalizeBlitzAttempts(attempts = []) {
+  if (!Array.isArray(attempts)) return [];
+  return attempts.map((attempt) => {
+    const speedPercent = normalizeSpeedPercent(attempt.speedPercent ?? attempt.maxSpeedPercent ?? attempt.score);
+    const load = normalizeLoad(attempt.load ?? attempt.spawnRate ?? attempt.maxDropLimit);
+    return {
+      ...attempt,
+      level: clamp(1, 10, Math.round(Number.isFinite(attempt.level) ? attempt.level : 1)),
+      score: clamp(0, 100, Math.round(Number.isFinite(attempt.score) ? attempt.score : speedPercent)),
+      speedPercent,
+      maxSpeedPercent: speedPercent,
+      spawnRate: load,
+      maxDropLimit: load,
+      result: attempt.result || "survived",
+    };
+  });
+}
+
+function normalizeChallengeAttempts(attempts = []) {
+  if (!Array.isArray(attempts)) return [];
+  return attempts
+    .filter((attempt) => attempt && typeof attempt === "object")
+    .map((attempt) => {
+      const type = ["blitz", "wave", "boss"].includes(attempt.type) ? attempt.type : "blitz";
+      const score = Number.isFinite(attempt.score)
+        ? clamp(0, 999, Math.round(attempt.score))
+        : 0;
+      const durationMs = Number.isFinite(attempt.durationMs)
+        ? Math.max(0, Math.round(attempt.durationMs))
+        : null;
+      return {
+        ...attempt,
+        type,
+        level: clamp(1, 10, Math.round(Number.isFinite(attempt.level) ? attempt.level : 1)),
+        score,
+        durationMs,
+        cleared: Boolean(attempt.cleared),
+        result: attempt.result || (attempt.cleared ? "cleared" : "survived"),
+      };
+    });
+}
+
 function ensureProfileShape(profile, nowMs = Date.now()) {
   if (!profile || typeof profile !== "object") return createDefaultProfile(nowMs);
+  const defaultProfile = createDefaultProfile(nowMs);
+  const rawSettings = profile.settings || {};
+  const speed = normalizeSpeedPercent(rawSettings.speed ?? getPressureTier(rawSettings.pressureTier ?? rawSettings.pressureKey).speed);
+  const load = normalizeLoad(rawSettings.rate ?? rawSettings.maxActiveDrops ?? rawSettings.dropLimit);
+  const pressure = getPressureTier(speed);
   const sourceVersion = Number(profile.version || 0);
   const next = {
-    ...createDefaultProfile(nowMs),
+    ...defaultProfile,
     ...profile,
-    user: { ...createDefaultProfile(nowMs).user, ...(profile.user || {}) },
-    settings: { ...createDefaultProfile(nowMs).settings, ...(profile.settings || {}) },
+    user: { ...defaultProfile.user, ...(profile.user || {}) },
+    settings: {
+      ...defaultProfile.settings,
+      ...rawSettings,
+      pressureTier: pressure.key,
+      speed,
+      rate: load,
+    },
     skills: { ...(profile.skills || {}) },
   };
   next.version = PROFILE_VERSION;
@@ -274,7 +463,17 @@ function ensureProfileShape(profile, nowMs = Date.now()) {
       },
       problems: { ...(rawSkill.problems || {}) },
       recent: Array.isArray(rawSkill.recent) ? rawSkill.recent : [],
-      bossAttempts: Array.isArray(rawSkill.bossAttempts) ? rawSkill.bossAttempts : [],
+      bossAttempts: normalizeBossAttempts(rawSkill.bossAttempts),
+      blitzAttempts: normalizeBlitzAttempts(rawSkill.blitzAttempts),
+      challengeAttempts: normalizeChallengeAttempts(
+        Array.isArray(rawSkill.challengeAttempts) && rawSkill.challengeAttempts.length > 0
+          ? rawSkill.challengeAttempts
+          : (rawSkill.blitzAttempts || []).map((attempt) => ({
+            ...attempt,
+            type: "blitz",
+          }))
+      ),
+      pressureTiers: createPressureTierStatsMap(rawSkill.pressureTiers || rawSkill.speedTiers),
     };
     const hasPractice = nextSkill.totals.attempts > 0 || Object.keys(nextSkill.problems).length > 0;
     if (sourceVersion < PROFILE_VERSION && !hasPractice && nextSkill.currentLevel === LEGACY_START_LEVEL) {
@@ -434,23 +633,210 @@ function hasBossAttemptForLevel(skill, level = skill?.currentLevel) {
   return skill.bossAttempts.some((attempt) => attempt.level === level);
 }
 
-function recordBossAttempt(profile, opKey, nowMs = Date.now()) {
+function hasBossAttemptForPressureTier(skill, level = skill?.currentLevel, pressureTierKey = "calm") {
+  if (!skill || !Array.isArray(skill.bossAttempts)) return false;
+  const key = getPressureTier(pressureTierKey).key;
+  return skill.bossAttempts.some((attempt) => attempt.level === level && attempt.pressureTier === key);
+}
+
+function getBossPressureTierClears(skill, level = skill?.currentLevel) {
+  if (!skill || !Array.isArray(skill.bossAttempts)) return [];
+  const cleared = new Set(
+    skill.bossAttempts
+      .filter((attempt) => attempt.level === level && attempt.pressureTier)
+      .map((attempt) => attempt.pressureTier)
+  );
+  return PRESSURE_TIERS.map((tier) => ({
+    ...tier,
+    cleared: cleared.has(tier.key),
+  }));
+}
+
+function parseBossAttemptOptions(profile, optionsOrNowMs) {
+  if (typeof optionsOrNowMs === "number") {
+    const speedPercent = normalizeSpeedPercent(profile.settings?.speed);
+    const pressure = getPressureTier(speedPercent);
+    return {
+      nowMs: optionsOrNowMs,
+      pressure,
+      speedPercent,
+      spawnRate: normalizeLoad(profile.settings?.rate),
+    };
+  }
+  const options = optionsOrNowMs && typeof optionsOrNowMs === "object" ? optionsOrNowMs : {};
+  const speedPercent = normalizeSpeedPercent(options.speedPercent ?? profile.settings?.speed);
+  const pressure = getPressureTier(
+    options.pressureTier
+      || options.pressureKey
+      || profile.settings?.pressureTier
+      || speedPercent
+  );
+  return {
+    nowMs: Number.isFinite(options.nowMs) ? options.nowMs : Date.now(),
+    pressure,
+    speedPercent,
+    spawnRate: normalizeLoad(options.spawnRate ?? profile.settings?.rate),
+  };
+}
+
+function recordBossAttempt(profile, opKey, optionsOrNowMs = Date.now()) {
   const skill = profile.skills?.[opKey];
   if (!skill) return profile;
   if (!Array.isArray(skill.bossAttempts)) skill.bossAttempts = [];
+  const { nowMs, pressure, speedPercent, spawnRate } = parseBossAttemptOptions(profile, optionsOrNowMs);
   const level = skill.currentLevel;
   const at = nowIso(nowMs);
-  if (!hasBossAttemptForLevel(skill, level)) {
-    const summary = computeSkillReadiness(skill);
-    skill.bossAttempts.push({
-      level,
-      readiness: summary.readiness,
-      at,
-      temporary: true,
-    });
+  const summary = computeSkillReadiness(skill);
+  const pressureIndex = getPressureTierIndex(pressure.key);
+  for (let clearedLevel = 1; clearedLevel <= level; clearedLevel += 1) {
+    for (let i = 0; i <= pressureIndex; i += 1) {
+      const clearedPressure = PRESSURE_TIERS[i];
+      if (hasBossAttemptForPressureTier(skill, clearedLevel, clearedPressure.key)) continue;
+      const inferred = !(clearedLevel === level && clearedPressure.key === pressure.key);
+      skill.bossAttempts.push({
+        level: clearedLevel,
+        readiness: summary.readiness,
+        pressureTier: clearedPressure.key,
+        pressureTierLabel: clearedPressure.label,
+        speedPercent: inferred ? clearedPressure.speed : speedPercent,
+        spawnRate: inferred ? clearedPressure.rate : spawnRate,
+        at,
+        result: "cleared",
+        temporary: false,
+        inferred,
+        clearedByLevel: level,
+        clearedByPressureTier: pressure.key,
+      });
+    }
   }
   skill.updatedAt = at;
   profile.user.updatedAt = at;
+  return profile;
+}
+
+const hasBossAttemptForSpeedTier = hasBossAttemptForPressureTier;
+const getBossSpeedTierClears = getBossPressureTierClears;
+
+function getBlitzUnlockedLevel(skill) {
+  if (!skill || !Array.isArray(skill.bossAttempts) || skill.bossAttempts.length === 0) return 0;
+  return Math.max(0, ...skill.bossAttempts
+    .filter((attempt) => attempt.result === "cleared")
+    .map((attempt) => attempt.level || 0));
+}
+
+function isBetterScoreAttempt(candidate, best) {
+  if (!best) return true;
+  const candidateScore = candidate.score || 0;
+  const bestScore = best.score || 0;
+  if (candidateScore !== bestScore) return candidateScore > bestScore;
+  const candidateLevel = candidate.level || 0;
+  const bestLevel = best.level || 0;
+  if (candidateLevel !== bestLevel) return candidateLevel > bestLevel;
+  return String(candidate.at || "") > String(best.at || "");
+}
+
+function isBetterTimeAttempt(candidate, best) {
+  if (!best) return true;
+  const candidateDuration = Number.isFinite(candidate.durationMs) ? candidate.durationMs : Infinity;
+  const bestDuration = Number.isFinite(best.durationMs) ? best.durationMs : Infinity;
+  if (candidateDuration !== bestDuration) return candidateDuration < bestDuration;
+  const candidateLevel = candidate.level || 0;
+  const bestLevel = best.level || 0;
+  if (candidateLevel !== bestLevel) return candidateLevel > bestLevel;
+  return String(candidate.at || "") > String(best.at || "");
+}
+
+function getBlitzBest(skill, level = null) {
+  if (!skill || !Array.isArray(skill.blitzAttempts)) return null;
+  const hasLevelFilter = Number.isFinite(level) && level > 0;
+  const attempts = hasLevelFilter
+    ? skill.blitzAttempts.filter((attempt) => attempt.level === level)
+    : skill.blitzAttempts;
+  if (attempts.length === 0) return null;
+  return attempts.reduce((best, attempt) => {
+    if (isBetterScoreAttempt(attempt, best)) return attempt;
+    return best;
+  }, null);
+}
+
+function getChallengeBest(skill, type, level = null) {
+  if (!skill || !Array.isArray(skill.challengeAttempts)) return null;
+  const hasLevelFilter = Number.isFinite(level) && level > 0;
+  const attempts = skill.challengeAttempts.filter((attempt) => (
+    attempt.type === type
+    && (!hasLevelFilter || attempt.level >= level)
+  ));
+  if (attempts.length === 0) return null;
+  return attempts.reduce((best, attempt) => {
+    const better = type === "boss"
+      ? isBetterTimeAttempt(attempt, best)
+      : isBetterScoreAttempt(attempt, best);
+    return better ? attempt : best;
+  }, null);
+}
+
+function getChallengeBests(skill, level = getBlitzUnlockedLevel(skill)) {
+  return {
+    blitz: getChallengeBest(skill, "blitz", level),
+    wave: getChallengeBest(skill, "wave", level),
+    boss: getChallengeBest(skill, "boss", level),
+  };
+}
+
+function recordChallengeAttempt(profile, opKey, options = {}) {
+  const skill = profile.skills?.[opKey];
+  if (!skill) return profile;
+  if (!Array.isArray(skill.challengeAttempts)) skill.challengeAttempts = [];
+  const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
+  const at = nowIso(nowMs);
+  const type = ["blitz", "wave", "boss"].includes(options.type) ? options.type : "blitz";
+  const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : getBlitzUnlockedLevel(skill) || skill.currentLevel));
+  skill.challengeAttempts.push({
+    type,
+    level,
+    score: clamp(0, 999, Math.round(Number.isFinite(options.score) ? options.score : 0)),
+    durationMs: Number.isFinite(options.durationMs) ? Math.max(0, Math.round(options.durationMs)) : null,
+    cleared: Boolean(options.cleared),
+    result: options.result || (options.cleared ? "cleared" : "survived"),
+    clearedCount: Math.max(0, Math.round(Number.isFinite(options.clearedCount) ? options.clearedCount : 0)),
+    at,
+  });
+  skill.updatedAt = at;
+  profile.user.updatedAt = at;
+  return profile;
+}
+
+function recordBlitzAttempt(profile, opKey, options = {}) {
+  const skill = profile.skills?.[opKey];
+  if (!skill) return profile;
+  if (!Array.isArray(skill.blitzAttempts)) skill.blitzAttempts = [];
+  const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
+  const at = nowIso(nowMs);
+  const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : getBlitzUnlockedLevel(skill) || skill.currentLevel));
+  const speedPercent = normalizeSpeedPercent(options.speedPercent ?? options.maxSpeedPercent ?? profile.settings?.speed);
+  const load = normalizeLoad(options.spawnRate ?? options.maxDropLimit ?? profile.settings?.rate);
+  skill.blitzAttempts.push({
+    level,
+    score: clamp(0, 100, Math.round(Number.isFinite(options.score) ? options.score : speedPercent)),
+    speedPercent,
+    maxSpeedPercent: speedPercent,
+    spawnRate: load,
+    maxDropLimit: load,
+    cleared: Boolean(options.cleared),
+    result: options.result || (options.cleared ? "boss-cleared" : "survived"),
+    clearedCount: Math.max(0, Math.round(Number.isFinite(options.clearedCount) ? options.clearedCount : 0)),
+    at,
+  });
+  skill.updatedAt = at;
+  profile.user.updatedAt = at;
+  recordChallengeAttempt(profile, opKey, {
+    ...options,
+    type: "blitz",
+    level,
+    score: clamp(0, 100, Math.round(Number.isFinite(options.score) ? options.score : speedPercent)),
+    result: options.result || (options.cleared ? "boss-cleared" : "survived"),
+    nowMs,
+  });
   return profile;
 }
 
@@ -472,6 +858,7 @@ function getProblemEntry(skill, statsKey, text) {
       lastSeenAt: null,
       lastCorrectAt: null,
       recent: [],
+      pressureTiers: createPressureTierStatsMap(),
     };
     skill.totals.distinct = Object.keys(skill.problems).length;
   }
@@ -491,8 +878,12 @@ function getProblemEntry(skill, statsKey, text) {
     lastSeenAt: null,
     lastCorrectAt: null,
     recent: [],
+    pressureTiers: createPressureTierStatsMap(skill.problems[statsKey].pressureTiers || skill.problems[statsKey].speedTiers),
     ...skill.problems[statsKey],
   };
+  skill.problems[statsKey].pressureTiers = createPressureTierStatsMap(
+    skill.problems[statsKey].pressureTiers || skill.problems[statsKey].speedTiers
+  );
   return skill.problems[statsKey];
 }
 
@@ -507,6 +898,19 @@ function recordRecent(target, entry) {
   }
 }
 
+function recordPressureTierStats(target, pressureTierKey, outcome, responseMs) {
+  if (!target.pressureTiers) target.pressureTiers = createPressureTierStatsMap(target.speedTiers);
+  const key = getPressureTier(pressureTierKey).key;
+  if (!target.pressureTiers[key]) target.pressureTiers[key] = createPressureTierStats();
+  const bucket = target.pressureTiers[key];
+  bucket.attempts += 1;
+  bucket[outcome] += 1;
+  if (responseMs !== null) {
+    bucket.totalResponseMs += responseMs;
+    bucket.responseCount += 1;
+  }
+}
+
 function recordProgressEvent(profile, event, nowMs = Date.now()) {
   const opKey = event.opKey;
   if (!opKey || !profile.skills[opKey]) return profile;
@@ -517,8 +921,17 @@ function recordProgressEvent(profile, event, nowMs = Date.now()) {
   const responseMs = Number.isFinite(event.responseMs) && event.responseMs >= 0
     ? Math.round(event.responseMs)
     : null;
+  const pressure = getPressureTier(
+    event.pressureTier
+      || event.pressureKey
+      || profile.settings?.pressureTier
+      || event.speedPercent
+      || profile.settings?.speed
+  );
+  const speedPercent = normalizeSpeedPercent(event.speedPercent ?? pressure.speed);
+  const spawnRate = normalizeLoad(event.spawnRate ?? profile.settings?.rate);
   const at = nowIso(nowMs);
-  const recentEntry = { outcome, statsKey, at };
+  const recentEntry = { outcome, statsKey, at, speedPercent, spawnRate, pressureTier: pressure.key };
 
   skill.totals.attempts += 1;
   problem.attempts += 1;
@@ -545,36 +958,54 @@ function recordProgressEvent(profile, event, nowMs = Date.now()) {
     recentEntry.responseMs = responseMs;
   }
 
+  recordPressureTierStats(skill, pressure.key, outcome, responseMs);
+  recordPressureTierStats(problem, pressure.key, outcome, responseMs);
+
   problem.lastOutcome = outcome;
   problem.lastSeenAt = at;
   skill.updatedAt = at;
   profile.user.updatedAt = at;
 
   recordRecent(skill, recentEntry);
-  recordRecent(problem, { outcome, at, responseMs });
+  recordRecent(problem, { outcome, at, responseMs, speedPercent, spawnRate, pressureTier: pressure.key });
   updateSkillReadiness(skill);
   return profile;
 }
 
 function problemMastery(problem) {
   if (!problem || problem.attempts === 0) return 0;
-  const weightedCorrect = problem.correct + problem.helped * OUTCOME_WEIGHTS.helped;
-  const accuracy = weightedCorrect / problem.attempts;
-  const correctConfidence = Math.min(problem.correct, 3) / 3;
-  const attemptConfidence = Math.min(problem.attempts, 4) / 4;
-  const streakConfidence = Math.min(problem.currentStreak, 2) / 2;
-  const averageResponseMs = problem.responseCount > 0
-    ? problem.totalResponseMs / problem.responseCount
-    : null;
-  const fluency = averageResponseMs === null
-    ? 0.5
-    : clamp(0, 1, (8000 - averageResponseMs) / 6000);
-  const confidence =
-    correctConfidence * 0.65 +
-    attemptConfidence * 0.2 +
-    streakConfidence * 0.1 +
-    fluency * 0.05;
-  return clamp(0, 100, Math.round(accuracy * confidence * 100));
+  const accuracy = problemCurrentAccuracy(problem);
+  const attemptScore = Math.min(problem.attempts, BOSS_MASTERY_MIN_ATTEMPTS) / BOSS_MASTERY_MIN_ATTEMPTS;
+  const accuracyScore = Math.min(1, accuracy / BOSS_MASTERY_MIN_ACCURACY);
+  const score = Math.round(attemptScore * accuracyScore * 100);
+  return isBossMasteredProblem(problem) ? 100 : Math.min(79, score);
+}
+
+function weightedRecentProblemAccuracy(problem) {
+  const recent = Array.isArray(problem?.recent) ? problem.recent.slice(-RECENT_ACCURACY_WEIGHTS.length).reverse() : [];
+  if (recent.length === 0) return null;
+  let total = 0;
+  let weightTotal = 0;
+  recent.forEach((entry, index) => {
+    const weight = RECENT_ACCURACY_WEIGHTS[index] || 0;
+    if (weight <= 0) return;
+    total += (normalizeOutcome(entry.outcome) === "correct" ? 1 : 0) * weight;
+    weightTotal += weight;
+  });
+  return weightTotal > 0 ? total / weightTotal : null;
+}
+
+function problemCurrentAccuracy(problem) {
+  if (!problem || problem.attempts <= 0) return 0;
+  const lifetime = problem.correct / problem.attempts;
+  const recent = weightedRecentProblemAccuracy(problem);
+  if (recent === null) return lifetime;
+  return clamp(0, 1, recent * RECENT_ACCURACY_BLEND + lifetime * (1 - RECENT_ACCURACY_BLEND));
+}
+
+function isBossMasteredProblem(problem) {
+  if (!problem || problem.attempts < BOSS_MASTERY_MIN_ATTEMPTS) return false;
+  return problemCurrentAccuracy(problem) >= BOSS_MASTERY_MIN_ACCURACY;
 }
 
 function recentAccuracy(recent) {
@@ -583,11 +1014,40 @@ function recentAccuracy(recent) {
   return score / recent.length;
 }
 
+function summarizePressureTierStats(pressureTiers = {}) {
+  return PRESSURE_TIERS.map((tier) => {
+    const stats = {
+      ...createPressureTierStats(),
+      ...(pressureTiers[tier.key] || {}),
+    };
+    const weightedCorrect = stats.correct + stats.helped * OUTCOME_WEIGHTS.helped;
+    return {
+      ...tier,
+      attempts: stats.attempts,
+      correct: stats.correct,
+      wrong: stats.wrong,
+      missed: stats.missed,
+      helped: stats.helped,
+      accuracy: stats.attempts > 0 ? weightedCorrect / stats.attempts : 0,
+      averageResponseMs: stats.responseCount > 0
+        ? Math.round(stats.totalResponseMs / stats.responseCount)
+        : null,
+    };
+  });
+}
+
+const summarizeSpeedTierStats = summarizePressureTierStats;
+
 function computeSkillReadiness(skill) {
   const problems = Object.values(skill.problems);
   const attempts = skill.totals.attempts;
   const universeCount = getSkillUniverseSize(skill.opKey, skill.currentLevel);
   const requiredAttempts = getRequiredAttemptsForReady(universeCount);
+  const universeProblems = getSkillUniverseProblems(skill.opKey, skill.currentLevel);
+  const hasEnumerableUniverse = universeProblems.length > 0;
+  const readinessDenominator = hasEnumerableUniverse
+    ? universeProblems.length
+    : Math.max(universeCount, problems.length);
   if (attempts === 0 || problems.length === 0) {
     return {
       readiness: 0,
@@ -607,7 +1067,12 @@ function computeSkillReadiness(skill) {
       weakProblems: [],
       practiceSuggestions: [],
       bossAttemptedForLevel: hasBossAttemptForLevel(skill, skill.currentLevel),
-      averageResponseMs: null,
+      bossPressureTiers: getBossPressureTierClears(skill, skill.currentLevel),
+    pressureTierStats: summarizePressureTierStats(skill.pressureTiers || skill.speedTiers),
+    blitzUnlockedLevel: getBlitzUnlockedLevel(skill),
+    blitzBest: getBlitzBest(skill),
+    challengeBests: getChallengeBests(skill),
+    averageResponseMs: null,
     };
   }
 
@@ -615,11 +1080,13 @@ function computeSkillReadiness(skill) {
   const accuracy = weightedCorrect / attempts;
   const recent = recentAccuracy(skill.recent);
   const problemMasteries = problems.map(problemMastery);
-  const masteredCount = problemMasteries.filter((mastery) => mastery >= PROBLEM_MASTERY_THRESHOLD).length;
-  const coverageScore = universeCount > 0 ? Math.min(1, problems.length / universeCount) : 0;
-  const masteryCoverage = universeCount > 0 ? Math.min(1, masteredCount / universeCount) : 0;
-  const averageMastery = universeCount > 0
-    ? problemMasteries.reduce((sum, mastery) => sum + mastery, 0) / universeCount / 100
+  const masteredCount = hasEnumerableUniverse
+    ? universeProblems.filter((problem) => isBossMasteredProblem(skill.problems[problem.statsKey])).length
+    : problems.filter(isBossMasteredProblem).length;
+  const coverageScore = readinessDenominator > 0 ? Math.min(1, problems.length / readinessDenominator) : 0;
+  const masteryCoverage = readinessDenominator > 0 ? Math.min(1, masteredCount / readinessDenominator) : 0;
+  const averageMastery = readinessDenominator > 0
+    ? problemMasteries.reduce((sum, mastery) => sum + mastery, 0) / readinessDenominator / 100
     : 0;
   const averageResponseMs = skill.totals.responseCount > 0
     ? Math.round(skill.totals.totalResponseMs / skill.totals.responseCount)
@@ -628,27 +1095,10 @@ function computeSkillReadiness(skill) {
     ? 0.5
     : clamp(0, 1, (8000 - averageResponseMs) / 6000);
 
-  const readiness = clamp(
-    0,
-    100,
-    Math.round(
-      (
-        averageMastery * 0.55 +
-        coverageScore * 0.25 +
-        masteryCoverage * 0.1 +
-        recent * 0.04 +
-        accuracy * 0.03 +
-        fluencyScore * 0.03
-      ) * 100
-    )
-  );
-  const bossReady =
-    readiness >= BOSS_READY_SCORE &&
-    attempts >= requiredAttempts &&
-    coverageScore >= MIN_COVERAGE_FOR_READY &&
-    masteryCoverage >= MIN_MASTERED_FOR_READY &&
-    recent >= MIN_RECENT_ACCURACY_FOR_READY &&
-    accuracy >= MIN_ACCURACY_FOR_READY;
+  const readiness = readinessDenominator > 0
+    ? clamp(0, 100, Math.round((masteredCount / readinessDenominator) * 100))
+    : 0;
+  const bossReady = readiness >= BOSS_READY_SCORE;
 
   return {
     readiness,
@@ -668,6 +1118,11 @@ function computeSkillReadiness(skill) {
     weakProblems: getWeakProblems(skill, 4),
     practiceSuggestions: getPracticeSuggestions(skill, 4),
     bossAttemptedForLevel: hasBossAttemptForLevel(skill, skill.currentLevel),
+    bossPressureTiers: getBossPressureTierClears(skill, skill.currentLevel),
+    pressureTierStats: summarizePressureTierStats(skill.pressureTiers || skill.speedTiers),
+    blitzUnlockedLevel: getBlitzUnlockedLevel(skill),
+    blitzBest: getBlitzBest(skill),
+    challengeBests: getChallengeBests(skill),
     averageResponseMs,
   };
 }
@@ -737,11 +1192,19 @@ function getPracticeSuggestions(skill, limit = 4) {
 
 function summarizeProfile(profile) {
   const skills = {};
+  const currentSpeedPercent = normalizeSpeedPercent(profile.settings?.speed);
+  const currentSpawnRate = normalizeLoad(profile.settings?.rate);
+  const currentPressureTier = getPressureTier(currentSpeedPercent);
   for (const [opKey, skill] of Object.entries(profile.skills)) {
+    const readiness = computeSkillReadiness(skill);
     skills[opKey] = {
-      ...computeSkillReadiness(skill),
+      ...readiness,
       opKey,
       currentLevel: skill.currentLevel,
+      currentPressureTier: { ...currentPressureTier },
+      currentSpeedPercent,
+      currentSpawnRate,
+      bossClearedCurrentPressureTier: hasBossAttemptForPressureTier(skill, skill.currentLevel, currentPressureTier.key),
       totals: { ...skill.totals },
     };
   }
@@ -759,9 +1222,15 @@ function summarizeProfile(profile) {
 }
 
 function syncSettings(profile, settings = {}, nowMs = Date.now()) {
+  const speed = normalizeSpeedPercent(settings.speed ?? profile.settings?.speed);
+  const load = normalizeLoad(settings.rate ?? settings.maxActiveDrops ?? profile.settings?.rate);
+  const pressure = getPressureTier(settings.pressureTier ?? settings.pressureKey ?? speed);
   profile.settings = {
     ...profile.settings,
     ...settings,
+    pressureTier: pressure.key,
+    speed,
+    rate: load,
     difficulties: {
       ...(profile.settings?.difficulties || {}),
       ...(settings.difficulties || {}),
@@ -805,7 +1274,9 @@ globalThis.RainMathProgress = {
   PROFILE_STORE_VERSION,
   DEFAULT_START_LEVEL,
   PROBLEM_MASTERY_THRESHOLD,
+  PRESSURE_TIERS,
   RECENT_LIMIT,
+  SPEED_TIERS,
   STORAGE_KEY,
   computeSkillReadiness,
   createDefaultProfile,
@@ -814,23 +1285,40 @@ globalThis.RainMathProgress = {
   createStoredProfile,
   ensureProfileShape,
   getProfileList,
+  getBossSpeedTierClears,
+  getBossPressureTierClears,
+  getChallengeBest,
+  getChallengeBests,
+  getBlitzBest,
+  getBlitzUnlockedLevel,
   getRequiredAttemptsForReady,
+  getPressureTier,
+  getPressureTierForSpeed,
+  getSpeedTier,
   getSkillUniverseSize,
   getSkillUniverseProblems,
   getPracticeSuggestions,
   getUnseenProblems,
   getWeakProblems,
+  hasBossAttemptForPressureTier,
+  hasBossAttemptForSpeedTier,
   hasBossAttemptForLevel,
   mirrorLegacyProblemStats,
+  problemCurrentAccuracy,
   problemMastery,
+  isBossMasteredProblem,
   readProfile,
   readProfileStore,
   recordBossAttempt,
+  recordBlitzAttempt,
+  recordChallengeAttempt,
   recordProgressEvent,
   resetStoredProfile,
   saveProfile,
   switchStoredProfile,
   summarizeProfile,
+  summarizePressureTierStats,
+  summarizeSpeedTierStats,
   syncSettings,
 };
 })();

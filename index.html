@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=0312" />
+    <link rel="stylesheet" href="styles.css?v=0327" />
   </head>
   <body>
     <main class="app">
@@ -22,7 +22,7 @@
         <div class="stats">
           <div><span class="label">Cleared</span> <span id="score">0</span></div>
         </div>
-        <div class="version">v0.3.12 · <a href="#" id="loginLink">Login</a> · <a href="#" id="resultsLink">Results</a> · <a href="#" id="feedbackLink">Feedback</a></div>
+        <div class="version">v0.3.27 · <a href="#" id="loginLink">Login</a> · <a href="#" id="resultsLink">Results</a> · <a href="#" id="feedbackLink">Feedback</a></div>
       </header>
 
       <nav class="controls-bar">
@@ -43,6 +43,12 @@
         <div class="play-col">
           <section class="game">
             <canvas id="canvas" width="900" height="520"></canvas>
+            <div id="bossHud" class="boss-hud hidden" aria-live="polite">
+              <div id="bossHudTitle" class="boss-hud-title"></div>
+              <div id="bossHudStatus" class="boss-hud-status"></div>
+              <div id="bossHudMeta" class="boss-hud-meta"></div>
+            </div>
+            <div id="breatherHud" class="breather-hud hidden" aria-live="polite">Breather: clear the board to resume</div>
             <div class="ground"></div>
           </section>
 
@@ -60,27 +66,17 @@
         </div>
 
         <aside class="side-panel" id="sidePanel">
-          <div class="sliders-row">
-            <div class="slider-card">
-              <div class="slider-header">Speed</div>
-              <div class="slider-wrap">
-                <input type="range" id="speedSlider" min="0" max="100" value="30" orient="vertical" />
-              </div>
-              <div id="speedValue" class="slider-num">30%</div>
+          <div class="play-controls-card">
+            <div class="play-controls-header">Practice Controls</div>
+            <div class="control-row">
+              <label for="speedSlider">Speed</label>
+              <input type="range" id="speedSlider" min="0" max="100" value="30" />
+              <div id="speedValue" class="control-value">30%</div>
             </div>
-            <div class="slider-card">
-              <div class="slider-header">Rate</div>
-              <div class="slider-wrap">
-                <input type="range" id="rateSlider" min="0" max="10" value="3" orient="vertical" />
-              </div>
-              <div id="rateValue" class="slider-num">3</div>
-            </div>
-            <div class="slider-card">
-              <div class="slider-header">Pace</div>
-              <div class="slider-wrap">
-                <input type="range" id="paceSlider" min="1" max="10" value="5" orient="vertical" />
-              </div>
-              <div id="paceValue" class="slider-num">6s</div>
+            <div class="control-row">
+              <label for="dropLimitSlider">Drops</label>
+              <input type="range" id="dropLimitSlider" min="0" max="10" value="3" />
+              <div id="dropLimitValue" class="control-value">3</div>
             </div>
           </div>
 
@@ -97,9 +93,18 @@
         <button class="kp-action" id="kpRestartBtn">Restart</button>
       </div>
       <div class="kp-controls-row" id="kpControlsRow">
-        <div class="kp-slider"><span>Spd</span><button class="kp-sbtn" id="kpSpeedDn">&minus;</button><span id="kpSpeedVal" class="kp-sval">30%</span><button class="kp-sbtn" id="kpSpeedUp">+</button></div>
-        <div class="kp-slider"><span>Rate</span><button class="kp-sbtn" id="kpRateDn">&minus;</button><span id="kpRateVal" class="kp-sval">3</span><button class="kp-sbtn" id="kpRateUp">+</button></div>
-        <div class="kp-slider"><span>Pace</span><button class="kp-sbtn" id="kpPaceDn">&minus;</button><span id="kpPaceVal" class="kp-sval">6s</span><button class="kp-sbtn" id="kpPaceUp">+</button></div>
+        <div class="kp-slider">
+          <span>Spd</span>
+          <button class="kp-sbtn" id="kpSpeedDn" type="button">&minus;</button>
+          <span id="kpSpeedVal" class="kp-sval">30%</span>
+          <button class="kp-sbtn" id="kpSpeedUp" type="button">+</button>
+        </div>
+        <div class="kp-slider">
+          <span>Drops</span>
+          <button class="kp-sbtn" id="kpDropsDn" type="button">&minus;</button>
+          <span id="kpDropsVal" class="kp-sval">3</span>
+          <button class="kp-sbtn" id="kpDropsUp" type="button">+</button>
+        </div>
       </div>
       <div class="kp-diff-scroll" id="kpDiffScroll">
         <div class="kp-diff-strip" id="kpDiffStrip"></div>
@@ -177,17 +182,9 @@
       </div>
     </div>
 
-    <div id="pauseOverlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Game paused">
-      <div class="card pause-card">
-        <h1>Paused</h1>
-        <p>Press Escape or click Resume</p>
-        <button id="resumeBtnOverlay" class="primary">Resume</button>
-      </div>
-    </div>
-
-    <script src="src/game-core.js?v=0312"></script>
-    <script src="src/player-progress.js?v=0312"></script>
-    <script src="script.js?v=0312"></script>
+    <script src="src/game-core.js?v=0327"></script>
+    <script src="src/player-progress.js?v=0327"></script>
+    <script src="script.js?v=0327"></script>
     <script data-goatcounter="https://mathrain.goatcounter.com/count"
             async src="https://gc.zgo.at/count.js"></script>
   </body>

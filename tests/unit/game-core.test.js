@@ -212,9 +212,12 @@ describe("mastery weighting", () => {
     recordProblemResult(stats, drop, false);
 
     assert.deepEqual(stats.add["1,1"], { asked: 2, correct: 1 });
-    assert.equal(getMastery(stats, "add", "1,1"), 0.1);
-    assert.equal(getSelectionWeight(0), 1);
-    assert.equal(getSelectionWeight(1), 0.19999999999999996);
+    assert.ok(getMastery(stats, "add", "1,1") > 0.36);
+    assert.ok(getMastery(stats, "add", "1,1") < 0.38);
+    assert.equal(getMastery(stats, "add", "1,1", () => 0.8), 0.8);
+    assert.equal(getMastery(stats, "add", "1,1", () => 2), 1);
+    assert.equal(getSelectionWeight(0), 15);
+    assert.equal(getSelectionWeight(1), 1);
   });
 
   it("picks weighted items and generates weighted problems", () => {
