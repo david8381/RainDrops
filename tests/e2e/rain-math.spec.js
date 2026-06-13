@@ -562,7 +562,7 @@ test.describe("desktop gameplay", () => {
       state = await invoke(page, "triggerBossBombHit");
     }
     expect(state.bossMode.transitionAction).toBe("end");
-    await expect(page.locator("#bossHudStatus")).toContainText("Wave 2 score:");
+    await expect(page.locator("#bossHudStatus")).toContainText("Wave 2 solved:");
     state = await invoke(page, "advanceBossTime", 1900);
     expect(state.bossMode).toBe(null);
 

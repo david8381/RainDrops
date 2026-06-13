@@ -611,7 +611,7 @@ body {
 .boss-hud {
   position: absolute;
   left: 18px;
-  top: 14px;
+  bottom: 14px;
   max-width: min(360px, calc(100% - 36px));
   display: flex;
   flex-direction: column;
@@ -629,7 +629,7 @@ body {
 }
 
 .boss-hud.is-quiet {
-  opacity: 0.34;
+  opacity: 0.2;
   background: rgba(10, 14, 26, 0.28);
   border-color: rgba(96, 180, 240, 0.12);
   box-shadow: none;
@@ -1418,13 +1418,14 @@ button.primary:hover {
 
 .touch-device .app {
   height: 100vh;
+  height: var(--app-height, 100vh);
   padding: calc(env(safe-area-inset-top, 0px) + 28px) 6px calc(env(safe-area-inset-bottom, 0px) + 4px);
   gap: 3px;
   overflow: hidden;
 }
 
 @supports (height: 100dvh) {
-  .touch-device .app { height: 100dvh; }
+  .touch-device .app { height: var(--app-height, 100dvh); }
 }
 
 /* Hide full header on touch — logo + score move into controls bar */
@@ -1549,7 +1550,7 @@ button.primary:hover {
 
 .touch-device .boss-hud {
   left: 12px;
-  top: 10px;
+  bottom: 10px;
   max-width: min(310px, calc(100% - 24px));
   gap: 6px;
   padding: 6px 8px;

@@ -3,6 +3,12 @@
 ## Purpose
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
+## 2026-06-13
+- Moved the boss HUD from the top-left to the bottom-left and made it fade quieter/sooner so it no longer covers falling problems and bombs.
+- Drew boss-ship problem nodes in a second pass on top of all part bodies so an overlapping part box can no longer hide a problem's text.
+- Changed the Wave 2 challenge score to a plain count of problems solved (and relabeled the HUD/Results/summary text accordingly) instead of the load-weighted formula, which was unclear.
+- Fixed the mobile layout so the bottom keypad is no longer hidden behind the browser address bar: the app height is now driven from `visualViewport` (with `dvh`/`vh` fallbacks) and resynced on viewport resize and orientation change.
+
 ## 2026-06-12
 - Changed falling-drop and stats-grid colors so hue reflects accuracy, while opacity reflects number of attempts; unseen problems remain black and one correct attempt is faint green.
 - Split Wave 1 and Wave 2 pressure semantics: Wave 1 ramps speed with fixed load, while Wave 2 ramps load at a fixed readable speed.

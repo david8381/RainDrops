@@ -72,7 +72,7 @@ const BLITZ_START_DROPS = 2;
 const BLITZ_MAX_DROPS = 10;
 const WAVE_TWO_BASE_SPEED = 42;
 const CHALLENGE_TRANSITION_MS = 1800;
-const BOSS_HUD_FRESH_MS = 3600;
+const BOSS_HUD_FRESH_MS = 2400;
 const BLITZ_SHIELD_START = 20;
 const BLITZ_SHIELD_MAX = 30;
 const BLITZ_CORRECT_SHIELD_GAIN = 1;
@@ -878,7 +878,7 @@ function getBlitzProgress() {
 
 function getBlitzScore() {
   if (bossMode?.challengeType === "wave") {
-    return Math.min(999, Math.round((Math.max(1, bossMode.challengeLoad || 1) - 1) * 10 + (bossMode.blitzClearedCount || 0)));
+    return Math.min(999, bossMode.blitzClearedCount || 0);
   }
   return Math.round(getBlitzProgress() * 100);
 }
@@ -1091,7 +1091,7 @@ function completeChallengeFailure() {
     bossMode.transitionAction = "boss";
   } else {
     bossMode.message = type === "wave"
-      ? `Backup shields are down. Wave 2 score: ${bossMode.blitzFinalScore}`
+      ? `Backup shields are down. Wave 2 solved: ${bossMode.blitzFinalScore}`
       : `Shields are down. Blitz score: ${bossMode.blitzFinalScore}`;
     bossMode.transitionAction = "end";
   }
@@ -1289,7 +1289,7 @@ function updateBossHud() {
     const shield = Math.round(bossMode.blitzShield || 0);
     const shieldMax = bossMode.blitzShieldMax || BLITZ_SHIELD_MAX;
     if (bossMode.challengeType === "wave") {
-      bossHudMetaEl.textContent = `Shields ${shield}/${shieldMax} · Load score ${getBlitzScore()} · ${getBlitzDropLimit()} at once · fixed ${getBlitzSpeedPercent()}% speed · ${bombs} bombs`;
+      bossHudMetaEl.textContent = `Shields ${shield}/${shieldMax} · Solved ${getBlitzScore()} · ${getBlitzDropLimit()} at once · fixed ${getBlitzSpeedPercent()}% speed · ${bombs} bombs`;
     } else {
       bossHudMetaEl.textContent = `Shields ${shield}/${shieldMax} · Speed score ${getBlitzScore()} · ${getBlitzSpeedPercent()}% speed · ${getBlitzDropLimit()} at once · ${bombs} bombs`;
     }
@@ -1654,6 +1654,11 @@ function drawBossShip() {
   for (const part of bossMode.parts) {
     drawBossPart(part);
   }
+  // Second pass: draw problem nodes on top so no later part's body can cover them.
+  for (const part of bossMode.parts) {
+    if (part.destroyed || part.locked) continue;
+    part.problems.filter((problem) => !problem.destroyed).forEach(drawBossProblemNode);
+  }
   drawBossDebris();
   ctx.restore();
 }
@@ -1721,12 +1726,6 @@ function drawBossPart(part) {
     fillRoundRect(x, y, part.w, part.h, 16);
     strokeRoundRect(x, y, part.w, part.h, 16);
   }
-
-  if (part.locked) {
-    return;
-  }
-
-  part.problems.filter((problem) => !problem.destroyed).forEach(drawBossProblemNode);
 }
 
 function drawBossDebris() {
@@ -2500,7 +2499,7 @@ function formatWaveText(skill) {
   if (!skill?.blitzUnlockedLevel) return "";
   const best = skill.challengeBests?.wave;
   if (!best) return `Wave L${skill.blitzUnlockedLevel}`;
-  return `Wave L${skill.blitzUnlockedLevel} best ${best.score}`;
+  return `Wave L${skill.blitzUnlockedLevel} best ${best.score} solved`;
 }
 
 function formatBossReplayText(skill) {
@@ -3955,6 +3954,22 @@ if (feedbackOverlay) {
 // Canvas resize
 window.addEventListener("resize", resizeCanvas);
 
+// On touch devices the browser address/toolbar overlays the layout viewport and
+// can push the bottom keypad off screen. Drive the app height from the actual
+// visible viewport so the whole game (including the keypad) always fits.
+function syncTouchViewportHeight() {
+  if (!document.body.classList.contains("touch-device")) return;
+  const visibleH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  document.documentElement.style.setProperty("--app-height", `${Math.round(visibleH)}px`);
+  resizeCanvas();
+}
+
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", syncTouchViewportHeight);
+  window.visualViewport.addEventListener("scroll", syncTouchViewportHeight);
+}
+window.addEventListener("orientationchange", () => setTimeout(syncTouchViewportHeight, 250));
+
 // ============================================================
 // 14. Touch Keypad
 // ============================================================
@@ -3981,6 +3996,7 @@ function setupTouchKeypad() {
   if (!isTouchDevice || !touchKeypad) return;
 
   document.body.classList.add("touch-device");
+  syncTouchViewportHeight();
 
   // Add logo + score into the controls bar
   const controlsBar = document.querySelector(".controls-bar");
