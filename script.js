@@ -116,6 +116,10 @@ const AMBIGUOUS_DELAY_MS = 400;
 // Tracks `${opKey}:${level}` we have already offered a boss for, so the unlock
 // toast appears once per op/level rather than on every subsequent correct answer.
 const bossOfferShown = new Set();
+// Parallax stars for the boss backdrop (lazily seeded once the canvas is sized).
+let starfield = [];
+// Captures the just-completed full-boss run for the victory summary popup.
+let lastBossVictory = null;
 let factorTargetId = null; // id of the targeted factor drop, or null
 let bossMode = null;
 
@@ -1171,6 +1175,9 @@ function recordActiveChallengeAttempt(result = "survived") {
   bossMode.blitzFinalSpeed = getBlitzSpeedPercent();
   bossMode.blitzFinalDrops = getBlitzDropLimit();
   bossMode.blitzFinalShields = Math.max(0, Math.round(bossMode.blitzShield || 0));
+  // Remember each wave's solved count for the end-of-run victory summary.
+  bossMode.fullRunScores = bossMode.fullRunScores || {};
+  bossMode.fullRunScores[type] = bossMode.blitzFinalScore;
   if (type === "blitz") {
     const progressPct = Math.round(getBlitzProgress() * 100);
     bossMode.waveTwoSpeedPercent = clamp(32, 58, Math.round(34 + progressPct * 0.24));
@@ -1336,12 +1343,12 @@ function updateBossMode(dt) {
   if (bossMode.phase === "victory") {
     bossMode.victoryMs -= dt;
     if (bossMode.victoryMs <= 0) {
-      // Celebrate a full boss clear by showing the operation's accuracy grid.
-      const victoryOpKey = bossMode.mode === "full" ? bossMode.opKey : null;
+      // Celebrate a full boss clear with a victory summary of the run.
+      const showVictory = bossMode.mode === "full";
       bossMode = null;
       updateBossHud();
       updateControlDisplay();
-      if (victoryOpKey) showStatsPopup(victoryOpKey);
+      if (showVictory) showBossVictoryPopup(lastBossVictory);
     }
   }
 }
@@ -1401,6 +1408,16 @@ function completeBossVictory() {
     }
   } else {
     saveProfile(progressProfile);
+  }
+  if (mode === "full") {
+    lastBossVictory = {
+      opKey,
+      level,
+      advanced: level < 10,
+      wave1: bossMode.fullRunScores?.blitz ?? null,
+      wave2: bossMode.fullRunScores?.wave ?? null,
+      bossTimeMs: durationMs,
+    };
   }
   bossMode.phase = "victory";
   bossMode.message = mode === "full"
@@ -1619,6 +1636,8 @@ function getDropAccuracyVisual(drop) {
 function drawDrops() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+  drawStarfield();
+
   // Ground flash on miss
   if (groundFlash > 0) {
     const alpha = Math.min(1, groundFlash / 300) * 0.35;
@@ -1804,6 +1823,46 @@ function strokeRoundRect(x, y, w, h, r) {
     ctx.rect(x, y, w, h);
   }
   ctx.stroke();
+}
+
+// A parallax starfield shown during boss mode: stars drift downward at varied
+// speeds so it reads as flying forward toward the mothership between waves.
+function ensureStarfield() {
+  if (starfield.length) return;
+  for (let i = 0; i < 70; i += 1) {
+    starfield.push({
+      x: Math.random() * canvasW,
+      y: Math.random() * canvasH,
+      r: 0.5 + Math.random() * 1.6,
+      speed: 20 + Math.random() * 90,
+    });
+  }
+}
+
+function updateStarfield(dt) {
+  if (!isBossActive() || !starfield.length) return;
+  const sec = dt / 1000;
+  for (const star of starfield) {
+    star.y += star.speed * sec;
+    if (star.y > canvasH) {
+      star.y = 0;
+      star.x = Math.random() * canvasW;
+    }
+  }
+}
+
+function drawStarfield() {
+  if (!isBossActive()) return;
+  ensureStarfield();
+  ctx.save();
+  ctx.fillStyle = "#cbd5e1";
+  for (const star of starfield) {
+    ctx.globalAlpha = 0.2 + (star.speed / 110) * 0.5;
+    ctx.beginPath();
+    ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 // During the full-boss lead-up (Wave 1 and Wave 2) the mothership looms overhead,
@@ -2623,6 +2682,7 @@ function tick(timestamp) {
 
     if (isBossActive()) {
       updateBossMode(dt);
+      updateStarfield(dt);
     } else if (isBreatherMode) {
       maybeExitBreatherMode();
     } else if (dropLimit > 0) {
@@ -2847,6 +2907,81 @@ function showBossOffer(opKey) {
   window.setTimeout(() => {
     if (document.getElementById("bossOfferToast") === toast) toast.remove();
   }, 12000);
+}
+
+function closeBossVictoryPopup() {
+  const existing = document.getElementById("bossVictoryOverlay");
+  if (existing) existing.remove();
+}
+
+// End-of-run celebration after a full boss clear: congratulations, the three
+// stage results (Wave 1 / Wave 2 / Boss), and a button to move on.
+function showBossVictoryPopup(info) {
+  if (!info) return;
+  closeBossVictoryPopup();
+  const op = opDisplayNames[info.opKey] || info.opKey;
+
+  const overlay = document.createElement("div");
+  overlay.className = "overlay boss-victory-overlay";
+  overlay.id = "bossVictoryOverlay";
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) closeBossVictoryPopup();
+  });
+
+  const card = document.createElement("div");
+  card.className = "card boss-victory-card";
+
+  const heading = document.createElement("h2");
+  heading.textContent = "🎉 Boss Defeated!";
+  const sub = document.createElement("p");
+  sub.className = "boss-victory-sub";
+  sub.textContent = info.advanced
+    ? `${op} — Level ${info.level} cleared. Level ${info.level + 1} unlocked!`
+    : `${op} — Level ${info.level} cleared. Top level reached!`;
+
+  const scores = document.createElement("div");
+  scores.className = "boss-victory-scores";
+  const rows = [
+    ["Wave 1", info.wave1 != null ? `${info.wave1} solved` : "—"],
+    ["Wave 2", info.wave2 != null ? `${info.wave2} solved` : "—"],
+    ["Boss time", info.bossTimeMs != null ? formatDuration(info.bossTimeMs) : "—"],
+  ];
+  for (const [label, value] of rows) {
+    const row = document.createElement("div");
+    row.className = "boss-victory-score";
+    const l = document.createElement("span");
+    l.className = "boss-victory-score-label";
+    l.textContent = label;
+    const v = document.createElement("span");
+    v.className = "boss-victory-score-value";
+    v.textContent = value;
+    row.append(l, v);
+    scores.appendChild(row);
+  }
+
+  const buttons = document.createElement("div");
+  buttons.className = "boss-victory-buttons";
+  const next = document.createElement("button");
+  next.type = "button";
+  next.className = "boss-victory-next";
+  next.textContent = info.advanced ? "Next Level →" : "Continue";
+  next.addEventListener("click", () => {
+    closeBossVictoryPopup();
+    answerInput.focus();
+  });
+  const grid = document.createElement("button");
+  grid.type = "button";
+  grid.className = "boss-victory-grid";
+  grid.textContent = "View accuracy grid";
+  grid.addEventListener("click", () => {
+    closeBossVictoryPopup();
+    showStatsPopup(info.opKey);
+  });
+  buttons.append(next, grid);
+
+  card.append(heading, sub, scores, buttons);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
 }
 
 function getBossButtonTitle(skill) {

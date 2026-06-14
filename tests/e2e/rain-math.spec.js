@@ -612,14 +612,20 @@ test.describe("desktop gameplay", () => {
     expect(stillAlive).toBe(false);
   });
 
-  test("shows the accuracy grid after a full boss victory", async ({ page }) => {
+  test("shows a victory summary after a full boss victory", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
     await invoke(page, "startBoss", "add");
     await invoke(page, "forceBossVictory");
     await invoke(page, "advanceBossTime", 2500); // run out the victory timer
+    await expect(page.locator("#bossVictoryOverlay")).toBeVisible();
+    await expect(page.locator("#bossVictoryOverlay")).toContainText("Boss Defeated");
+    await expect(page.locator("#bossVictoryOverlay")).toContainText("Wave 1");
+    await expect(page.locator(".boss-victory-next")).toBeVisible();
+
+    // The accuracy grid is still reachable from the summary.
+    await page.locator(".boss-victory-grid").click();
     await expect(page.locator("#statsOverlay")).toBeVisible();
-    await expect(page.locator("#statsOverlay")).toContainText("Add");
   });
 
   test("offers the boss with a toast when an operation reaches mastery", async ({ page }) => {

@@ -4,6 +4,8 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-14
+- Added a parallax starfield behind boss mode so the lead-up reads as flying forward toward the mothership between waves.
+- Replaced the post-victory accuracy grid with a victory summary popup: a "Boss Defeated" congratulations, the three stage results (Wave 1 / Wave 2 solved counts and Boss time), and a Next Level button (the accuracy grid is still reachable from it).
 - Added a looming mothership during the full boss lead-up: it peeks just onto the screen during Wave 1 and descends noticeably closer in Wave 2 before dropping into full position for the fight, reinforcing that the boss is launching the waves. It is purely cosmetic and non-interactive.
 - Wrong typed answers no longer drain the shield during Wave 1/2/Blitz challenges (only landed bombs do), matching normal play where a wrong answer simply doesn't clear.
 - On reload, each operation resumes at the level after its highest cleared boss, so temporarily lowering the level selector (e.g. to replay a cleared level) no longer strands you at the lower level next session.
