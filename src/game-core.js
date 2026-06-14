@@ -274,10 +274,16 @@ function shiftDecimalSimple(value, shift) {
 const SHAPES_DIM_MIN = 2;
 const SHAPES_DIM_MAX = 5;
 const SHAPE_DEFS = [
-  { id: "sq", level: 1, name: "Square", glyph: "□" },
-  { id: "rect", level: 2, name: "Rectangle", glyph: "▭" },
-  { id: "tri", level: 3, name: "Triangle", glyph: "△" },
-  { id: "cir", level: 4, name: "Circle", glyph: "○" },
+  { id: "sq", level: 1, name: "Square" },
+  { id: "rect", level: 2, name: "Rectangle" },
+  { id: "tri", level: 3, name: "Triangle" },
+  { id: "cir", level: 4, name: "Circle" },
+  // 3D from level 5; round shapes answer as the coefficient of π. Dimension
+  // combinations that would give a non-clean answer are filtered out.
+  { id: "cube", level: 5, name: "Cube" },
+  { id: "rprism", level: 6, name: "Rectangular prism" },
+  { id: "cyl", level: 7, name: "Cylinder" },
+  { id: "sph", level: 8, name: "Sphere" },
 ];
 const SHAPES_MAX_LEVEL = SHAPE_DEFS.length;
 
@@ -303,10 +309,25 @@ function makeShapeProblem(shapeId, metric, dims) {
       answer = dims[0] + dims[1] + dims[2];
       text = `P△ ${dims[0]},${dims[1]},${dims[2]}`;
     }
-  } else {
+  } else if (shapeId === "cir") {
     // circle — answer is the coefficient of π
     answer = metric === "A" ? dims[0] * dims[0] : 2 * dims[0];
     text = `${metric}○ r=${dims[0]} =?π`;
+  } else if (shapeId === "cube") {
+    answer = metric === "SA" ? 6 * dims[0] * dims[0] : dims[0] * dims[0] * dims[0];
+    text = `${metric} cube s=${dims[0]}`;
+  } else if (shapeId === "rprism") {
+    const [l, w, h] = dims;
+    answer = metric === "SA" ? 2 * (l * w + l * h + w * h) : l * w * h;
+    text = `${metric} box ${l}×${w}×${h}`;
+  } else if (shapeId === "cyl") {
+    const [r, h] = dims;
+    answer = metric === "SA" ? 2 * r * (r + h) : r * r * h; // π coefficient
+    text = `${metric} cyl r=${r} h=${h} =?π`;
+  } else {
+    // sphere — π coefficient (SA = 4r², V = 4r³/3)
+    answer = metric === "SA" ? 4 * dims[0] * dims[0] : (4 * dims[0] * dims[0] * dims[0]) / 3;
+    text = `${metric} sphere r=${dims[0]} =?π`;
   }
   return {
     text,
@@ -317,6 +338,17 @@ function makeShapeProblem(shapeId, metric, dims) {
   };
 }
 
+// Only integer or half answers (and integer π-coefficients) are kept, so the
+// player never has to type a non-terminating value like 4/3·r³ for r=2.
+function isCleanShapeAnswer(answer) {
+  return Number.isInteger(answer * 2);
+}
+
+function pushShapeProblem(problems, shapeId, metric, dims) {
+  const problem = makeShapeProblem(shapeId, metric, dims);
+  if (isCleanShapeAnswer(problem.answer)) problems.push(problem);
+}
+
 function makeShapeProblemFromKey(statsKey) {
   const [shapeId, metric, ...dimStrs] = statsKey.split(",");
   return makeShapeProblem(shapeId, metric, dimStrs.map(Number));
@@ -324,31 +356,55 @@ function makeShapeProblemFromKey(statsKey) {
 
 function getShapesUniverse(level) {
   const problems = [];
+  const D3_MAX = 4; // tighter cap for multi-dimension 3D shapes
   for (const def of shapesActiveDefs(level)) {
     if (def.id === "sq") {
       for (let s = SHAPES_DIM_MIN; s <= SHAPES_DIM_MAX; s += 1) {
-        for (const metric of ["P", "A"]) problems.push(makeShapeProblem("sq", metric, [s]));
+        for (const metric of ["P", "A"]) pushShapeProblem(problems, "sq", metric, [s]);
       }
     } else if (def.id === "rect") {
       for (let l = SHAPES_DIM_MIN; l <= SHAPES_DIM_MAX; l += 1) {
         for (let w = l; w <= SHAPES_DIM_MAX; w += 1) {
-          for (const metric of ["P", "A"]) problems.push(makeShapeProblem("rect", metric, [l, w]));
+          for (const metric of ["P", "A"]) pushShapeProblem(problems, "rect", metric, [l, w]);
         }
       }
     } else if (def.id === "tri") {
       for (let b = SHAPES_DIM_MIN; b <= SHAPES_DIM_MAX; b += 1) {
-        for (let h = b; h <= SHAPES_DIM_MAX; h += 1) problems.push(makeShapeProblem("tri", "A", [b, h]));
+        for (let h = b; h <= SHAPES_DIM_MAX; h += 1) pushShapeProblem(problems, "tri", "A", [b, h]);
       }
       for (let a = SHAPES_DIM_MIN; a <= SHAPES_DIM_MAX; a += 1) {
         for (let b = a; b <= SHAPES_DIM_MAX; b += 1) {
           for (let c = b; c <= SHAPES_DIM_MAX; c += 1) {
-            if (a + b > c) problems.push(makeShapeProblem("tri", "P", [a, b, c]));
+            if (a + b > c) pushShapeProblem(problems, "tri", "P", [a, b, c]);
           }
         }
       }
-    } else {
+    } else if (def.id === "cir") {
       for (let r = SHAPES_DIM_MIN; r <= SHAPES_DIM_MAX; r += 1) {
-        for (const metric of ["C", "A"]) problems.push(makeShapeProblem("cir", metric, [r]));
+        for (const metric of ["C", "A"]) pushShapeProblem(problems, "cir", metric, [r]);
+      }
+    } else if (def.id === "cube") {
+      for (let s = SHAPES_DIM_MIN; s <= SHAPES_DIM_MAX; s += 1) {
+        for (const metric of ["SA", "V"]) pushShapeProblem(problems, "cube", metric, [s]);
+      }
+    } else if (def.id === "rprism") {
+      for (let l = SHAPES_DIM_MIN; l <= D3_MAX; l += 1) {
+        for (let w = l; w <= D3_MAX; w += 1) {
+          for (let h = w; h <= D3_MAX; h += 1) {
+            for (const metric of ["SA", "V"]) pushShapeProblem(problems, "rprism", metric, [l, w, h]);
+          }
+        }
+      }
+    } else if (def.id === "cyl") {
+      for (let r = SHAPES_DIM_MIN; r <= D3_MAX; r += 1) {
+        for (let h = SHAPES_DIM_MIN; h <= D3_MAX; h += 1) {
+          for (const metric of ["SA", "V"]) pushShapeProblem(problems, "cyl", metric, [r, h]);
+        }
+      }
+    } else {
+      // sphere — radius up to 6 so the divisible-by-3 volumes have some variety
+      for (let r = SHAPES_DIM_MIN; r <= 6; r += 1) {
+        for (const metric of ["SA", "V"]) pushShapeProblem(problems, "sph", metric, [r]);
       }
     }
   }

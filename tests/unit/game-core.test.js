@@ -14,6 +14,7 @@ const {
   formatFixedScale,
   makeShapeProblem,
   makeShapeProblemFromKey,
+  getShapesUniverse,
   getF10Universe,
   makeF10ProblemFromKey,
   factorDifficulty,
@@ -163,6 +164,19 @@ describe("problem generation", () => {
     assert.equal(circleArea.answer, 9);
     assert.equal(circleArea.text, "A○ r=3 =?π");
     assert.equal(makeShapeProblem("cir", "C", [3]).answer, 6);
+
+    // 3D shapes (levels 5-8): cube, rectangular prism, cylinder, sphere.
+    assert.equal(makeShapeProblem("cube", "SA", [2]).answer, 24); // 6·2²
+    assert.equal(makeShapeProblem("cube", "V", [4]).answer, 64); // 4³
+    assert.equal(makeShapeProblem("rprism", "SA", [2, 3, 4]).answer, 52); // 2(6+8+12)
+    assert.equal(makeShapeProblem("rprism", "V", [2, 3, 4]).answer, 24);
+    assert.equal(makeShapeProblem("cyl", "V", [2, 5]).answer, 20); // r²h coefficient
+    assert.equal(makeShapeProblem("sph", "SA", [3]).answer, 36); // 4r² coefficient
+    // Sphere volume coefficient (4r³/3) is only offered when it is clean.
+    const sphereVolumes = getShapesUniverse(8)
+      .filter((p) => p.statsKey.startsWith("sph,V,"))
+      .map((p) => p.statsKey);
+    assert.deepEqual(sphereVolumes, ["sph,V,3", "sph,V,6"]);
 
     // statsKey round-trips through makeShapeProblemFromKey.
     const roundTrip = makeShapeProblemFromKey("rect,A,2,5");

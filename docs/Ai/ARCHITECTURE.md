@@ -48,7 +48,7 @@ Dev-only tooling exists for tests: Node's built-in test runner covers core logic
 - Basic arithmetic: `add`, `sub`, `mul`, `div`.
 - Decimal shifting: `f10`. Difficulty is structural — a problem "type" is `(significant digits, power of 10, ×/÷)` with `difficulty = digits + power − 1`; the concrete number is random, so mastery accrues per type. A level holds every type with `digits + power − 1 ≤ level` (cumulative).
 - SI metric conversions: `si`.
-- Geometry: `shapes`, one level-gated operation — L1 square, L2 rectangle, L3 triangle, L4 circle (cumulative), with perimeter/area per shape and circle answers as the π coefficient. Higher levels are reserved for 3D shapes.
+- Geometry: `shapes`, one level-gated operation (cumulative) — L1 square, L2 rectangle, L3 triangle, L4 circle, L5 cube, L6 rectangular prism, L7 cylinder, L8 sphere. 2D shapes use perimeter/area, 3D shapes use surface area/volume, and round shapes (circle, cylinder, sphere) answer as the π coefficient. Dimension combinations that would give a non-clean answer (e.g. most sphere volumes) are filtered out so every answer is an integer or a half. Levels 9–10 reuse the full L8 set.
 - Prime factorization: `factor`, with full-answer and Tab-targeted stepwise modes (auto-targeted when factoring is the only operation in play). Difficulty is structural: `difficulty(n) = primeIndex(largest prime) + max exponent + (# primes with exponent > 1) + Ω(n) − 4`, and a level holds every composite with difficulty ≤ level (cumulative; L1 = {6}).
 
 ## Extensibility Notes
