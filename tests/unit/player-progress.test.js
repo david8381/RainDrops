@@ -257,6 +257,31 @@ describe("player progress profile", () => {
     assert.equal(getChallengeBests(profile.skills.add, 1).boss.durationMs, 72000);
   });
 
+  it("reports per-level challenge bests, carrying better scores down without overwriting", () => {
+    const profile = createDefaultProfile();
+    // Clear L1 boss, then a strong wave at L1.
+    recordBossAttempt(profile, "add", { speedPercent: 30, spawnRate: 3, nowMs: Date.UTC(2026, 0, 1) });
+    recordChallengeAttempt(profile, "add", { type: "wave", level: 1, score: 14, nowMs: Date.UTC(2026, 0, 2) });
+    // Advance, clear L2 boss, then a weaker wave at L2.
+    syncSettings(profile, { difficulties: { add: 2 } });
+    recordBossAttempt(profile, "add", { speedPercent: 30, spawnRate: 3, nowMs: Date.UTC(2026, 0, 3) });
+    recordChallengeAttempt(profile, "add", { type: "wave", level: 2, score: 9, nowMs: Date.UTC(2026, 0, 4) });
+    // Now working toward L3 (never played).
+    syncSettings(profile, { difficulties: { add: 3 } });
+
+    const rows = summarizeProfile(profile).skills.add.challengeBestsByLevel;
+    const byLevel = Object.fromEntries(rows.map((row) => [row.level, row]));
+    assert.equal(rows.length, 3);
+    // L1 keeps its strong score even though a weaker L2 run exists.
+    assert.equal(byLevel[1].wave.score, 14);
+    // L2 shows its own (weaker) score.
+    assert.equal(byLevel[2].wave.score, 9);
+    // L3 has never been played -> no scores.
+    assert.equal(byLevel[3].wave, null);
+    assert.equal(byLevel[3].blitz, null);
+    assert.equal(byLevel[3].boss, null);
+  });
+
   it("persists to and recovers from localStorage", () => {
     const storage = createMemoryStorage();
     const profile = createDefaultProfile();

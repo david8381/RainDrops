@@ -16,7 +16,7 @@ Build a fast, friendly math game where falling drops are cleared by typing answe
 - Immediate-clear operations: add, subtract, multiply, divide, factors of 10, rectangle perimeter/area, and circle circumference/area coefficient answers.
 - Enter-required operations: SI metric conversions such as `*1000` or `/100`, and full prime factorization answers such as `2^2*3`.
 - Prime factor drops can also be targeted with Tab and simplified one factor at a time.
-- Each operation can be toggled on/off during gameplay; if none are enabled, no new drops spawn.
+- Each operation can be toggled on/off during gameplay; if none are enabled, no new drops spawn. Operations are grouped into compatible sets (arithmetic `+ - × ÷` and `×10` together; Shapes; SI; Factoring); enabling an operation from a different set disables the incompatible ones.
 - Each operation has an independent difficulty level from 1-10, starting at level 1 for new profiles.
 - Current levels are stored in the local profile; increasing to the next level requires beating that operation's boss mode at the current level.
 - Boss mode unlocks from the per-operation Mastered control once 80% of the current-level problem universe is mastered. A problem counts as mastered only after at least 3 attempts with at least 90% current accuracy, where current accuracy blends recent weighted performance with lifetime accuracy so older mistakes fade but do not disappear. Once unlocked but unbeaten, the Mastered control lightly pulses to invite the boss attempt.
@@ -34,7 +34,7 @@ Build a fast, friendly math game where falling drops are cleared by typing answe
 - Existing single-profile localStorage data is migrated into the local profile selector as `david` when it still has the old default player identity.
 - Boss readiness is universe-aware: it is the percentage of current-level problems that meet the 3-attempt/90%-current-accuracy mastery rule, with boss attempts unlocked at 80%.
 - Current-level mastery is visible on per-operation level controls; broader learning progress is shown through the Results popup.
-- Results show per-operation readiness, weak-practice suggestions, and unlocked challenge status where available. Challenge rows show the cleared level plus Blitz best score, Wave best score, and Boss best time.
+- Results show per-operation readiness, weak-practice suggestions, and unlocked challenge status where available. Challenge bests are listed per level: each level shows its own Blitz/Wave best score and Boss best time, or a stronger equal-or-higher level's score if one exists, with never-played levels shown as not played.
 - Results practice suggestions blend weak seen problems for review with unseen level problems for coverage. Falling practice drops are weighted toward unmastered, low-accuracy, and under-attempted problems.
 - Problem accuracy is shown through per-operation stats popups. Hovering/focusing grid cells shows detailed attempts, accuracy, and mastery status. Operation level cards include a Grid hint that opens the per-problem accuracy grid/list.
 - Falling drops are shaded with the same accuracy/evidence palette as the stats popup: untested problems are black, hue runs from red through yellow to green by accuracy, and brightness/opacity increases with repeated attempts.

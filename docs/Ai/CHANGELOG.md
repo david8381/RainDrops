@@ -4,6 +4,9 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-14
+- Grouped operations into compatible sets (arithmetic +−×÷ and ×10 together; Shapes; SI; Factoring), so turning on an op from another set turns off the incompatible ones — reducing answer collisions and mixed-input confusion.
+- Results now shows challenge bests per cleared level instead of only the highest cleared level: each level shows its own best (or a stronger equal-or-higher level's), never-played levels show nothing, and a worse higher-level run no longer hides a better earlier-level score.
+- Raised the Wave 2 maximum simultaneous load from 10 to 25 now that the round only steps up after each batch is fully cleared.
 - Redesigned the final mothership as a "fact sheet": it now draws from the whole current-level problem universe (randomly sampled, capped at 50) split across the four ship parts, so clearing the boss means working through every problem type like a math worksheet.
 - Boss nodes now reveal in small capped batches (at most 6 visible at once) and never reveal two answers that collide, so a typed answer can no longer clear the wrong node (no false positives).
 - Empty trailing ship parts (when a level's universe is smaller than the part count, e.g. low-level SI/factor) now auto-collapse so the boss can always be completed.

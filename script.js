@@ -81,6 +81,7 @@ const BLITZ_SHIELD_PULSE_MS = 260;
 const BLITZ_SHIELD_HIT_MS = 360;
 const WAVE_TWO_SPAWN_STAGGER_MS = 340;
 const WAVE_TWO_ROUND_GAP_MS = 700;
+const WAVE_TWO_MAX_LOAD = 25;
 const FACT_SHEET_CAP = 50;
 const MAX_VISIBLE_BOSS_NODES = 6;
 const BOSS_PART_DEFS = [
@@ -350,10 +351,38 @@ function getEnabledOps() {
   return Object.keys(opConfig).filter((key) => opConfig[key].enabled);
 }
 
+// Operations are grouped into compatible "sets". Ops in the same set can be
+// practiced together; turning on an op from a different set turns off the
+// incompatible ones so wildly different answer formats never share the board.
+const OP_SETS = {
+  add: "arithmetic",
+  sub: "arithmetic",
+  mul: "arithmetic",
+  div: "arithmetic",
+  f10: "arithmetic",
+  rect: "shapes",
+  circ: "shapes",
+  si: "si",
+  factor: "factor",
+};
+
+function getOpSet(opKey) {
+  return OP_SETS[opKey] || opKey;
+}
+
 function toggleOp(opKey) {
   if (!opConfig[opKey]) return;
-  // All ops can be toggled off — no drops spawn when none are enabled
-  opConfig[opKey].enabled = !opConfig[opKey].enabled;
+  const turningOn = !opConfig[opKey].enabled;
+  opConfig[opKey].enabled = turningOn;
+  if (turningOn) {
+    // Disable any enabled op from a different set.
+    const set = getOpSet(opKey);
+    for (const key of Object.keys(opConfig)) {
+      if (key !== opKey && opConfig[key].enabled && getOpSet(key) !== set) {
+        opConfig[key].enabled = false;
+      }
+    }
+  }
   updateOpChits();
 }
 
@@ -975,7 +1004,7 @@ function getBlitzSpeedPercent() {
 
 function getBlitzDropLimit() {
   if (bossMode?.challengeType === "wave") {
-    return clamp(1, BLITZ_MAX_DROPS, Math.max(1, bossMode.challengeLoad || 1));
+    return clamp(1, WAVE_TWO_MAX_LOAD, Math.max(1, bossMode.challengeLoad || 1));
   }
   return BLITZ_START_DROPS;
 }
@@ -1209,7 +1238,7 @@ function updateWaveTwoRound(activeBombs) {
       bossMode.bombTimerMs = WAVE_TWO_SPAWN_STAGGER_MS;
     }
   } else if (activeBombs === 0 && bossMode.bombTimerMs <= 0) {
-    bossMode.challengeLoad = Math.min(BLITZ_MAX_DROPS, load + 1);
+    bossMode.challengeLoad = Math.min(WAVE_TWO_MAX_LOAD, load + 1);
     bossMode.waveRoundSpawned = 0;
     bossMode.bombTimerMs = WAVE_TWO_ROUND_GAP_MS;
     bossMode.message = `Wave 2: ${bossMode.challengeLoad} at once`;
@@ -3175,16 +3204,26 @@ function buildChallengeRow(skill) {
   label.textContent = "Challenges:";
   row.appendChild(label);
 
-  const chip = document.createElement("span");
-  chip.className = "results-pressure-chip is-cleared";
-  const bests = skill.challengeBests || {};
-  const parts = [
-    bests.blitz ? `Blitz ${bests.blitz.score}` : "Blitz ready",
-    bests.wave ? `Wave ${bests.wave.score}` : "Wave ready",
-    bests.boss?.durationMs ? `Boss ${formatDuration(bests.boss.durationMs)}` : "Boss ready",
-  ];
-  chip.textContent = `L${skill.blitzUnlockedLevel}: ${parts.join(" · ")}`;
-  row.appendChild(chip);
+  const list = document.createElement("div");
+  list.className = "results-challenge-levels";
+  const levels = skill.challengeBestsByLevel || [];
+  levels.forEach((entry) => {
+    const played = Boolean(entry.blitz || entry.wave || entry.boss?.durationMs);
+    const chip = document.createElement("span");
+    chip.className = `results-pressure-chip${played ? " is-cleared" : ""}`;
+    if (played) {
+      const parts = [
+        entry.blitz ? `Blitz ${entry.blitz.score}` : "Blitz –",
+        entry.wave ? `Wave ${entry.wave.score}` : "Wave –",
+        entry.boss?.durationMs ? `Boss ${formatDuration(entry.boss.durationMs)}` : "Boss –",
+      ];
+      chip.textContent = `L${entry.level}: ${parts.join(" · ")}`;
+    } else {
+      chip.textContent = `L${entry.level}: not played`;
+    }
+    list.appendChild(chip);
+  });
+  row.appendChild(list);
 
   return row;
 }

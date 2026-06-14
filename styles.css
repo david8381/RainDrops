@@ -1100,6 +1100,13 @@ button.primary:hover {
   box-shadow: 0 0 0 1px rgba(91, 217, 255, 0.32);
 }
 
+.results-challenge-levels {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
 .results-weak {
   margin-top: 4px;
 }

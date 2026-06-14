@@ -749,8 +749,10 @@ function isBetterTimeAttempt(candidate, best) {
 function getBlitzBest(skill, level = null) {
   if (!skill || !Array.isArray(skill.blitzAttempts)) return null;
   const hasLevelFilter = Number.isFinite(level) && level > 0;
+  // A level's best includes equal-or-higher (harder) levels, so a strong run at
+  // an earlier level is never hidden once you advance.
   const attempts = hasLevelFilter
-    ? skill.blitzAttempts.filter((attempt) => attempt.level === level)
+    ? skill.blitzAttempts.filter((attempt) => (attempt.level || 0) >= level)
     : skill.blitzAttempts;
   if (attempts.length === 0) return null;
   return attempts.reduce((best, attempt) => {
@@ -781,6 +783,22 @@ function getChallengeBests(skill, level = getBlitzUnlockedLevel(skill)) {
     wave: getChallengeBest(skill, "wave", level),
     boss: getChallengeBest(skill, "boss", level),
   };
+}
+
+// Per-level challenge bests for levels 1..currentLevel. Each level shows its own
+// best (or a better equal-or-higher level's), and null when never played.
+function getChallengeBestsByLevel(skill) {
+  const maxLevel = clamp(1, 10, Math.round(skill?.currentLevel || 1));
+  const rows = [];
+  for (let level = 1; level <= maxLevel; level += 1) {
+    rows.push({
+      level,
+      blitz: getBlitzBest(skill, level),
+      wave: getChallengeBest(skill, "wave", level),
+      boss: getChallengeBest(skill, "boss", level),
+    });
+  }
+  return rows;
 }
 
 function recordChallengeAttempt(profile, opKey, options = {}) {
@@ -1072,6 +1090,7 @@ function computeSkillReadiness(skill) {
     blitzUnlockedLevel: getBlitzUnlockedLevel(skill),
     blitzBest: getBlitzBest(skill),
     challengeBests: getChallengeBests(skill),
+    challengeBestsByLevel: getChallengeBestsByLevel(skill),
     averageResponseMs: null,
     };
   }
@@ -1123,6 +1142,7 @@ function computeSkillReadiness(skill) {
     blitzUnlockedLevel: getBlitzUnlockedLevel(skill),
     blitzBest: getBlitzBest(skill),
     challengeBests: getChallengeBests(skill),
+    challengeBestsByLevel: getChallengeBestsByLevel(skill),
     averageResponseMs,
   };
 }
