@@ -608,6 +608,12 @@ body {
   );
 }
 
+/* The boss HUD is dropped from view — stage progress now lives in the header
+   readout. The element stays in the DOM as a lightweight state hook. */
+.boss-hud {
+  display: none !important;
+}
+
 .boss-hud {
   position: absolute;
   left: 18px;

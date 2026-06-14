@@ -38,7 +38,7 @@ Build a fast, friendly math game where falling drops are cleared by typing answe
 - Results practice suggestions blend weak seen problems for review with unseen level problems for coverage. Falling practice drops are weighted toward unmastered, low-accuracy, and under-attempted problems.
 - Problem accuracy is shown through per-operation stats popups. Hovering/focusing grid cells shows detailed attempts, accuracy, and mastery status. Operation level cards include a Grid hint that opens the per-problem accuracy grid/list.
 - Falling drops are shaded with the same accuracy/evidence palette as the stats popup: untested problems are black, hue runs from red through yellow to green by accuracy, and brightness/opacity increases with repeated attempts.
-- The boss HUD is a compact corner status: it announces changes briefly, then fades to a quiet low-opacity reminder so it does not cover falling problems.
+- During boss/challenge play the header readout (normally the session Cleared count) shows live stage progress instead: Wave 1 solved count and current speed, Wave 2 solved count and current load, and the mothership's nodes cleared. A full boss clear then opens the operation's accuracy grid as a recap.
 - Touch devices use an on-screen keypad and compact controls.
 - Feedback opens a FormSubmit-backed feedback form.
 

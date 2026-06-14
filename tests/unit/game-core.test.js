@@ -209,9 +209,9 @@ describe("problem generation", () => {
     assert.equal(factorDifficulty(9), 3); // 3²
     assert.equal(factorDifficulty(12), 4); // 2²·3
     assert.equal(factorDifficulty(36), 6); // 2²·3²
-    // L1 universe is just {6}; cumulative levels add more composites.
-    assert.deepEqual(getFactorUniverse(1).map((p) => p.statsKey), ["6"]);
-    assert.deepEqual(getFactorUniverse(2).map((p) => p.statsKey), ["4", "6", "10", "15"]);
+    // The ladder is shifted by one so L1 is not just {6}: L1 holds difficulty <= 2.
+    assert.deepEqual(getFactorUniverse(1).map((p) => p.statsKey), ["4", "6", "10", "15"]);
+    assert.equal(getFactorUniverse(2).length, 9); // adds difficulty-3 composites
   });
 });
 

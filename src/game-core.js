@@ -546,7 +546,9 @@ function factorDifficulty(n) {
 }
 
 function getFactorUniverseNumbers(level) {
-  const lvl = clamp(1, 99, Math.round(level || 1));
+  // Level 1 of pure {6} was too thin, so the ladder is shifted by one: a level
+  // holds every composite of difficulty <= level + 1 (L1 = difficulty <= 2).
+  const lvl = clamp(1, 99, Math.round(level || 1)) + 1;
   const nums = [];
   for (let n = 4; n <= FACTOR_MAX_N; n += 1) {
     if (factorDifficulty(n) <= lvl) nums.push(n);

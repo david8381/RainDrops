@@ -4,6 +4,11 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-14
+- Dropped the bottom-left boss HUD from view; stage progress now lives only in the header readout. During Wave 1 the header shows the live speed (Wave 1 ramps speed), Wave 2 shows the current load, and the mothership shows nodes cleared.
+- Show the operation's accuracy grid automatically after a full boss victory, so a clear ends on a recap of what was mastered.
+- Auto-target factor problems during boss mode too (ship nodes and falling bombs), with the targeted node highlighted and showing what is left to factor; stepwise and full `2^2*3`+Enter both work.
+- Shifted prime-factoring difficulty up by one (level 1 of just {6} was too easy): a level now holds every composite of difficulty ≤ level + 1, so level 1 is {4, 6, 10, 15}.
+- Switching to an operation from another set now also clears any on-screen drops of the now-disabled operations, since operations from different sets are not mixed.
 - Challenge replay buttons (Blitz/Wave/Boss) on an operation card now appear only when the selected level is the cleared level they replay, so advancing to a new level no longer plasters its card with the previous level's challenge stats. Per-level bests still live in the Results popup; drop the level selector to a cleared level to replay it.
 - The header "Cleared" readout now shows live stage progress during boss play — Wave 1 / Wave 2 solved count (plus Wave 2's current load) and the mothership's nodes cleared — then reverts to the session Cleared count when the boss ends.
 - Fixed version stamping: `scripts/stamp-version.sh` now bumps the visible version, the `index.html` cache-busters, and `package.json` together (instead of editing a `const VERSION` line that no longer exists), and the `.githooks/pre-commit` hook now stages `index.html` + `package.json` so each commit auto-bumps the patch and cache-busters. `npm run stamp 0.4.0` sets an explicit version.

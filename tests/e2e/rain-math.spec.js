@@ -93,7 +93,7 @@ test.describe("desktop gameplay", () => {
     await expect(addCard.locator(".diff-ready")).toHaveText("Beat Boss first");
 
     await invoke(page, "startBoss", "add");
-    await expect(page.locator("#bossHud")).toBeVisible();
+    expect((await invoke(page, "getState")).bossMode.active).toBe(true);
 
     await invoke(page, "forceBossVictory");
     await expect(addCard.locator(".diff-value")).toHaveText("2");
@@ -380,7 +380,7 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator('.diff-card[data-op="add"] .diff-ready')).toBeEnabled();
     await expect(page.locator('.diff-card[data-op="add"] .diff-ready')).toHaveClass(/is-ready-attention/);
     await page.locator('.diff-card[data-op="add"] .diff-ready').click();
-    await expect(page.locator("#bossHud")).toBeVisible();
+    expect((await invoke(page, "getState")).bossMode.active).toBe(true);
     await expect(page.locator("#bossHudTitle")).toContainText("Add Boss");
     await expect(page.locator("#bossHudStatus")).toHaveText("Wave 1: shields up");
 
@@ -574,6 +574,52 @@ test.describe("desktop gameplay", () => {
     expect(bests.wave.level).toBe(1);
     expect(bests.boss.level).toBe(1);
     expect(bests.boss.durationMs).toBeGreaterThan(0);
+  });
+
+  test("auto-targets and step-factors a factor boss node", async ({ page }) => {
+    const primeFactors = (n) => {
+      const out = [];
+      let m = n;
+      for (let p = 2; p <= m; p += 1) {
+        while (m % p === 0) { out.push(p); m /= p; }
+      }
+      return out;
+    };
+
+    await openApp(page);
+    await invoke(page, "enableOps", ["factor"]);
+    await invoke(page, "startBoss", "factor");
+    await invoke(page, "skipToBossFight");
+
+    // A factor node is auto-targeted without pressing Tab.
+    await page.waitForFunction(() => window.__RAIN_MATH_TEST__.getState().factorTargetId !== null);
+    let state = await invoke(page, "getState");
+    const nodeId = state.factorTargetId;
+    const node = state.bossMode.parts.flatMap((part) => part.problems).find((pr) => pr.id === nodeId);
+    expect(node).toBeTruthy();
+    expect(node.opKey).toBe("factor");
+
+    // Step through each prime factor, then Enter to clear the node.
+    for (const f of primeFactors(node.factorOriginal)) {
+      await page.locator("#answer").fill(String(f));
+    }
+    await page.keyboard.press("Enter");
+
+    state = await invoke(page, "getState");
+    const stillAlive = (state.bossMode?.parts || [])
+      .flatMap((part) => part.problems)
+      .some((pr) => pr.id === nodeId && !pr.destroyed);
+    expect(stillAlive).toBe(false);
+  });
+
+  test("shows the accuracy grid after a full boss victory", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await invoke(page, "startBoss", "add");
+    await invoke(page, "forceBossVictory");
+    await invoke(page, "advanceBossTime", 2500); // run out the victory timer
+    await expect(page.locator("#statsOverlay")).toBeVisible();
+    await expect(page.locator("#statsOverlay")).toContainText("Add");
   });
 
   test("boss reveals nodes in capped batches and clears parts only when fully solved", async ({ page }) => {

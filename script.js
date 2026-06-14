@@ -385,6 +385,14 @@ function toggleOp(opKey) {
       }
     }
   }
+  // Clear any on-screen drops whose operation is no longer enabled (we are not
+  // mixing across sets), but leave boss/challenge drops alone.
+  if (!isBossActive()) {
+    drops = drops.filter((drop) => opConfig[drop.opKey]?.enabled);
+    if (factorTargetId !== null && !drops.some((drop) => drop.id === factorTargetId)) {
+      factorTargetId = null;
+    }
+  }
   updateOpChits();
 }
 
@@ -1318,9 +1326,12 @@ function updateBossMode(dt) {
   if (bossMode.phase === "victory") {
     bossMode.victoryMs -= dt;
     if (bossMode.victoryMs <= 0) {
+      // Celebrate a full boss clear by showing the operation's accuracy grid.
+      const victoryOpKey = bossMode.mode === "full" ? bossMode.opKey : null;
       bossMode = null;
       updateBossHud();
       updateControlDisplay();
+      if (victoryOpKey) showStatsPopup(victoryOpKey);
     }
   }
 }
@@ -1976,17 +1987,25 @@ function drawBossDebrisPiece(piece) {
 function drawBossProblemNode(problem) {
   const x = problem.x - problem.w / 2;
   const y = problem.y - problem.h / 2;
+  const isTargeted = factorTargetId === problem.id;
   ctx.fillStyle = problem.partKind === "core"
     ? "rgba(248, 113, 113, 0.92)"
     : "rgba(15, 23, 42, 0.9)";
-  ctx.strokeStyle = problem.partKind === "shield"
-    ? "rgba(186, 230, 253, 0.86)"
-    : "rgba(255, 255, 255, 0.42)";
-  ctx.lineWidth = 1.8;
+  ctx.strokeStyle = isTargeted
+    ? "rgba(251, 191, 36, 0.95)"
+    : problem.partKind === "shield"
+      ? "rgba(186, 230, 253, 0.86)"
+      : "rgba(255, 255, 255, 0.42)";
+  ctx.lineWidth = isTargeted ? 3 : 1.8;
   fillRoundRect(x, y, problem.w, problem.h, 8);
   strokeRoundRect(x, y, problem.w, problem.h, 8);
 
-  const label = problem.text;
+  // While factoring a targeted node, show what is left to factor.
+  let label = problem.text;
+  if (problem.opKey === "factor" && Number.isFinite(problem.factorRemaining)
+    && problem.factorRemaining !== problem.factorOriginal) {
+    label = String(problem.factorRemaining);
+  }
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.font = "700 11px Space Grotesk";
@@ -2271,11 +2290,12 @@ function getScoreReadout() {
   }
   if (phase === "challenge" || phase === "challengeComplete") {
     const solved = getBlitzScore();
+    // Wave 1 ramps speed, so surface the live speed; Wave 2 ramps load.
     return {
       label,
       value: bossMode.challengeType === "wave"
         ? `${solved} solved · ${bossMode.challengeLoad} at once`
-        : `${solved} solved`,
+        : `${solved} solved · ${getBlitzSpeedPercent()}% speed`,
     };
   }
   return { label, value: "ready" };
@@ -2447,17 +2467,35 @@ function isInFactorTargetMode() {
 
 function getTargetedFactorDrop() {
   if (factorTargetId === null) return null;
-  const drop = drops.find((d) => d.id === factorTargetId);
-  // If the targeted drop is gone (cleared or fell), exit targeting
-  if (!drop || drop.revealed) {
+  // Include boss ship nodes so a targeted node (even fully factored, awaiting
+  // Enter) is still found; only destroyed/cleared targets release targeting.
+  const pool = isBossActive() ? [...getActiveBossParts(), ...drops] : drops;
+  const target = pool.find((d) => d.id === factorTargetId);
+  if (!target || target.destroyed) {
     factorTargetId = null;
     return null;
   }
-  return drop;
+  if (!isBossActive() && target.revealed) {
+    factorTargetId = null;
+    return null;
+  }
+  return target;
+}
+
+// Factor problems that can be targeted/stepped right now. In boss mode that means
+// the active ship's factor nodes plus any falling factor bombs; otherwise the
+// visible falling factor drops.
+function getTargetableFactorProblems() {
+  if (isBossActive()) {
+    const nodes = getActiveBossParts().filter((p) => p.opKey === "factor" && !p.factorComplete);
+    const bombs = drops.filter((d) => d.bossKind === "bomb" && d.opKey === "factor" && isDropVisible(d) && !d.factorComplete);
+    return [...nodes, ...bombs];
+  }
+  return drops.filter((d) => d.opKey === "factor" && isDropVisible(d) && !d.revealed && !d.factorComplete);
 }
 
 function getVisibleFactorDrops() {
-  return drops.filter((d) => d.opKey === "factor" && isDropVisible(d) && !d.revealed);
+  return getTargetableFactorProblems();
 }
 
 function getNextFactorDrop(currentId) {
@@ -2503,11 +2541,15 @@ function exitFactorTargeting() {
 // without pressing Tab first. With other operations enabled, targeting stays
 // manual to avoid surprises.
 function maybeAutoTargetFactor() {
-  if (isBossActive()) return;
-  const enabled = getEnabledOps();
-  if (enabled.length !== 1 || enabled[0] !== "factor") return;
-  if (factorTargetId !== null) return;
-  const candidates = drops.filter((drop) => drop.opKey === "factor" && !drop.factorComplete && isDropVisible(drop));
+  const factorActive = isBossActive()
+    ? bossMode.opKey === "factor"
+    : (() => {
+      const enabled = getEnabledOps();
+      return enabled.length === 1 && enabled[0] === "factor";
+    })();
+  if (!factorActive) return;
+  if (factorTargetId !== null && getTargetedFactorDrop()) return; // keep a valid current target
+  const candidates = getTargetableFactorProblems();
   if (candidates.length === 0) return;
   const target = getMostUrgentVisibleTarget(candidates) || candidates[0];
   if (target) factorTargetId = target.id;
