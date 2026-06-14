@@ -653,7 +653,7 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#score")).toHaveText("1");
   });
 
-  test("targets factor drops with Tab and requires each factor explicitly", async ({ page }) => {
+  test("auto-targets the factor drop and requires each factor explicitly", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["factor"]);
     await freezeAutoSpawns(page);
@@ -666,7 +666,8 @@ test.describe("desktop gameplay", () => {
       y: 120,
     });
 
-    await page.keyboard.press("Tab");
+    // Factoring is solo, so the drop is auto-targeted without pressing Tab.
+    await page.waitForFunction((id) => window.__RAIN_MATH_TEST__.getState().factorTargetId === id, drop.id);
     let state = await invoke(page, "getState");
     expect(state.factorTargetId).toBe(drop.id);
 

@@ -128,7 +128,7 @@ function getDifficultyRange(opKey, difficulty) {
   }
 
   if (opKey === "factor") {
-    return { min: 4, max: Math.round(lerp(16, 200, t)) };
+    return { min: 4, max: FACTOR_MAX_N };
   }
 
   return { min: 1, max: 10 };
@@ -450,16 +450,59 @@ function getFullFactorization(n) {
   return formatFactorization(factors, 1);
 }
 
-function generateFactorProblem(difficulty = 3, rng = Math.random) {
-  const range = getDifficultyRange("factor", difficulty);
-  let attempts = 0;
-  let n;
-  do {
-    n = randInt(range.min, range.max, rng);
-    attempts += 1;
-  } while (!isComposite(n) && attempts < 50);
-  if (!isComposite(n)) n = 12;
+// Prime-factoring difficulty is computed from the structure of a number:
+//   difficulty(n) = primeIndex(largest prime factor) + max exponent
+//                   + (# primes with exponent > 1) + Ω(n) - 4
+// where Ω(n) is the count of prime factors with multiplicity. A level holds every
+// composite whose difficulty is <= level (cumulative), e.g. L1 = {6} (2·3).
+const FACTOR_MAX_N = 400;
 
+function primeIndex(p) {
+  let count = 0;
+  for (let k = 2; k <= p; k += 1) {
+    if (isPrime(k)) count += 1;
+  }
+  return count;
+}
+
+function factorExponents(n) {
+  const factors = {};
+  let m = n;
+  for (let p = 2; p * p <= m; p += p === 2 ? 1 : 2) {
+    while (m % p === 0) {
+      factors[p] = (factors[p] || 0) + 1;
+      m /= p;
+    }
+  }
+  if (m > 1) factors[m] = (factors[m] || 0) + 1;
+  return factors;
+}
+
+function factorDifficulty(n) {
+  if (!isComposite(n)) return Infinity;
+  const factors = factorExponents(n);
+  const primes = Object.keys(factors).map(Number);
+  const largestPrime = Math.max(...primes);
+  const maxExponent = Math.max(...primes.map((p) => factors[p]));
+  const numPrimesWithPower = primes.filter((p) => factors[p] > 1).length;
+  const omega = primes.reduce((sum, p) => sum + factors[p], 0);
+  return primeIndex(largestPrime) + maxExponent + numPrimesWithPower + omega - 4;
+}
+
+function getFactorUniverseNumbers(level) {
+  const lvl = clamp(1, 99, Math.round(level || 1));
+  const nums = [];
+  for (let n = 4; n <= FACTOR_MAX_N; n += 1) {
+    if (factorDifficulty(n) <= lvl) nums.push(n);
+  }
+  return nums;
+}
+
+function getFactorUniverse(level) {
+  return getFactorUniverseNumbers(level).map((n) => ({ statsKey: String(n), text: String(n) }));
+}
+
+function makeFactorProblem(n) {
   return {
     text: String(n),
     answer: null,
@@ -471,6 +514,12 @@ function generateFactorProblem(difficulty = 3, rng = Math.random) {
     factorCollected: {},
     factorLastPrime: null,
   };
+}
+
+function generateFactorProblem(difficulty = 1, rng = Math.random) {
+  const nums = getFactorUniverseNumbers(difficulty);
+  const n = nums.length ? nums[randInt(0, nums.length - 1, rng)] : 6;
+  return makeFactorProblem(n);
 }
 
 function generateProblem(opKey, opConfig, rng = Math.random) {
@@ -550,29 +599,13 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
   const range = getDifficultyRange(opKey, config.difficulty);
 
   if (opKey === "factor") {
-    const composites = [];
-    for (let n = range.min; n <= range.max; n += 1) {
-      if (!isComposite(n)) continue;
-      const key = String(n);
-      const mastery = getMastery(problemStats, "factor", key, masteryLookup);
-      composites.push({ n, weight: getSelectionWeight(mastery) });
-    }
-    if (composites.length === 0) return generateFactorProblem(config.difficulty, rng);
-    const pick = weightedPick(
-      composites.map((c) => ({ value: c.n, weight: c.weight })),
-      rng
-    );
-    return {
-      text: String(pick),
-      answer: null,
-      answerText: null,
-      opKey: "factor",
-      statsKey: String(pick),
-      factorOriginal: pick,
-      factorRemaining: pick,
-      factorCollected: {},
-      factorLastPrime: null,
-    };
+    const nums = getFactorUniverseNumbers(config.difficulty);
+    if (nums.length === 0) return generateFactorProblem(config.difficulty, rng);
+    const items = nums.map((n) => ({
+      value: makeFactorProblem(n),
+      weight: getSelectionWeight(getMastery(problemStats, "factor", String(n), masteryLookup)),
+    }));
+    return weightedPick(items, rng);
   }
 
   if (opKey === "shapes") {
@@ -751,6 +784,8 @@ globalThis.RainMathCore = {
   formatFactorization,
   formatFixedScale,
   formatF10StatsKey,
+  factorDifficulty,
+  getFactorUniverse,
   generateFactorProblem,
   generateFactorsOfTenProblem,
   generateProblem,

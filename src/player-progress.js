@@ -82,9 +82,9 @@ const {
   expDiffToConversion,
   getDifficultyRange,
   getF10Universe,
+  getFactorUniverse,
   getShapesUniverse,
   getSIPrefixesForDifficulty,
-  isComposite,
   operationDefaults,
   clamp,
 } = globalThis.RainMathCore;
@@ -217,11 +217,7 @@ function getSkillUniverseSize(opKey, level) {
   }
 
   if (opKey === "factor") {
-    let composites = 0;
-    for (let n = range.min; n <= range.max; n += 1) {
-      if (isComposite(n)) composites += 1;
-    }
-    return composites;
+    return getFactorUniverse(level).length;
   }
 
   if (opKey === "f10") {
@@ -276,11 +272,7 @@ function getSkillUniverseProblems(opKey, level) {
   }
 
   if (opKey === "factor") {
-    for (let n = range.min; n <= range.max; n += 1) {
-      if (!isComposite(n)) continue;
-      problems.push({ statsKey: String(n), text: String(n) });
-    }
-    return problems;
+    return getFactorUniverse(level);
   }
 
   return [];

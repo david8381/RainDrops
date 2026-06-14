@@ -16,6 +16,8 @@ const {
   makeShapeProblemFromKey,
   getF10Universe,
   makeF10ProblemFromKey,
+  factorDifficulty,
+  getFactorUniverse,
   generateProblem,
   generateSIProblem,
   generateWeightedProblem,
@@ -71,8 +73,8 @@ describe("difficulty ranges", () => {
     assert.deepEqual(getDifficultyRange("mul", 10), { min: 1, max: 12 });
     assert.deepEqual(getDifficultyRange("f10", 10), { min: 1, max: 4 });
     assert.deepEqual(getDifficultyRange("shapes", 10), { min: 2, max: 5 });
-    assert.deepEqual(getDifficultyRange("factor", 1), { min: 4, max: 16 });
-    assert.deepEqual(getDifficultyRange("factor", 10), { min: 4, max: 200 });
+    assert.deepEqual(getDifficultyRange("factor", 1), { min: 4, max: 400 });
+    assert.deepEqual(getDifficultyRange("factor", 10), { min: 4, max: 400 });
   });
 
   it("unlocks SI prefixes by difficulty", () => {
@@ -178,13 +180,24 @@ describe("problem generation", () => {
 
   it("generates composite-only factorization problems", () => {
     const config = createDefaultOpConfig();
-    config.factor.difficulty = 1;
+    config.factor.difficulty = 3;
     for (let i = 0; i < 20; i += 1) {
       const problem = generateProblem("factor", config);
       assert.equal(problem.opKey, "factor");
       assert.ok(isComposite(problem.factorOriginal));
       assert.equal(problem.factorRemaining, problem.factorOriginal);
     }
+  });
+
+  it("scores prime-factoring difficulty from number structure", () => {
+    assert.equal(factorDifficulty(6), 1); // 2·3
+    assert.equal(factorDifficulty(4), 2); // 2²
+    assert.equal(factorDifficulty(9), 3); // 3²
+    assert.equal(factorDifficulty(12), 4); // 2²·3
+    assert.equal(factorDifficulty(36), 6); // 2²·3²
+    // L1 universe is just {6}; cumulative levels add more composites.
+    assert.deepEqual(getFactorUniverse(1).map((p) => p.statsKey), ["6"]);
+    assert.deepEqual(getFactorUniverse(2).map((p) => p.statsKey), ["4", "6", "10", "15"]);
   });
 });
 

@@ -2349,6 +2349,7 @@ function processInput(value) {
       return;
     }
     if (target.factorComplete) return; // waiting for Enter
+    if (/[*^]/.test(value)) return; // a full a^b*c expression is completed on Enter, not stepwise
     const typedNum = Number(value);
     const isValidDivisor = !Number.isNaN(typedNum) && Number.isInteger(typedNum) && typedNum >= 2;
     if (isValidDivisor && target.factorRemaining % typedNum === 0) {
@@ -2462,6 +2463,21 @@ function exitFactorTargeting() {
 // 10. Game Loop
 // ============================================================
 
+// When factoring is the only operation in play, auto-target the most urgent
+// factor drop so the player can factor it (stepwise, or a full a^b*c + Enter)
+// without pressing Tab first. With other operations enabled, targeting stays
+// manual to avoid surprises.
+function maybeAutoTargetFactor() {
+  if (isBossActive()) return;
+  const enabled = getEnabledOps();
+  if (enabled.length !== 1 || enabled[0] !== "factor") return;
+  if (factorTargetId !== null) return;
+  const candidates = drops.filter((drop) => drop.opKey === "factor" && !drop.factorComplete && isDropVisible(drop));
+  if (candidates.length === 0) return;
+  const target = getMostUrgentVisibleTarget(candidates) || candidates[0];
+  if (target) factorTargetId = target.id;
+}
+
 function tick(timestamp) {
   if (!lastTime) lastTime = timestamp;
   const dt = timestamp - lastTime;
@@ -2500,6 +2516,7 @@ function tick(timestamp) {
     if (!isBossStunned() && !isBreatherMode) {
       updateDrops(dt);
     }
+    maybeAutoTargetFactor();
     updateSplashes(dt);
     updateLaser(dt);
     if (groundFlash > 0) groundFlash = Math.max(0, groundFlash - dt);

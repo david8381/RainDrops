@@ -49,7 +49,7 @@ Dev-only tooling exists for tests: Node's built-in test runner covers core logic
 - Decimal shifting: `f10`. Difficulty is structural — a problem "type" is `(significant digits, power of 10, ×/÷)` with `difficulty = digits + power − 1`; the concrete number is random, so mastery accrues per type. A level holds every type with `digits + power − 1 ≤ level` (cumulative).
 - SI metric conversions: `si`.
 - Geometry: `shapes`, one level-gated operation — L1 square, L2 rectangle, L3 triangle, L4 circle (cumulative), with perimeter/area per shape and circle answers as the π coefficient. Higher levels are reserved for 3D shapes.
-- Prime factorization: `factor`, with full-answer and Tab-targeted stepwise modes.
+- Prime factorization: `factor`, with full-answer and Tab-targeted stepwise modes (auto-targeted when factoring is the only operation in play). Difficulty is structural: `difficulty(n) = primeIndex(largest prime) + max exponent + (# primes with exponent > 1) + Ω(n) − 4`, and a level holds every composite with difficulty ≤ level (cumulative; L1 = {6}).
 
 ## Extensibility Notes
 - Add new operation defaults in `src/game-core.js`, a generator/range branch there, display labels in `script.js`, and an operation chit in `index.html`.
