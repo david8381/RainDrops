@@ -81,6 +81,7 @@ const PRESSURE_TIERS = [
 const {
   expDiffToConversion,
   getDifficultyRange,
+  getShapesUniverse,
   getSIPrefixesForDifficulty,
   isComposite,
   operationDefaults,
@@ -211,12 +212,8 @@ function getSkillUniverseSize(opKey, level) {
     return (count * (count + 1)) / 2;
   }
 
-  if (opKey === "rect") {
-    return count * count * 2;
-  }
-
-  if (opKey === "circ") {
-    return count * 4;
+  if (opKey === "shapes") {
+    return getShapesUniverse(level).length;
   }
 
   if (opKey === "si") {
@@ -259,24 +256,8 @@ function getSkillUniverseProblems(opKey, level) {
     return problems;
   }
 
-  if (opKey === "rect") {
-    for (let l = range.min; l <= range.max; l += 1) {
-      for (let w = range.min; w <= range.max; w += 1) {
-        problems.push({ statsKey: `P,${l},${w}`, text: `P▭ ${l}×${w}` });
-        problems.push({ statsKey: `A,${l},${w}`, text: `A▭ ${l}×${w}` });
-      }
-    }
-    return problems;
-  }
-
-  if (opKey === "circ") {
-    for (let value = range.min; value <= range.max; value += 1) {
-      problems.push({ statsKey: `Cr,${value}`, text: `C○ r=${value} =?π` });
-      problems.push({ statsKey: `Cd,${value}`, text: `C○ d=${value} =?π` });
-      problems.push({ statsKey: `Ar,${value}`, text: `A○ r=${value} =?π` });
-      problems.push({ statsKey: `Ad,${value}`, text: `A○ d=${value} =?π` });
-    }
-    return problems;
+  if (opKey === "shapes") {
+    return getShapesUniverse(level).map((problem) => ({ statsKey: problem.statsKey, text: problem.text }));
   }
 
   if (opKey === "si") {
@@ -448,11 +429,14 @@ function ensureProfileShape(profile, nowMs = Date.now()) {
       speed,
       rate: load,
     },
-    skills: { ...(profile.skills || {}) },
+    // Only canonical operations are kept; skills for removed ops (e.g. legacy
+    // rect/circ) are dropped rather than carried forward as orphans.
+    skills: {},
   };
   next.version = PROFILE_VERSION;
+  const priorSkills = profile.skills || {};
   for (const opKey of Object.keys(operationDefaults)) {
-    const rawSkill = next.skills[opKey] || {};
+    const rawSkill = priorSkills[opKey] || {};
     const nextSkill = {
       ...createEmptySkill(opKey, nowMs),
       ...rawSkill,

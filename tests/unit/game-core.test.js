@@ -12,7 +12,8 @@ const {
   factorizationProduct,
   formatFactorization,
   formatFixedScale,
-  generateCircleOfType,
+  makeShapeProblem,
+  makeShapeProblemFromKey,
   generateProblem,
   generateSIProblem,
   generateWeightedProblem,
@@ -67,8 +68,7 @@ describe("difficulty ranges", () => {
     assert.deepEqual(getDifficultyRange("add", 10), { min: 1, max: 20 });
     assert.deepEqual(getDifficultyRange("mul", 10), { min: 1, max: 12 });
     assert.deepEqual(getDifficultyRange("f10", 10), { min: 1, max: 20 });
-    assert.deepEqual(getDifficultyRange("rect", 10), { min: 1, max: 20 });
-    assert.deepEqual(getDifficultyRange("circ", 10), { min: 1, max: 12 });
+    assert.deepEqual(getDifficultyRange("shapes", 10), { min: 2, max: 5 });
     assert.deepEqual(getDifficultyRange("factor", 1), { min: 4, max: 16 });
     assert.deepEqual(getDifficultyRange("factor", 10), { min: 4, max: 200 });
   });
@@ -124,26 +124,34 @@ describe("problem generation", () => {
     );
   });
 
-  it("generates geometry problems with known formulas", () => {
-    const circleCases = [
-      ["Cr", 3, 6],
-      ["Cd", 3, 3],
-      ["Ar", 3, 9],
-      ["Ad", 3, 2.25],
-    ];
+  it("generates shape problems with known formulas", () => {
+    // Square area & perimeter.
+    assert.equal(makeShapeProblem("sq", "A", [4]).answer, 16);
+    assert.equal(makeShapeProblem("sq", "P", [4]).answer, 16);
+    // Rectangle area & perimeter.
+    assert.equal(makeShapeProblem("rect", "A", [3, 5]).answer, 15);
+    assert.equal(makeShapeProblem("rect", "P", [3, 5]).answer, 16);
+    // Triangle: area = ½·b·h, perimeter = sum of sides.
+    assert.equal(makeShapeProblem("tri", "A", [3, 4]).answer, 6);
+    assert.equal(makeShapeProblem("tri", "P", [3, 4, 5]).answer, 12);
+    // Circle answers as the coefficient of π.
+    const circleArea = makeShapeProblem("cir", "A", [3]);
+    assert.equal(circleArea.answer, 9);
+    assert.equal(circleArea.text, "A○ r=3 =?π");
+    assert.equal(makeShapeProblem("cir", "C", [3]).answer, 6);
 
-    for (const [subtype, value, answer] of circleCases) {
-      const problem = generateCircleOfType(subtype, value);
-      assert.equal(problem.opKey, "circ");
-      assert.equal(problem.answer, answer);
-      assert.equal(problem.answerText, String(answer));
-    }
+    // statsKey round-trips through makeShapeProblemFromKey.
+    const roundTrip = makeShapeProblemFromKey("rect,A,2,5");
+    assert.equal(roundTrip.opKey, "shapes");
+    assert.equal(roundTrip.answer, 10);
+    assert.equal(roundTrip.text, "A▭ 2×5");
 
+    // generateProblem dispatches into the level's cumulative shape set.
     const config = createDefaultOpConfig();
-    const rect = generateProblem("rect", config, sequenceRng([0, 0.5, 0]));
-    assert.equal(rect.opKey, "rect");
-    assert.match(rect.text, /^P▭/);
-    assert.equal(rect.answerText, String(rect.answer));
+    config.shapes.difficulty = 4;
+    const problem = generateProblem("shapes", config, sequenceRng([0]));
+    assert.equal(problem.opKey, "shapes");
+    assert.equal(problem.answerText, String(problem.answer));
   });
 
   it("generates composite-only factorization problems", () => {

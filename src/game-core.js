@@ -13,8 +13,7 @@ const operationDefaults = {
   div: { enabled: false, difficulty: 1, symbol: "÷", label: "÷" },
   f10: { enabled: false, difficulty: 1, symbol: "×10", label: "x10" },
   si: { enabled: false, difficulty: 1, symbol: "SI", label: "SI" },
-  rect: { enabled: false, difficulty: 1, symbol: "▭", label: "▭" },
-  circ: { enabled: false, difficulty: 1, symbol: "○", label: "○" },
+  shapes: { enabled: false, difficulty: 1, symbol: "▱", label: "▱" },
   factor: { enabled: false, difficulty: 1, symbol: "n!", label: "n!" },
 };
 
@@ -124,12 +123,8 @@ function getDifficultyRange(opKey, difficulty) {
     return { min: 1, max: getSIPrefixesForDifficulty(d).length };
   }
 
-  if (opKey === "rect") {
-    return { min: 1, max: Math.round(lerp(3, 20, t)) };
-  }
-
-  if (opKey === "circ") {
-    return { min: 1, max: Math.round(lerp(3, 12, t)) };
+  if (opKey === "shapes") {
+    return { min: SHAPES_DIM_MIN, max: SHAPES_DIM_MAX };
   }
 
   if (opKey === "factor") {
@@ -228,55 +223,97 @@ function shiftDecimalSimple(value, shift) {
   return str.slice(0, decPos) + "." + str.slice(decPos);
 }
 
-function generateRectProblem(difficulty = 3, rng = Math.random) {
-  const range = getDifficultyRange("rect", difficulty);
-  const l = randInt(range.min, range.max, rng);
-  const w = randInt(range.min, range.max, rng);
-  const isPerimeter = rng() < 0.5;
-  const answer = isPerimeter ? 2 * (l + w) : l * w;
-  const prefix = isPerimeter ? "P" : "A";
+// ── Shapes (geometry) ─────────────────────────────────────────────
+// One operation whose level gates which shapes appear (cumulative), focused on
+// knowing the formulas rather than big-number arithmetic, so dimensions stay
+// small. Round shapes (circle) answer as the coefficient of π, like before.
+const SHAPES_DIM_MIN = 2;
+const SHAPES_DIM_MAX = 5;
+const SHAPE_DEFS = [
+  { id: "sq", level: 1, name: "Square", glyph: "□" },
+  { id: "rect", level: 2, name: "Rectangle", glyph: "▭" },
+  { id: "tri", level: 3, name: "Triangle", glyph: "△" },
+  { id: "cir", level: 4, name: "Circle", glyph: "○" },
+];
+const SHAPES_MAX_LEVEL = SHAPE_DEFS.length;
+
+function shapesActiveDefs(level) {
+  const cap = clamp(1, SHAPES_MAX_LEVEL, Math.round(level || 1));
+  return SHAPE_DEFS.filter((def) => def.level <= cap);
+}
+
+function makeShapeProblem(shapeId, metric, dims) {
+  let answer;
+  let text;
+  if (shapeId === "sq") {
+    answer = metric === "A" ? dims[0] * dims[0] : 4 * dims[0];
+    text = `${metric}□ s=${dims[0]}`;
+  } else if (shapeId === "rect") {
+    answer = metric === "A" ? dims[0] * dims[1] : 2 * (dims[0] + dims[1]);
+    text = `${metric}▭ ${dims[0]}×${dims[1]}`;
+  } else if (shapeId === "tri") {
+    if (metric === "A") {
+      answer = (dims[0] * dims[1]) / 2;
+      text = `A△ b=${dims[0]} h=${dims[1]}`;
+    } else {
+      answer = dims[0] + dims[1] + dims[2];
+      text = `P△ ${dims[0]},${dims[1]},${dims[2]}`;
+    }
+  } else {
+    // circle — answer is the coefficient of π
+    answer = metric === "A" ? dims[0] * dims[0] : 2 * dims[0];
+    text = `${metric}○ r=${dims[0]} =?π`;
+  }
   return {
-    text: `${prefix}▭ ${l}×${w}`,
+    text,
     answer,
     answerText: String(answer),
-    opKey: "rect",
-    statsKey: `${prefix},${l},${w}`,
+    opKey: "shapes",
+    statsKey: `${shapeId},${metric},${dims.join(",")}`,
   };
 }
 
-function generateCircleProblem(difficulty = 3, rng = Math.random) {
-  const range = getDifficultyRange("circ", difficulty);
-  const subtypes = ["Cr", "Cd", "Ar", "Ad"];
-  const subtype = subtypes[randInt(0, subtypes.length - 1, rng)];
-  const val = randInt(range.min, range.max, rng);
-  return generateCircleOfType(subtype, val);
+function makeShapeProblemFromKey(statsKey) {
+  const [shapeId, metric, ...dimStrs] = statsKey.split(",");
+  return makeShapeProblem(shapeId, metric, dimStrs.map(Number));
 }
 
-function generateCircleOfType(subtype, val) {
-  let answer;
-  let text;
-  let statsKey;
-
-  if (subtype === "Cr") {
-    answer = 2 * val;
-    text = `C○ r=${val} =?π`;
-    statsKey = `Cr,${val}`;
-  } else if (subtype === "Cd") {
-    answer = val;
-    text = `C○ d=${val} =?π`;
-    statsKey = `Cd,${val}`;
-  } else if (subtype === "Ar") {
-    answer = val * val;
-    text = `A○ r=${val} =?π`;
-    statsKey = `Ar,${val}`;
-  } else {
-    const r = val / 2;
-    answer = r * r;
-    text = `A○ d=${val} =?π`;
-    statsKey = `Ad,${val}`;
+function getShapesUniverse(level) {
+  const problems = [];
+  for (const def of shapesActiveDefs(level)) {
+    if (def.id === "sq") {
+      for (let s = SHAPES_DIM_MIN; s <= SHAPES_DIM_MAX; s += 1) {
+        for (const metric of ["P", "A"]) problems.push(makeShapeProblem("sq", metric, [s]));
+      }
+    } else if (def.id === "rect") {
+      for (let l = SHAPES_DIM_MIN; l <= SHAPES_DIM_MAX; l += 1) {
+        for (let w = l; w <= SHAPES_DIM_MAX; w += 1) {
+          for (const metric of ["P", "A"]) problems.push(makeShapeProblem("rect", metric, [l, w]));
+        }
+      }
+    } else if (def.id === "tri") {
+      for (let b = SHAPES_DIM_MIN; b <= SHAPES_DIM_MAX; b += 1) {
+        for (let h = b; h <= SHAPES_DIM_MAX; h += 1) problems.push(makeShapeProblem("tri", "A", [b, h]));
+      }
+      for (let a = SHAPES_DIM_MIN; a <= SHAPES_DIM_MAX; a += 1) {
+        for (let b = a; b <= SHAPES_DIM_MAX; b += 1) {
+          for (let c = b; c <= SHAPES_DIM_MAX; c += 1) {
+            if (a + b > c) problems.push(makeShapeProblem("tri", "P", [a, b, c]));
+          }
+        }
+      }
+    } else {
+      for (let r = SHAPES_DIM_MIN; r <= SHAPES_DIM_MAX; r += 1) {
+        for (const metric of ["C", "A"]) problems.push(makeShapeProblem("cir", metric, [r]));
+      }
+    }
   }
+  return problems;
+}
 
-  return { text, answer, answerText: String(answer), opKey: "circ", statsKey };
+function generateShapesProblem(difficulty = 1, rng = Math.random) {
+  const universe = getShapesUniverse(difficulty);
+  return universe[randInt(0, universe.length - 1, rng)];
 }
 
 function isPrime(n) {
@@ -397,8 +434,7 @@ function generateProblem(opKey, opConfig, rng = Math.random) {
   const range = getDifficultyRange(opKey, config.difficulty);
 
   if (opKey === "factor") return generateFactorProblem(config.difficulty, rng);
-  if (opKey === "rect") return generateRectProblem(config.difficulty, rng);
-  if (opKey === "circ") return generateCircleProblem(config.difficulty, rng);
+  if (opKey === "shapes") return generateShapesProblem(config.difficulty, rng);
   if (opKey === "si") return generateSIProblem(config.difficulty, rng);
   if (opKey === "f10") return generateFactorsOfTenProblem(range.max, config.difficulty, rng);
 
@@ -495,47 +531,13 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
     };
   }
 
-  if (opKey === "rect") {
-    const pairs = [];
-    for (let l = range.min; l <= range.max; l += 1) {
-      for (let w = range.min; w <= range.max; w += 1) {
-        for (const prefix of ["P", "A"]) {
-          const key = `${prefix},${l},${w}`;
-          const mastery = getMastery(problemStats, "rect", key, masteryLookup);
-          pairs.push({ l, w, prefix, statsKey: key, weight: getSelectionWeight(mastery) });
-        }
-      }
-    }
-    if (pairs.length === 0) return generateProblem(opKey, opConfig, rng);
-    const pick = weightedPick(
-      pairs.map((p) => ({ value: p, weight: p.weight })),
-      rng
-    );
-    const answer = pick.prefix === "P" ? 2 * (pick.l + pick.w) : pick.l * pick.w;
-    return {
-      text: `${pick.prefix}▭ ${pick.l}×${pick.w}`,
-      answer,
-      answerText: String(answer),
-      opKey: "rect",
-      statsKey: pick.statsKey,
-    };
-  }
-
-  if (opKey === "circ") {
-    const items = [];
-    for (let v = range.min; v <= range.max; v += 1) {
-      for (const sub of ["Cr", "Cd", "Ar", "Ad"]) {
-        const key = `${sub},${v}`;
-        const mastery = getMastery(problemStats, "circ", key, masteryLookup);
-        items.push({ sub, val: v, statsKey: key, weight: getSelectionWeight(mastery) });
-      }
-    }
+  if (opKey === "shapes") {
+    const items = getShapesUniverse(config.difficulty).map((problem) => ({
+      value: problem,
+      weight: getSelectionWeight(getMastery(problemStats, "shapes", problem.statsKey, masteryLookup)),
+    }));
     if (items.length === 0) return generateProblem(opKey, opConfig, rng);
-    const pick = weightedPick(
-      items.map((it) => ({ value: it, weight: it.weight })),
-      rng
-    );
-    return generateCircleOfType(pick.sub, pick.val);
+    return weightedPick(items, rng);
   }
 
   if (opKey === "si") {
@@ -708,15 +710,17 @@ globalThis.RainMathCore = {
   formatFactorDropText,
   formatFactorization,
   formatFixedScale,
-  generateCircleOfType,
-  generateCircleProblem,
   generateFactorProblem,
   generateFactorsOfTenProblem,
   generateProblem,
-  generateRectProblem,
+  generateShapesProblem,
   generateSIProblem,
   generateWeightedProblem,
   getDifficultyRange,
+  getShapesUniverse,
+  makeShapeProblem,
+  makeShapeProblemFromKey,
+  SHAPE_DEFS,
   getFactorRemainingText,
   getFullFactorization,
   getMastery,

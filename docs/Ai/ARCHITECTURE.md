@@ -48,7 +48,7 @@ Dev-only tooling exists for tests: Node's built-in test runner covers core logic
 - Basic arithmetic: `add`, `sub`, `mul`, `div`.
 - Decimal shifting: `f10`.
 - SI metric conversions: `si`.
-- Geometry: `rect` for rectangle perimeter/area and `circ` for circle circumference/area coefficient answers.
+- Geometry: `shapes`, one level-gated operation — L1 square, L2 rectangle, L3 triangle, L4 circle (cumulative), with perimeter/area per shape and circle answers as the π coefficient. Higher levels are reserved for 3D shapes.
 - Prime factorization: `factor`, with full-answer and Tab-targeted stepwise modes.
 
 ## Extensibility Notes

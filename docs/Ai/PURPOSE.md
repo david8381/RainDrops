@@ -13,7 +13,7 @@ Build a fast, friendly math game where falling drops are cleared by typing answe
 
 ## Current Player-Facing Behavior
 - Drops fall from the sky and clear when the correct answer is typed.
-- Immediate-clear operations: add, subtract, multiply, divide, factors of 10, rectangle perimeter/area, and circle circumference/area coefficient answers.
+- Immediate-clear operations: add, subtract, multiply, divide, factors of 10, and Shapes (level-gated square/rectangle/triangle perimeter & area, and circle circumference/area as π-coefficient answers).
 - Enter-required operations: SI metric conversions such as `*1000` or `/100`, and full prime factorization answers such as `2^2*3`.
 - Prime factor drops can also be targeted with Tab and simplified one factor at a time.
 - Each operation can be toggled on/off during gameplay; if none are enabled, no new drops spawn. Operations are grouped into compatible sets (arithmetic `+ - × ÷` and `×10` together; Shapes; SI; Factoring); enabling an operation from a different set disables the incompatible ones.

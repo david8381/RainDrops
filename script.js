@@ -4,7 +4,7 @@ const {
   createDefaultOpConfig,
   createProblemStats,
   expDiffToConversion,
-  generateCircleOfType,
+  makeShapeProblemFromKey,
   generateWeightedProblem: generateCoreWeightedProblem,
   getDifficultyRange,
   getFactorRemainingText,
@@ -360,8 +360,7 @@ const OP_SETS = {
   mul: "arithmetic",
   div: "arithmetic",
   f10: "arithmetic",
-  rect: "shapes",
-  circ: "shapes",
+  shapes: "shapes",
   si: "si",
   factor: "factor",
 };
@@ -514,22 +513,8 @@ function makeProblemFromUniverseEntry(opKey, entry, level = opConfig[opKey]?.dif
       statsKey,
     };
   }
-  if (opKey === "rect") {
-    const [prefix, l, w] = statsKey.split(",");
-    const length = Number(l);
-    const width = Number(w);
-    const answer = prefix === "P" ? 2 * (length + width) : length * width;
-    return {
-      text: `${prefix}▭ ${length}×${width}`,
-      answer,
-      answerText: String(answer),
-      opKey,
-      statsKey,
-    };
-  }
-  if (opKey === "circ") {
-    const [subtype, value] = statsKey.split(",");
-    return generateCircleOfType(subtype, Number(value));
+  if (opKey === "shapes") {
+    return makeShapeProblemFromKey(statsKey);
   }
   if (opKey === "si") {
     const [fromSym, toSym] = statsKey.split(",");
@@ -953,7 +938,7 @@ function positionBossProblems(part) {
   const count = liveProblems.length;
   if (count === 0) return;
 
-  const wide = ["si", "rect", "circ"].includes(bossMode?.opKey);
+  const wide = ["si", "shapes"].includes(bossMode?.opKey);
   const nodeW = wide ? 86 : 56;
   const nodeH = 26;
   const gapX = 8;
@@ -2618,8 +2603,7 @@ const opDisplayLabels = {
   div: "\u00f7",
   f10: "x10",
   si: "SI",
-  rect: "\u25ad",
-  circ: "\u25cb",
+  shapes: "\u25b1",
   factor: "p\u00b7q",
 };
 
@@ -2630,8 +2614,7 @@ const opDisplayNames = {
   div: "Divide",
   f10: "Factors of 10",
   si: "SI Conversions",
-  rect: "Rectangle P & A",
-  circ: "Circle C & A",
+  shapes: "Shapes (P & A)",
   factor: "Prime Factors",
 };
 
@@ -2706,11 +2689,10 @@ function updateInputHint() {
   const hints = [];
   const hasBasic = enabled.some((op) => ["add", "sub", "mul", "div", "f10"].includes(op));
   const hasSI = enabled.includes("si");
-  const hasRect = enabled.includes("rect");
-  const hasCirc = enabled.includes("circ");
+  const hasShapes = enabled.includes("shapes");
   const hasFactor = enabled.includes("factor");
-  if (hasBasic || hasRect) hints.push("Type answer to clear");
-  if (hasCirc) hints.push("○: type π coefficient");
+  if (hasBasic || hasShapes) hints.push("Type answer to clear");
+  if (hasShapes) hints.push("Shapes: type the value; ○ is the π coefficient");
   if (hasSI) hints.push("SI: type *1000 or /100 + Enter");
   if (hasFactor) hints.push("p·q: type 2^2*3 + Enter, or Tab to factor");
   hints.push("Spacebar: pause drops until clear");
@@ -3123,12 +3105,8 @@ function showStatsPopup(opKey) {
   if (opKey === "si") {
     card.appendChild(buildSIReferenceTable());
     card.appendChild(buildListStats(opKey, stats));
-  } else if (opKey === "f10" || opKey === "factor") {
+  } else if (opKey === "f10" || opKey === "factor" || opKey === "shapes") {
     card.appendChild(buildListStats(opKey, stats));
-  } else if (opKey === "rect") {
-    card.appendChild(buildRectStats(stats));
-  } else if (opKey === "circ") {
-    card.appendChild(buildCircStats(stats));
   } else {
     card.appendChild(buildGridStats(opKey, stats));
   }
@@ -3563,123 +3541,6 @@ function buildGridStats(opKey, stats) {
   return wrap;
 }
 
-function getMaxStatOperand(opKey, stats, cap) {
-  let max = 0;
-  for (const key of Object.keys(stats)) {
-    const parts = key.split(",");
-    if (parts.length === 2) {
-      max = Math.max(max, Number(parts[0]), Number(parts[1]));
-    }
-  }
-  return Math.min(max, cap);
-}
-
-function buildRectStats(stats) {
-  const gridMax = 20; // full range for rect
-  const currentRange = getDifficultyRange("rect", opConfig.rect.difficulty);
-  const wrap = document.createElement("div");
-  wrap.className = "stats-grid-wrap";
-
-  for (const prefix of ["P", "A"]) {
-    const label = document.createElement("h3");
-    label.textContent = prefix === "P" ? "Perimeter" : "Area";
-    label.style.margin = "12px 0 6px";
-    label.style.fontSize = "0.9rem";
-    wrap.appendChild(label);
-
-    const table = document.createElement("table");
-    table.className = "stats-grid";
-
-    const thead = document.createElement("tr");
-    const corner = document.createElement("th");
-    corner.textContent = prefix === "P" ? "P" : "A";
-    thead.appendChild(corner);
-    for (let b = 1; b <= gridMax; b++) {
-      const th = document.createElement("th");
-      th.textContent = b;
-      thead.appendChild(th);
-    }
-    table.appendChild(thead);
-
-    for (let a = 1; a <= gridMax; a++) {
-      const tr = document.createElement("tr");
-      const rh = document.createElement("th");
-      rh.textContent = a;
-      tr.appendChild(rh);
-      for (let b = 1; b <= gridMax; b++) {
-        const td = document.createElement("td");
-        const key = `${prefix},${a},${b}`;
-        const entry = stats[key];
-        const asked = entry ? entry.asked : 0;
-        const correct = entry ? entry.correct : 0;
-        const inRange = a <= currentRange.max && b <= currentRange.max;
-        td.className = "stats-cell" + (inRange ? "" : " stats-cell-outside");
-        td.style.background = getAccuracyColor(asked, correct, "rect", key);
-        const ans = prefix === "P" ? 2 * (a + b) : a * b;
-        const title = `${prefix}▭ ${a}×${b} = ${ans}`;
-        attachStatsTooltip(td, getStatsTooltip("rect", key, title, asked, correct));
-        tr.appendChild(td);
-      }
-      table.appendChild(tr);
-    }
-    wrap.appendChild(table);
-  }
-  return wrap;
-}
-
-function buildCircStats(stats) {
-  const gridMax = 12; // full range for circ
-  const currentRange = getDifficultyRange("circ", opConfig.circ.difficulty);
-  const wrap = document.createElement("div");
-  wrap.className = "stats-grid-wrap";
-
-  const table = document.createElement("table");
-  table.className = "stats-grid";
-
-  // Header row: values 1..gridMax
-  const thead = document.createElement("tr");
-  const corner = document.createElement("th");
-  corner.textContent = "";
-  thead.appendChild(corner);
-  for (let v = 1; v <= gridMax; v++) {
-    const th = document.createElement("th");
-    th.textContent = v;
-    thead.appendChild(th);
-  }
-  table.appendChild(thead);
-
-  const rows = [
-    { key: "Cr", label: "C (r)", desc: (v) => `C○ r=${v} = ${2 * v}π` },
-    { key: "Cd", label: "C (d)", desc: (v) => `C○ d=${v} = ${v}π` },
-    { key: "Ar", label: "A (r)", desc: (v) => `A○ r=${v} = ${v * v}π` },
-    { key: "Ad", label: "A (d)", desc: (v) => { const r = v / 2; return `A○ d=${v} = ${r * r}π`; } },
-  ];
-
-  for (const row of rows) {
-    const tr = document.createElement("tr");
-    const rh = document.createElement("th");
-    rh.textContent = row.label;
-    rh.style.textAlign = "left";
-    rh.style.whiteSpace = "nowrap";
-    tr.appendChild(rh);
-    for (let v = 1; v <= gridMax; v++) {
-      const td = document.createElement("td");
-      const statsKey = `${row.key},${v}`;
-      const entry = stats[statsKey];
-      const asked = entry ? entry.asked : 0;
-      const correct = entry ? entry.correct : 0;
-      const inRange = v <= currentRange.max;
-      td.className = "stats-cell" + (inRange ? "" : " stats-cell-outside");
-      td.style.background = getAccuracyColor(asked, correct, "circ", statsKey);
-      attachStatsTooltip(td, getStatsTooltip("circ", statsKey, row.desc(v), asked, correct));
-      tr.appendChild(td);
-    }
-    table.appendChild(tr);
-  }
-
-  wrap.appendChild(table);
-  return wrap;
-}
 
 function buildSIReferenceTable() {
   const currentDifficulty = opConfig.si.difficulty;
@@ -3804,7 +3665,11 @@ function buildListStats(opKey, stats) {
     const row = document.createElement("div");
     row.className = "stats-f10-row";
     row.style.borderLeft = `4px solid ${getAccuracyColor(entry.asked, entry.correct, opKey, text)}`;
-    const label = opKey === "si" ? formatSIStatsKey(text) : text;
+    const label = opKey === "si"
+      ? formatSIStatsKey(text)
+      : opKey === "shapes"
+        ? makeShapeProblemFromKey(text).text
+        : text;
     attachStatsTooltip(row, getStatsTooltip(opKey, text, label, entry.asked, entry.correct));
 
     const problem = document.createElement("span");

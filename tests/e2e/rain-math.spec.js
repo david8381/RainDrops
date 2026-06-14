@@ -35,7 +35,7 @@ test("loads without page errors and paints the canvas", async ({ page }) => {
   await expect(page).toHaveTitle("Rain Math");
   await expect(page.locator("#canvas")).toBeVisible();
   await expect(page.locator(".stats .label")).toHaveText("Cleared");
-  await expect(page.locator(".op-chit")).toHaveCount(9);
+  await expect(page.locator(".op-chit")).toHaveCount(8);
   expect(pageErrors).toEqual([]);
 
   const hasPaintedPixel = await page.locator("#canvas").evaluate((canvas) => {
@@ -55,7 +55,7 @@ test("loads directly from index.html and operation chits respond", async ({ page
   await page.route("**/gc.zgo.at/**", (route) => route.abort());
 
   await page.goto(pathToFileURL(resolve("index.html")).href);
-  await expect(page.locator(".op-chit")).toHaveCount(9);
+  await expect(page.locator(".op-chit")).toHaveCount(8);
 
   await page.locator('.op-chit[data-op="add"]').click();
   await expect(page.locator('.op-chit[data-op="add"]')).toHaveClass(/active/);
