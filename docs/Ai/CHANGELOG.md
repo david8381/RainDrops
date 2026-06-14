@@ -4,6 +4,7 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-14
+- Fixed `scripts/stamp-version.sh` (run via `npm run stamp`): it now bumps the visible version, the `index.html` cache-busters, and `package.json` together instead of looking for a `const VERSION` line that no longer exists. No argument bumps the patch; an explicit version can be passed.
 - Redesigned prime-factoring difficulty to come from a number's structure: difficulty(n) = primeIndex(largest prime factor) + max exponent + (# primes with exponent > 1) + Ω(n) − 4, with each level holding every composite of difficulty ≤ level (cumulative; L1 = {6}). Mastery and the universe now follow that ladder instead of a raw number range.
 - Auto-target the most urgent factor drop when factoring is the only operation in play, so you can step through factors or type the full 2^2*3 + Enter without pressing Tab first.
 - Redesigned factors-of-10 difficulty to be structural instead of number-specific: a problem "type" is (significant digits, power of 10, ×/÷) with difficulty = digits + power − 1, the concrete number is random, and mastery accrues per type. A level holds every type with digits + power − 1 ≤ level (cumulative), so the universe is small (2 types at L1, up to 32) instead of one entry per number.

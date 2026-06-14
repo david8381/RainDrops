@@ -30,6 +30,8 @@ See `docs/Ai/TESTING.md` for details.
 
 GitHub Pages deploys via `.github/workflows/pages.yml` on pushes to `main`. Test CI runs separately via `.github/workflows/tests.yml`.
 
+Before deploying asset changes, run `npm run stamp` to bump the version and cache-busters. It updates the visible `vX.Y.Z` in `index.html`, the `?v=` query strings, and `package.json` together. With no argument it bumps the patch; pass an explicit version (e.g. `npm run stamp 0.4.0`) to set one.
+
 ## Documentation
 
 Read these before making changes:

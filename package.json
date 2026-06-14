@@ -1,9 +1,10 @@
 {
   "name": "rain-math",
-  "version": "0.3.27",
+  "version": "0.3.35",
   "private": true,
   "type": "module",
   "scripts": {
+    "stamp": "scripts/stamp-version.sh",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "node --test tests/unit/*.test.js",
     "test:e2e": "playwright test",
