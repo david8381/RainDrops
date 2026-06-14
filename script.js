@@ -49,6 +49,7 @@ const {
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const scoreEl = document.getElementById("score");
+const scoreLabelEl = document.querySelector(".stats .label");
 const answerInput = document.getElementById("answer");
 const pauseBtn = document.getElementById("pauseBtn");
 const restartBtn = document.getElementById("restartBtn");
@@ -1390,6 +1391,7 @@ function completeBossVictory() {
   updateControlDisplay();
 }
 function updateBossHud() {
+  updateScoreDisplay();
   if (!bossHudEl) return;
   if (!bossMode?.active) {
     bossHudEl.classList.add("hidden");
@@ -2250,10 +2252,43 @@ function isInputPossible(inputValue) {
   });
 }
 
+// During boss/challenge play the header "Cleared" slot shows live stage progress
+// (Wave 1/2 solved count, Wave 2 current load, mothership nodes) instead of the
+// frozen session score.
+function getScoreReadout() {
+  if (!bossMode?.active) return { label: "Cleared", value: String(score) };
+  const phase = bossMode.phase;
+  const isMothership = phase === "boss" || phase === "victory";
+  // Stage label: standalone replays read Blitz/Wave/Boss; the full boss reads
+  // Wave 1 (shield endurance), Wave 2 (load ladder), then Boss (mothership).
+  const label = bossMode.mode === "blitz" ? "Blitz"
+    : bossMode.mode === "wave" ? "Wave"
+      : isMothership ? "Boss"
+        : bossMode.challengeType === "wave" ? "Wave 2" : "Wave 1";
+  if (isMothership) {
+    const { problemsTotal, problemsRemaining } = getBossPartCount();
+    return { label, value: `${Math.max(0, problemsTotal - problemsRemaining)}/${problemsTotal} nodes` };
+  }
+  if (phase === "challenge" || phase === "challengeComplete") {
+    const solved = getBlitzScore();
+    return {
+      label,
+      value: bossMode.challengeType === "wave"
+        ? `${solved} solved · ${bossMode.challengeLoad} at once`
+        : `${solved} solved`,
+    };
+  }
+  return { label, value: "ready" };
+}
+
 function updateScoreDisplay() {
-  scoreEl.textContent = score;
+  const { label, value } = getScoreReadout();
+  scoreEl.textContent = value;
+  if (scoreLabelEl) scoreLabelEl.textContent = label;
   const ts = document.getElementById("touchScore");
-  if (ts) ts.textContent = score;
+  if (ts) ts.textContent = value;
+  const tsl = document.getElementById("touchScoreLabel");
+  if (tsl) tsl.textContent = label;
 }
 
 function handleCorrectAnswer(match) {
@@ -2723,6 +2758,13 @@ function updateInputHint() {
   if (kpHint) kpHint.textContent = text;
 }
 
+// Challenge replays are for the highest cleared level only, so they show only
+// when that cleared level is the one currently selected. This keeps the card for
+// the level you are working on free of older-level challenge stats.
+function canReplayChallenges(opKey, skill) {
+  return Boolean(skill?.blitzUnlockedLevel) && opConfig[opKey]?.difficulty === skill.blitzUnlockedLevel;
+}
+
 function buildDiffCards() {
   const container = document.getElementById("diffCards");
   if (!container) return;
@@ -2845,7 +2887,7 @@ function buildDiffCards() {
     blitzBtn.dataset.op = opKey;
     blitzBtn.dataset.challenge = "blitz";
     blitzBtn.textContent = formatBlitzText(skill);
-    blitzBtn.hidden = !skill.blitzUnlockedLevel;
+    blitzBtn.hidden = !canReplayChallenges(opKey, skill);
     blitzBtn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -2859,7 +2901,7 @@ function buildDiffCards() {
     waveBtn.dataset.op = opKey;
     waveBtn.dataset.challenge = "wave";
     waveBtn.textContent = formatWaveText(skill);
-    waveBtn.hidden = !skill.blitzUnlockedLevel;
+    waveBtn.hidden = !canReplayChallenges(opKey, skill);
     waveBtn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -2873,7 +2915,7 @@ function buildDiffCards() {
     bossReplayBtn.dataset.op = opKey;
     bossReplayBtn.dataset.challenge = "boss";
     bossReplayBtn.textContent = formatBossReplayText(skill);
-    bossReplayBtn.hidden = !skill.blitzUnlockedLevel;
+    bossReplayBtn.hidden = !canReplayChallenges(opKey, skill);
     bossReplayBtn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -2926,19 +2968,19 @@ function updateReadinessDisplays() {
   document.querySelectorAll(".diff-blitz[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatBlitzText(skill);
-    el.hidden = !skill?.blitzUnlockedLevel;
+    el.hidden = !canReplayChallenges(el.dataset.op, skill);
   });
 
   document.querySelectorAll(".diff-wave[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatWaveText(skill);
-    el.hidden = !skill?.blitzUnlockedLevel;
+    el.hidden = !canReplayChallenges(el.dataset.op, skill);
   });
 
   document.querySelectorAll(".diff-boss[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatBossReplayText(skill);
-    el.hidden = !skill?.blitzUnlockedLevel;
+    el.hidden = !canReplayChallenges(el.dataset.op, skill);
   });
 
   document.querySelectorAll(".kp-diff-ready[data-op]").forEach((el) => {
@@ -2956,19 +2998,19 @@ function updateReadinessDisplays() {
   document.querySelectorAll(".kp-diff-blitz[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatBlitzText(skill);
-    el.hidden = !skill?.blitzUnlockedLevel;
+    el.hidden = !canReplayChallenges(el.dataset.op, skill);
   });
 
   document.querySelectorAll(".kp-diff-wave[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatWaveText(skill);
-    el.hidden = !skill?.blitzUnlockedLevel;
+    el.hidden = !canReplayChallenges(el.dataset.op, skill);
   });
 
   document.querySelectorAll(".kp-diff-boss[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatBossReplayText(skill);
-    el.hidden = !skill?.blitzUnlockedLevel;
+    el.hidden = !canReplayChallenges(el.dataset.op, skill);
   });
 }
 
@@ -4076,7 +4118,7 @@ function setupTouchKeypad() {
   if (controlsBar && opChits) {
     const touchBrand = document.createElement("div");
     touchBrand.className = "touch-brand";
-    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score">Cleared: <span id="touchScore">0</span></div><a href="#" class="touch-login" id="touchLoginLink">Login</a><a href="#" class="touch-results" id="touchResultsLink">R</a><a href="#" class="touch-fb" id="touchFbLink">?</a>`;
+    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score"><span id="touchScoreLabel">Cleared</span>: <span id="touchScore">0</span></div><a href="#" class="touch-login" id="touchLoginLink">Login</a><a href="#" class="touch-results" id="touchResultsLink">R</a><a href="#" class="touch-fb" id="touchFbLink">?</a>`;
     controlsBar.insertBefore(touchBrand, opChits);
     const touchLoginLink = document.getElementById("touchLoginLink");
     if (touchLoginLink) {
@@ -4193,7 +4235,7 @@ function buildKpDiffStrip() {
     blitz.className = "kp-diff-challenge kp-diff-blitz";
     blitz.dataset.op = opKey;
     blitz.textContent = formatBlitzText(skill);
-    blitz.hidden = !skill.blitzUnlockedLevel;
+    blitz.hidden = !canReplayChallenges(opKey, skill);
     wireKpButton(blitz, () => startBlitzMode(opKey));
 
     const wave = document.createElement("button");
@@ -4201,7 +4243,7 @@ function buildKpDiffStrip() {
     wave.className = "kp-diff-challenge kp-diff-wave";
     wave.dataset.op = opKey;
     wave.textContent = formatWaveText(skill);
-    wave.hidden = !skill.blitzUnlockedLevel;
+    wave.hidden = !canReplayChallenges(opKey, skill);
     wireKpButton(wave, () => startWaveMode(opKey));
 
     const bossReplay = document.createElement("button");
@@ -4209,7 +4251,7 @@ function buildKpDiffStrip() {
     bossReplay.className = "kp-diff-challenge kp-diff-boss";
     bossReplay.dataset.op = opKey;
     bossReplay.textContent = formatBossReplayText(skill);
-    bossReplay.hidden = !skill.blitzUnlockedLevel;
+    bossReplay.hidden = !canReplayChallenges(opKey, skill);
     wireKpButton(bossReplay, () => startBossReplayMode(opKey));
 
     const upBtn = document.createElement("button");

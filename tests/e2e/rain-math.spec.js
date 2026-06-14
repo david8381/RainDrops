@@ -97,14 +97,19 @@ test.describe("desktop gameplay", () => {
 
     await invoke(page, "forceBossVictory");
     await expect(addCard.locator(".diff-value")).toHaveText("2");
-    await expect(addCard.locator(".diff-blitz")).toBeVisible();
-    await expect(addCard.locator(".diff-blitz")).toHaveText("Blitz L1");
     const state = await invoke(page, "getState");
     expect(state.progressSummary.skills.add.currentLevel).toBe(2);
     expect(state.progressSummary.skills.add.bossAttemptedForLevel).toBe(false);
     expect(state.progressProfile.skills.add.bossAttempts.some((attempt) => (
       attempt.level === 1 && attempt.pressureTier === "steady" && attempt.inferred === false
     ))).toBe(true);
+
+    // Challenge replays are hidden on the new (undefeated) level; selecting the
+    // cleared level reveals them.
+    await expect(addCard.locator(".diff-blitz")).toBeHidden();
+    await invoke(page, "setOpDifficulty", "add", 1);
+    await expect(addCard.locator(".diff-blitz")).toBeVisible();
+    await expect(addCard.locator(".diff-blitz")).toHaveText("Blitz L1");
   });
 
   test("updates speed and drops controls", async ({ page }) => {
@@ -430,6 +435,8 @@ test.describe("desktop gameplay", () => {
 
     const addCard = page.locator('.diff-card[data-op="add"]');
     await expect(addCard.locator(".diff-value")).toHaveText("2");
+    // Replays live on the cleared level; select it to reach them.
+    await invoke(page, "setOpDifficulty", "add", 1);
     await expect(addCard.locator(".diff-blitz")).toHaveText("Blitz L1");
 
     await addCard.locator(".diff-blitz").click();
@@ -470,7 +477,7 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#bossHudStatus")).toContainText("Shields are down. Blitz solved:");
 
     state = await invoke(page, "advanceBossTime", 1900);
-    expect(state.opConfig.add.difficulty).toBe(2);
+    expect(state.opConfig.add.difficulty).toBe(1); // blitz does not change the level
     expect(state.progressProfile.skills.add.blitzAttempts.at(-1).level).toBe(1);
     expect(state.progressProfile.skills.add.blitzAttempts.at(-1).result).toBe("shields-down");
   });
@@ -537,6 +544,8 @@ test.describe("desktop gameplay", () => {
     await invoke(page, "forceBossVictory");
 
     const addCard = page.locator('.diff-card[data-op="add"]');
+    // Replays live on the cleared level; select it to reach them.
+    await invoke(page, "setOpDifficulty", "add", 1);
     await expect(addCard.locator(".diff-wave")).toHaveText("Wave L1");
     await expect(addCard.locator(".diff-boss")).toHaveText("Boss L1");
 
@@ -560,7 +569,7 @@ test.describe("desktop gameplay", () => {
     expect(state.bossMode.phase).toBe("boss");
     await page.waitForTimeout(20);
     state = await invoke(page, "forceBossVictory");
-    expect(state.opConfig.add.difficulty).toBe(2);
+    expect(state.opConfig.add.difficulty).toBe(1); // boss replay does not advance the level
     const bests = state.progressSummary.skills.add.challengeBests;
     expect(bests.wave.level).toBe(1);
     expect(bests.boss.level).toBe(1);

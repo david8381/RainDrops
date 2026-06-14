@@ -4,6 +4,8 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-14
+- Challenge replay buttons (Blitz/Wave/Boss) on an operation card now appear only when the selected level is the cleared level they replay, so advancing to a new level no longer plasters its card with the previous level's challenge stats. Per-level bests still live in the Results popup; drop the level selector to a cleared level to replay it.
+- The header "Cleared" readout now shows live stage progress during boss play — Wave 1 / Wave 2 solved count (plus Wave 2's current load) and the mothership's nodes cleared — then reverts to the session Cleared count when the boss ends.
 - Fixed version stamping: `scripts/stamp-version.sh` now bumps the visible version, the `index.html` cache-busters, and `package.json` together (instead of editing a `const VERSION` line that no longer exists), and the `.githooks/pre-commit` hook now stages `index.html` + `package.json` so each commit auto-bumps the patch and cache-busters. `npm run stamp 0.4.0` sets an explicit version.
 - Redesigned prime-factoring difficulty to come from a number's structure: difficulty(n) = primeIndex(largest prime factor) + max exponent + (# primes with exponent > 1) + Ω(n) − 4, with each level holding every composite of difficulty ≤ level (cumulative; L1 = {6}). Mastery and the universe now follow that ladder instead of a raw number range.
 - Auto-target the most urgent factor drop when factoring is the only operation in play, so you can step through factors or type the full 2^2*3 + Enter without pressing Tab first.
