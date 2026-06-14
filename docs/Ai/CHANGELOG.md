@@ -4,6 +4,7 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-14
+- Redesigned factors-of-10 difficulty to be structural instead of number-specific: a problem "type" is (significant digits, power of 10, ×/÷) with difficulty = digits + power − 1, the concrete number is random, and mastery accrues per type. A level holds every type with digits + power − 1 ≤ level (cumulative), so the universe is small (2 types at L1, up to 32) instead of one entry per number.
 - Merged the separate rectangle and circle operations into one level-gated Shapes operation focused on formulas with small numbers: L1 square, L2 rectangle, L3 triangle, L4 circle (each adds perimeter/area, circle answers as the π coefficient), cumulative per level. 3D shapes are planned for higher levels. Legacy rect/circ profile stats are dropped on load.
 - Grouped operations into compatible sets (arithmetic +−×÷ and ×10 together; Shapes; SI; Factoring), so turning on an op from another set turns off the incompatible ones — reducing answer collisions and mixed-input confusion.
 - Results now shows challenge bests per cleared level instead of only the highest cleared level: each level shows its own best (or a stronger equal-or-higher level's), never-played levels show nothing, and a worse higher-level run no longer hides a better earlier-level score.

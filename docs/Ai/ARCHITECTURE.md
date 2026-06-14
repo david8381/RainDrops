@@ -46,7 +46,7 @@ Dev-only tooling exists for tests: Node's built-in test runner covers core logic
 
 ## Operation Types
 - Basic arithmetic: `add`, `sub`, `mul`, `div`.
-- Decimal shifting: `f10`.
+- Decimal shifting: `f10`. Difficulty is structural — a problem "type" is `(significant digits, power of 10, ×/÷)` with `difficulty = digits + power − 1`; the concrete number is random, so mastery accrues per type. A level holds every type with `digits + power − 1 ≤ level` (cumulative).
 - SI metric conversions: `si`.
 - Geometry: `shapes`, one level-gated operation — L1 square, L2 rectangle, L3 triangle, L4 circle (cumulative), with perimeter/area per shape and circle answers as the π coefficient. Higher levels are reserved for 3D shapes.
 - Prime factorization: `factor`, with full-answer and Tab-targeted stepwise modes.

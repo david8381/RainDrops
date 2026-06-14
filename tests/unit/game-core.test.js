@@ -14,6 +14,8 @@ const {
   formatFixedScale,
   makeShapeProblem,
   makeShapeProblemFromKey,
+  getF10Universe,
+  makeF10ProblemFromKey,
   generateProblem,
   generateSIProblem,
   generateWeightedProblem,
@@ -67,7 +69,7 @@ describe("difficulty ranges", () => {
     assert.deepEqual(getDifficultyRange("add", 1), { min: 1, max: 3 });
     assert.deepEqual(getDifficultyRange("add", 10), { min: 1, max: 20 });
     assert.deepEqual(getDifficultyRange("mul", 10), { min: 1, max: 12 });
-    assert.deepEqual(getDifficultyRange("f10", 10), { min: 1, max: 20 });
+    assert.deepEqual(getDifficultyRange("f10", 10), { min: 1, max: 4 });
     assert.deepEqual(getDifficultyRange("shapes", 10), { min: 2, max: 5 });
     assert.deepEqual(getDifficultyRange("factor", 1), { min: 4, max: 16 });
     assert.deepEqual(getDifficultyRange("factor", 10), { min: 4, max: 200 });
@@ -122,6 +124,26 @@ describe("problem generation", () => {
       { text: si.text, answerText: si.answerText, statsKey: si.statsKey },
       { text: "km → m", answerText: "*1000", statsKey: "k,base" }
     );
+  });
+
+  it("builds factors-of-10 problems by structural type", () => {
+    // Level gates types by digits + power - 1 (cumulative): L1 has only 1-digit ×/÷10.
+    assert.equal(getF10Universe(1).length, 2);
+    assert.equal(getF10Universe(2).length, 6);
+    assert.equal(getF10Universe(10).length, 32);
+
+    // statsKey identifies the type, not the specific number.
+    const det = makeF10ProblemFromKey("mul,1,1", sequenceRng([0, 0]));
+    assert.equal(det.opKey, "f10");
+    assert.equal(det.statsKey, "mul,1,1");
+    assert.equal(det.text, "1 × 10");
+    assert.equal(det.answer, 10);
+
+    // Division shifts the decimal left without floating-point noise.
+    const div = makeF10ProblemFromKey("div,1,2", sequenceRng([0.2, 0]));
+    assert.equal(div.statsKey, "div,1,2");
+    assert.equal(Number(div.answerText), div.answer);
+    assert.match(div.text, /÷ 100$/);
   });
 
   it("generates shape problems with known formulas", () => {

@@ -5,6 +5,8 @@ const {
   createProblemStats,
   expDiffToConversion,
   makeShapeProblemFromKey,
+  makeF10ProblemFromKey,
+  formatF10StatsKey,
   generateWeightedProblem: generateCoreWeightedProblem,
   getDifficultyRange,
   getFactorRemainingText,
@@ -515,6 +517,9 @@ function makeProblemFromUniverseEntry(opKey, entry, level = opConfig[opKey]?.dif
   }
   if (opKey === "shapes") {
     return makeShapeProblemFromKey(statsKey);
+  }
+  if (opKey === "f10") {
+    return makeF10ProblemFromKey(statsKey);
   }
   if (opKey === "si") {
     const [fromSym, toSym] = statsKey.split(",");
@@ -3669,7 +3674,9 @@ function buildListStats(opKey, stats) {
       ? formatSIStatsKey(text)
       : opKey === "shapes"
         ? makeShapeProblemFromKey(text).text
-        : text;
+        : opKey === "f10"
+          ? formatF10StatsKey(text)
+          : text;
     attachStatsTooltip(row, getStatsTooltip(opKey, text, label, entry.asked, entry.correct));
 
     const problem = document.createElement("span");

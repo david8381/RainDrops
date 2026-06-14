@@ -81,6 +81,7 @@ const PRESSURE_TIERS = [
 const {
   expDiffToConversion,
   getDifficultyRange,
+  getF10Universe,
   getShapesUniverse,
   getSIPrefixesForDifficulty,
   isComposite,
@@ -194,12 +195,6 @@ function createEmptySkill(opKey, nowMs = Date.now()) {
   };
 }
 
-function getFactorPowersForDifficulty(difficulty) {
-  if (difficulty <= 3) return [1];
-  if (difficulty <= 6) return [1, 2];
-  return [1, 2, 3];
-}
-
 function getSkillUniverseSize(opKey, level) {
   const range = getDifficultyRange(opKey, level);
   const count = Math.max(0, range.max - range.min + 1);
@@ -230,7 +225,7 @@ function getSkillUniverseSize(opKey, level) {
   }
 
   if (opKey === "f10") {
-    return Math.max(30, count * getFactorPowersForDifficulty(level).length * 2);
+    return getF10Universe(level).length;
   }
 
   return Math.max(1, count);
@@ -258,6 +253,10 @@ function getSkillUniverseProblems(opKey, level) {
 
   if (opKey === "shapes") {
     return getShapesUniverse(level).map((problem) => ({ statsKey: problem.statsKey, text: problem.text }));
+  }
+
+  if (opKey === "f10") {
+    return getF10Universe(level);
   }
 
   if (opKey === "si") {

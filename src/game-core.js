@@ -116,7 +116,7 @@ function getDifficultyRange(opKey, difficulty) {
   }
 
   if (opKey === "f10") {
-    return { min: 1, max: Math.round(lerp(3, 20, t)) };
+    return { min: 1, max: F10_MAX_DIGITS };
   }
 
   if (opKey === "si") {
@@ -134,26 +134,70 @@ function getDifficultyRange(opKey, difficulty) {
   return { min: 1, max: 10 };
 }
 
-function generateFactorsOfTenProblem(maxValue, difficulty = 3, rng = Math.random) {
-  const factorPowers = difficulty <= 3 ? [1] : difficulty <= 6 ? [1, 2] : [1, 2, 3];
-  const direction = rng() < 0.5 ? "mul" : "div";
-  const power = factorPowers[randInt(0, factorPowers.length - 1, rng)];
-  const factor = pow10(power);
-  const decimalPlaces = difficulty <= 4 ? 1 : rng() < 0.7 ? 1 : 2;
-  const maxMantissa = Math.max(10, maxValue * pow10(decimalPlaces + 2));
-  const mantissa = randInt(10, maxMantissa, rng);
-  const left = formatFixedScale(mantissa, decimalPlaces);
-  const answerText =
-    direction === "mul"
-      ? shiftDecimal(mantissa, decimalPlaces, power)
-      : shiftDecimal(mantissa, decimalPlaces, -power);
+// Factors-of-10 difficulty is structural, not number-specific. A "problem type"
+// is (significant digits, power of 10, ×/÷); the concrete number is random, so
+// mastery accrues per type rather than per value. difficulty = digits + power - 1,
+// and a level holds every type with digits + power - 1 <= level (cumulative).
+const F10_MAX_DIGITS = 4;
+const F10_MAX_POWER = 4;
 
+function f10TypesForLevel(level) {
+  const lvl = clamp(1, 99, Math.round(level || 1));
+  const types = [];
+  for (let digits = 1; digits <= F10_MAX_DIGITS; digits += 1) {
+    for (let power = 1; power <= F10_MAX_POWER; power += 1) {
+      if (digits + power - 1 > lvl) continue;
+      for (const dir of ["mul", "div"]) {
+        types.push({ digits, power, dir, statsKey: `${dir},${digits},${power}` });
+      }
+    }
+  }
+  return types;
+}
+
+function f10TypeFromKey(statsKey) {
+  const [dir, digits, power] = statsKey.split(",");
+  return { dir, digits: Number(digits), power: Number(power), statsKey };
+}
+
+function f10TypeLabel(type) {
+  const digitWord = type.digits === 1 ? "1-digit" : `${type.digits}-digit`;
+  return `${digitWord} ${type.dir === "mul" ? "×" : "÷"}${pow10(type.power)}`;
+}
+
+function formatF10StatsKey(statsKey) {
+  return f10TypeLabel(f10TypeFromKey(statsKey));
+}
+
+function makeFactorsOfTenProblem(type, rng = Math.random) {
+  const { digits, power, dir } = type;
+  const min = digits === 1 ? 1 : pow10(digits - 1);
+  const max = pow10(digits) - 1;
+  const mantissa = randInt(min, max, rng);
+  const operandExp = -randInt(0, digits, rng); // random decimal placement
+  const operandText = shiftDecimalSimple(mantissa, operandExp);
+  const answerExp = operandExp + (dir === "mul" ? power : -power);
+  const answerText = shiftDecimalSimple(mantissa, answerExp);
   return {
-    text: `${left} ${direction === "mul" ? "×" : "÷"} ${factor}`,
+    text: `${operandText} ${dir === "mul" ? "×" : "÷"} ${pow10(power)}`,
     answer: Number(answerText),
     answerText,
     opKey: "f10",
+    statsKey: type.statsKey,
   };
+}
+
+function makeF10ProblemFromKey(statsKey, rng = Math.random) {
+  return makeFactorsOfTenProblem(f10TypeFromKey(statsKey), rng);
+}
+
+function getF10Universe(level) {
+  return f10TypesForLevel(level).map((type) => ({ statsKey: type.statsKey, text: f10TypeLabel(type) }));
+}
+
+function generateFactorsOfTenProblem(difficulty = 1, rng = Math.random) {
+  const types = f10TypesForLevel(difficulty);
+  return makeFactorsOfTenProblem(types[randInt(0, types.length - 1, rng)], rng);
 }
 
 const siPrefixes = [
@@ -436,7 +480,7 @@ function generateProblem(opKey, opConfig, rng = Math.random) {
   if (opKey === "factor") return generateFactorProblem(config.difficulty, rng);
   if (opKey === "shapes") return generateShapesProblem(config.difficulty, rng);
   if (opKey === "si") return generateSIProblem(config.difficulty, rng);
-  if (opKey === "f10") return generateFactorsOfTenProblem(range.max, config.difficulty, rng);
+  if (opKey === "f10") return generateFactorsOfTenProblem(config.difficulty, rng);
 
   const op = operators[opKey];
   let a = 0;
@@ -574,16 +618,12 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
   }
 
   if (opKey === "f10") {
-    const candidates = [];
-    for (let i = 0; i < 8; i += 1) {
-      const problem = generateFactorsOfTenProblem(range.max, config.difficulty, rng);
-      const mastery = getMastery(problemStats, "f10", problem.text, masteryLookup);
-      candidates.push({ problem, weight: getSelectionWeight(mastery) });
-    }
-    return weightedPick(
-      candidates.map((c) => ({ value: c.problem, weight: c.weight })),
-      rng
-    );
+    const items = getF10Universe(config.difficulty).map((type) => ({
+      value: makeF10ProblemFromKey(type.statsKey, rng),
+      weight: getSelectionWeight(getMastery(problemStats, "f10", type.statsKey, masteryLookup)),
+    }));
+    if (items.length === 0) return generateProblem(opKey, opConfig, rng);
+    return weightedPick(items, rng);
   }
 
   const op = operators[opKey];
@@ -710,6 +750,7 @@ globalThis.RainMathCore = {
   formatFactorDropText,
   formatFactorization,
   formatFixedScale,
+  formatF10StatsKey,
   generateFactorProblem,
   generateFactorsOfTenProblem,
   generateProblem,
@@ -717,6 +758,8 @@ globalThis.RainMathCore = {
   generateSIProblem,
   generateWeightedProblem,
   getDifficultyRange,
+  getF10Universe,
+  makeF10ProblemFromKey,
   getShapesUniverse,
   makeShapeProblem,
   makeShapeProblemFromKey,
