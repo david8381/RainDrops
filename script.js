@@ -79,7 +79,10 @@ const BLITZ_CORRECT_SHIELD_GAIN = 1;
 const BLITZ_MISTAKE_SHIELD_LOSS = 5;
 const BLITZ_SHIELD_PULSE_MS = 260;
 const BLITZ_SHIELD_HIT_MS = 360;
-const WAVE_TWO_STEP_CLEARS = 2;
+const WAVE_TWO_SPAWN_STAGGER_MS = 340;
+const WAVE_TWO_ROUND_GAP_MS = 700;
+const FACT_SHEET_CAP = 50;
+const MAX_VISIBLE_BOSS_NODES = 6;
 const BOSS_PART_DEFS = [
   { id: "shield", name: "Shields", kind: "shield", problemCount: 3, quartile: 0 },
   { id: "guns", name: "Guns", kind: "cannon", problemCount: 4, quartile: 1 },
@@ -611,10 +614,39 @@ function makeBossDrop(problem, bossKind, index = 0, total = 1) {
   return drop;
 }
 
+function shuffleArray(items, rng = Math.random) {
+  const copy = items.slice();
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rng() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function splitIntoGroups(items, groupCount) {
+  const groups = Array.from({ length: groupCount }, () => []);
+  items.forEach((item, index) => groups[index % groupCount].push(item));
+  return groups;
+}
+
+// The final mothership is a "fact sheet": it holds the whole current-level
+// problem universe (capped at FACT_SHEET_CAP, randomly sampled) split across the
+// ship parts. Nodes start hidden and are revealed in small capped batches so the
+// player never faces an ambiguous wall of answers. Operations without an
+// enumerable universe (e.g. f10) fall back to generated per-part problems.
 function buildBossParts(opKey, level = opConfig[opKey]?.difficulty) {
+  const universe = getSkillUniverseProblems(opKey, level);
+  let groups = null;
+  if (universe.length > 0) {
+    const selected = shuffleArray(universe).slice(0, FACT_SHEET_CAP);
+    const problems = selected
+      .map((entry) => makeProblemFromUniverseEntry(opKey, entry, level))
+      .filter(Boolean);
+    groups = splitIntoGroups(problems, BOSS_PART_DEFS.length);
+  }
+
   const usedProblems = new Set();
-  return BOSS_PART_DEFS.map((partDef) => {
-    const pool = getBossProblemPool(opKey, level, partDef.quartile);
+  return BOSS_PART_DEFS.map((partDef, partIndex) => {
     const part = {
       id: partDef.id,
       name: partDef.name,
@@ -627,25 +659,78 @@ function buildBossParts(opKey, level = opConfig[opKey]?.difficulty) {
       h: 42,
       problems: [],
     };
-    for (let i = 0; i < partDef.problemCount; i += 1) {
-      const problem = makeBossProblemFromPool(opKey, pool, usedProblems, getProblemIdentityKey, level);
-      part.problems.push(copyProblemToTarget(problem, {
-        targetType: "bossProblem",
-        id: `${partDef.id}-${i}`,
-        partId: partDef.id,
-        partName: partDef.name,
-        partKind: partDef.kind,
-        slotIndex: i,
-        destroyed: false,
-        locked: part.locked,
-        x: canvasW / 2,
-        y: 90,
-        w: 62,
-        h: 30,
-      }));
+    let problemObjs;
+    if (groups) {
+      problemObjs = groups[partIndex] || [];
+    } else {
+      const pool = getBossProblemPool(opKey, level, partDef.quartile);
+      problemObjs = [];
+      for (let i = 0; i < partDef.problemCount; i += 1) {
+        problemObjs.push(makeBossProblemFromPool(opKey, pool, usedProblems, getProblemIdentityKey, level));
+      }
     }
+    part.problems = problemObjs.filter(Boolean).map((problem, i) => copyProblemToTarget(problem, {
+      targetType: "bossProblem",
+      id: `${partDef.id}-${i}`,
+      partId: partDef.id,
+      partName: partDef.name,
+      partKind: partDef.kind,
+      slotIndex: i,
+      destroyed: false,
+      revealed: false,
+      locked: part.locked,
+      x: canvasW / 2,
+      y: 90,
+      w: 62,
+      h: 30,
+    }));
     return part;
   });
+}
+
+// Small universes (e.g. SI/factor at low levels) can leave trailing parts with no
+// nodes. An empty part never fires a node-destroyed event, so collapse it here;
+// if that empties the core (or every part), the mothership is defeated.
+function collapseEmptyBossParts() {
+  if (!bossMode?.parts || bossMode.phase !== "boss") return;
+  for (const part of bossMode.parts) {
+    if (part.destroyed) continue;
+    const live = part.problems.filter((problem) => !problem.destroyed).length;
+    if (live > 0) break; // only leading/active empties are auto-cleared
+    createBossDebris(part);
+    part.destroyed = true;
+    updateBossPartLocks();
+    if (part.id === "core") {
+      completeBossVictory();
+      return;
+    }
+  }
+}
+
+// Reveal nodes from the active (unlocked) part up to MAX_VISIBLE_BOSS_NODES,
+// skipping any whose answer collides with an already-active node or bomb so a
+// typed answer can never clear the wrong target.
+function refillBossReveals() {
+  if (!bossMode?.parts || bossMode.phase !== "boss") return;
+  const activePart = bossMode.parts.find((part) => !part.destroyed && !part.locked);
+  if (!activePart) return;
+
+  const activeKeys = new Set();
+  bossMode.parts.forEach((part) => part.problems.forEach((problem) => {
+    if (problem.revealed && !problem.destroyed) activeKeys.add(getProblemAnswerKey(problem));
+  }));
+  drops.filter((drop) => drop.bossKind === "bomb").forEach((drop) => activeKeys.add(getProblemAnswerKey(drop)));
+
+  let revealedCount = activePart.problems.filter((problem) => problem.revealed && !problem.destroyed).length;
+  for (const problem of activePart.problems) {
+    if (revealedCount >= MAX_VISIBLE_BOSS_NODES) break;
+    if (problem.revealed || problem.destroyed) continue;
+    const key = getProblemAnswerKey(problem);
+    if (activeKeys.has(key)) continue;
+    problem.revealed = true;
+    activeKeys.add(key);
+    revealedCount += 1;
+  }
 }
 
 function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficulty, force = false } = {}) {
@@ -778,6 +863,7 @@ function startChallenge(type = "blitz") {
   bossMode.blitzHits = 0;
   bossMode.blitzFinalScore = 0;
   bossMode.challengeLoad = bossMode.challengeType === "wave" ? 1 : BLITZ_START_DROPS;
+  bossMode.waveRoundSpawned = 0;
   bossMode.bombTimerMs = 250;
   if (bossMode.challengeType === "wave" && !Number.isFinite(bossMode.waveTwoSpeedPercent)) {
     bossMode.waveTwoSpeedPercent = WAVE_TWO_BASE_SPEED;
@@ -792,6 +878,8 @@ function startBossFight() {
   bossMode.bombTimerMs = 900;
   bossMode.bossStartedAtMs = performance.now();
   updateBossPartLocks();
+  collapseEmptyBossParts();
+  refillBossReveals();
   updateBossHud();
 }
 
@@ -830,34 +918,31 @@ function updateBossPartPositions() {
 }
 
 function positionBossProblems(part) {
-  const liveProblems = part.problems.filter((problem) => !problem.destroyed);
+  // Only revealed nodes are answerable/drawn; lay them out in a centered grid so
+  // the capped batch (<= MAX_VISIBLE_BOSS_NODES) reads like a small worksheet.
+  const liveProblems = part.problems.filter((problem) => !problem.destroyed && problem.revealed);
   const count = liveProblems.length;
+  if (count === 0) return;
+
+  const wide = ["si", "rect", "circ"].includes(bossMode?.opKey);
+  const nodeW = wide ? 86 : 56;
+  const nodeH = 26;
+  const gapX = 8;
+  const gapY = 6;
+  const cols = Math.min(wide ? 2 : 3, count);
+  const rows = Math.ceil(count / cols);
+  const gridW = cols * nodeW + (cols - 1) * gapX;
+  const gridH = rows * nodeH + (rows - 1) * gapY;
+  const startX = part.x - gridW / 2 + nodeW / 2;
+  const startY = part.y - gridH / 2 + nodeH / 2;
+
   liveProblems.forEach((problem, index) => {
-    problem.w = part.kind === "core" ? 58 : 54;
-    problem.h = 28;
-    if (part.kind === "cannon") {
-      const spacing = part.w / Math.max(5, count + 1);
-      problem.x = part.x - part.w / 2 + spacing * (index + 1);
-      problem.y = part.y + (index % 2 === 0 ? -8 : 10);
-    } else if (part.kind === "wing") {
-      const spacing = part.w / Math.max(5, count + 1);
-      problem.x = part.x - part.w / 2 + spacing * (index + 1);
-      problem.y = part.y + (index % 2 === 0 ? -12 : 12);
-    } else if (part.kind === "shield") {
-      const spacing = part.w / Math.max(4, count + 1);
-      problem.x = part.x - part.w / 2 + spacing * (index + 1);
-      problem.y = part.y - (index % 2 === 0 ? 6 : -8);
-    } else {
-      const offsets = [
-        [-34, -13],
-        [34, -13],
-        [-34, 15],
-        [34, 15],
-      ];
-      const [dx, dy] = offsets[index] || [0, 0];
-      problem.x = part.x + dx;
-      problem.y = part.y + dy;
-    }
+    const row = Math.floor(index / cols);
+    const col = index % cols;
+    problem.w = nodeW;
+    problem.h = nodeH;
+    problem.x = startX + col * (nodeW + gapX);
+    problem.y = startY + row * (nodeH + gapY);
     problem.locked = part.locked;
   });
 }
@@ -868,7 +953,7 @@ function getActiveBossParts() {
   updateBossPartPositions();
   return bossMode.parts
     .filter((part) => !part.destroyed && !part.locked)
-    .flatMap((part) => part.problems.filter((problem) => !problem.destroyed && !problem.locked));
+    .flatMap((part) => part.problems.filter((problem) => !problem.destroyed && !problem.locked && problem.revealed));
 }
 
 function getBlitzProgress() {
@@ -877,10 +962,8 @@ function getBlitzProgress() {
 }
 
 function getBlitzScore() {
-  if (bossMode?.challengeType === "wave") {
-    return Math.min(999, bossMode.blitzClearedCount || 0);
-  }
-  return Math.round(getBlitzProgress() * 100);
+  // Both Wave 1 and Wave 2 score on the number of problems solved.
+  return Math.min(999, bossMode?.blitzClearedCount || 0);
 }
 
 function getBlitzSpeedPercent() {
@@ -1035,7 +1118,9 @@ function spawnBossBomb() {
     ? bossMode.parts.find((part) => part.id === "guns" && !part.destroyed)
     : null;
   bomb.x = source ? source.x + randInt(-80, 80) : randInt(54, Math.max(54, canvasW - 54));
-  bomb.y = source ? source.y + 28 : -28;
+  // Challenge bombs appear just inside the top so they are readable/answerable
+  // immediately; boss missiles launch from the firing gun.
+  bomb.y = source ? source.y + 28 : 8;
   bomb.baseSpeed = canvasH / getBossBombFallSeconds();
   drops.push(bomb);
   return true;
@@ -1049,7 +1134,8 @@ function recordActiveChallengeAttempt(result = "survived") {
   bossMode.blitzFinalDrops = getBlitzDropLimit();
   bossMode.blitzFinalShields = Math.max(0, Math.round(bossMode.blitzShield || 0));
   if (type === "blitz") {
-    bossMode.waveTwoSpeedPercent = clamp(32, 58, Math.round(34 + bossMode.blitzFinalScore * 0.24));
+    const progressPct = Math.round(getBlitzProgress() * 100);
+    bossMode.waveTwoSpeedPercent = clamp(32, 58, Math.round(34 + progressPct * 0.24));
   }
   if (type === "blitz") {
     progressProfile = recordBlitzAttempt(progressProfile, bossMode.opKey, {
@@ -1092,7 +1178,7 @@ function completeChallengeFailure() {
   } else {
     bossMode.message = type === "wave"
       ? `Backup shields are down. Wave 2 solved: ${bossMode.blitzFinalScore}`
-      : `Shields are down. Blitz score: ${bossMode.blitzFinalScore}`;
+      : `Shields are down. Blitz solved: ${bossMode.blitzFinalScore}`;
     bossMode.transitionAction = "end";
   }
   updateBossHud();
@@ -1110,6 +1196,24 @@ function applyBossStun() {
   currentInput = "";
   updateKpDisplay();
   updateBossHud();
+}
+
+// Wave 2 is a load ladder gated on clearing each round: spawn N bombs (staggered
+// so they are readable), wait until the whole batch is cleared, then step to N+1.
+function updateWaveTwoRound(activeBombs) {
+  const load = bossMode.challengeLoad;
+  if (bossMode.waveRoundSpawned < load) {
+    if (bossMode.bombTimerMs <= 0) {
+      spawnBossBomb();
+      bossMode.waveRoundSpawned += 1;
+      bossMode.bombTimerMs = WAVE_TWO_SPAWN_STAGGER_MS;
+    }
+  } else if (activeBombs === 0 && bossMode.bombTimerMs <= 0) {
+    bossMode.challengeLoad = Math.min(BLITZ_MAX_DROPS, load + 1);
+    bossMode.waveRoundSpawned = 0;
+    bossMode.bombTimerMs = WAVE_TWO_ROUND_GAP_MS;
+    bossMode.message = `Wave 2: ${bossMode.challengeLoad} at once`;
+  }
 }
 
 function updateBossMode(dt) {
@@ -1150,7 +1254,9 @@ function updateBossMode(dt) {
     bossMode.blitzScore = getBlitzScore();
     bossMode.bombTimerMs -= dt;
     const activeBombs = drops.filter((drop) => drop.bossKind === "bomb").length;
-    if (bossMode.bombTimerMs <= 0 && activeBombs < getBlitzDropLimit()) {
+    if (bossMode.challengeType === "wave") {
+      updateWaveTwoRound(activeBombs);
+    } else if (bossMode.bombTimerMs <= 0 && activeBombs < getBlitzDropLimit()) {
       spawnBossBomb();
       bossMode.bombTimerMs = getBossBombIntervalMs();
     }
@@ -1178,6 +1284,9 @@ function updateBossMode(dt) {
 
   if (bossMode.phase === "boss") {
     updateBossPartLocks();
+    collapseEmptyBossParts();
+    if (bossMode?.phase !== "boss") return;
+    refillBossReveals();
     bossMode.bombTimerMs -= dt;
     if (bossMode.bombTimerMs <= 0) {
       spawnBossBomb();
@@ -1210,6 +1319,9 @@ function handleBossProblemDestroyed(problem) {
     completeBossVictory();
     return;
   }
+  collapseEmptyBossParts();
+  if (bossMode?.phase !== "boss") return;
+  refillBossReveals();
   const { remaining, problemsRemaining } = getBossPartCount();
   if (partCleared) {
     bossMode.message = remaining === 1 ? "Core exposed" : `${part.name} destroyed`;
@@ -1285,13 +1397,12 @@ function updateBossHud() {
     return;
   }
   if (bossMode.phase === "challenge") {
-    const bombs = drops.filter((drop) => drop.bossKind === "bomb").length;
     const shield = Math.round(bossMode.blitzShield || 0);
     const shieldMax = bossMode.blitzShieldMax || BLITZ_SHIELD_MAX;
     if (bossMode.challengeType === "wave") {
-      bossHudMetaEl.textContent = `Shields ${shield}/${shieldMax} · Solved ${getBlitzScore()} · ${getBlitzDropLimit()} at once · fixed ${getBlitzSpeedPercent()}% speed · ${bombs} bombs`;
+      bossHudMetaEl.textContent = `Shields ${shield}/${shieldMax} · Solved ${getBlitzScore()} · ${getBlitzDropLimit()} at once · fixed ${getBlitzSpeedPercent()}% speed`;
     } else {
-      bossHudMetaEl.textContent = `Shields ${shield}/${shieldMax} · Speed score ${getBlitzScore()} · ${getBlitzSpeedPercent()}% speed · ${getBlitzDropLimit()} at once · ${bombs} bombs`;
+      bossHudMetaEl.textContent = `Shields ${shield}/${shieldMax} · Solved ${getBlitzScore()} · ${getBlitzSpeedPercent()}% speed · ${getBlitzDropLimit()} at once`;
     }
     return;
   }
@@ -1588,7 +1699,48 @@ function drawDrops() {
 
   drawLaser();
   drawGun();
+  drawChallengeStatus();
   drawBossStunOverlay();
+}
+
+// Compact shield + solved readout shown on the player ship during Wave 1/Wave 2.
+function drawChallengeStatus() {
+  if (!bossMode?.active || bossMode.phase !== "challenge") return;
+  const shield = Math.max(0, Math.round(bossMode.blitzShield || 0));
+  const shieldMax = bossMode.blitzShieldMax || BLITZ_SHIELD_MAX;
+  const solved = getBlitzScore();
+  const isWave = bossMode.challengeType === "wave";
+  const lines = [
+    `🛡 ${shield}/${shieldMax}`,
+    isWave ? `Solved ${solved} · ${bossMode.challengeLoad} at once` : `Solved ${solved}`,
+  ];
+
+  ctx.save();
+  ctx.font = "700 13px Space Grotesk";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const widest = Math.max(...lines.map((line) => ctx.measureText(line).width));
+  const padX = 12;
+  const lineH = 17;
+  const boxW = widest + padX * 2;
+  const boxH = lineH * lines.length + 10;
+  const cx = canvasW / 2;
+  const boxTop = canvasH - 20 - 44 - boxH;
+  const low = getBlitzShieldRatio() <= 0.28;
+
+  ctx.fillStyle = "rgba(10, 14, 26, 0.74)";
+  ctx.strokeStyle = low ? "rgba(248, 113, 113, 0.6)" : "rgba(96, 180, 240, 0.4)";
+  ctx.lineWidth = 1.5;
+  fillRoundRect(cx - boxW / 2, boxTop, boxW, boxH, 9);
+  strokeRoundRect(cx - boxW / 2, boxTop, boxW, boxH, 9);
+
+  lines.forEach((line, index) => {
+    ctx.fillStyle = index === 0
+      ? (low ? "#fca5a5" : "#7dd3fc")
+      : "#e2e8f0";
+    ctx.fillText(line, cx, boxTop + 13 + index * lineH);
+  });
+  ctx.restore();
 }
 
 function fillRoundRect(x, y, w, h, r) {
@@ -1657,7 +1809,7 @@ function drawBossShip() {
   // Second pass: draw problem nodes on top so no later part's body can cover them.
   for (const part of bossMode.parts) {
     if (part.destroyed || part.locked) continue;
-    part.problems.filter((problem) => !problem.destroyed).forEach(drawBossProblemNode);
+    part.problems.filter((problem) => !problem.destroyed && problem.revealed).forEach(drawBossProblemNode);
   }
   drawBossDebris();
   ctx.restore();
@@ -1816,7 +1968,7 @@ function drawBossProblemNode(problem) {
   const label = problem.text;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = "700 12px Space Grotesk";
+  ctx.font = "700 11px Space Grotesk";
   ctx.lineWidth = 3.5;
   ctx.strokeStyle = "rgba(2, 6, 23, 0.85)";
   ctx.fillStyle = "#f8fafc";
@@ -2092,14 +2244,6 @@ function handleCorrectAnswer(match) {
   recordLearningResult(match, "correct");
   if (bossMode?.phase === "challenge" && match.bossKind === "bomb") {
     changeBlitzShield(BLITZ_CORRECT_SHIELD_GAIN, "correct");
-    if (
-      bossMode?.challengeType === "wave"
-      && bossMode.blitzClearedCount > 0
-      && bossMode.blitzClearedCount % WAVE_TWO_STEP_CLEARS === 0
-    ) {
-      bossMode.challengeLoad = Math.min(BLITZ_MAX_DROPS, Math.max(bossMode.challengeLoad + 1, Math.ceil(bossMode.challengeLoad * 1.1)));
-      bossMode.message = `Wave 2 load: ${bossMode.challengeLoad} at once`;
-    }
   }
   if (!isBossActive()) score += 1;
   updateScoreDisplay();
@@ -2492,7 +2636,7 @@ function formatBlitzText(skill) {
   if (!skill?.blitzUnlockedLevel) return "";
   const best = skill.challengeBests?.blitz || skill.blitzBest;
   if (!best) return `Blitz L${skill.blitzUnlockedLevel}`;
-  return `Blitz L${skill.blitzUnlockedLevel} best ${best.score}`;
+  return `Blitz L${skill.blitzUnlockedLevel} best ${best.score} solved`;
 }
 
 function formatWaveText(skill) {

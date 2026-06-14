@@ -386,7 +386,7 @@ test.describe("desktop gameplay", () => {
     state = await invoke(page, "advanceBossTime", 1400);
     expect(state.bossMode.phase).toBe("challenge");
     expect(state.bossMode.challengeType).toBe("blitz");
-    await expect(page.locator("#bossHudMeta")).toContainText("Speed score");
+    await expect(page.locator("#bossHudMeta")).toContainText("Solved");
     await expect(page.locator("#bossHudMeta")).toContainText("2 at once");
     await invoke(page, "advanceBossTime", 30000);
     await expect(page.locator("#bossHudMeta")).toContainText("2 at once");
@@ -467,7 +467,7 @@ test.describe("desktop gameplay", () => {
     }
     expect(state.bossMode.phase).toBe("challengeComplete");
     expect(state.bossMode.transitionAction).toBe("end");
-    await expect(page.locator("#bossHudStatus")).toContainText("Shields are down. Blitz score:");
+    await expect(page.locator("#bossHudStatus")).toContainText("Shields are down. Blitz solved:");
 
     state = await invoke(page, "advanceBossTime", 1900);
     expect(state.opConfig.add.difficulty).toBe(2);
@@ -497,28 +497,16 @@ test.describe("desktop gameplay", () => {
     expect(state.bossMode.phase).toBe("challenge");
     expect(state.bossMode.challengeType).toBe("wave");
     await expect(page.locator("#bossHudMeta")).toContainText("fixed");
+    expect(state.bossMode.challengeLoad).toBe(1);
     const waveMetaBefore = await page.locator("#bossHudMeta").textContent();
 
-    await invoke(page, "addDrop", {
-      opKey: "add",
-      text: "1 + 1",
-      answer: 2,
-      answerText: "2",
-      statsKey: "1,1",
-      bossKind: "bomb",
-      y: 120,
-    });
-    await invoke(page, "submit", "2");
-    await invoke(page, "addDrop", {
-      opKey: "add",
-      text: "1 + 2",
-      answer: 3,
-      answerText: "3",
-      statsKey: "1,2",
-      bossKind: "bomb",
-      y: 120,
-    });
-    state = await invoke(page, "submit", "3");
+    // Wave 2 steps up the load only after the current round is fully cleared.
+    state = await invoke(page, "advanceBossTime", 400); // spawn round 1 (1 bomb)
+    const bomb = state.drops.find((drop) => drop.bossKind === "bomb");
+    expect(bomb).toBeTruthy();
+    expect(state.bossMode.challengeLoad).toBe(1);
+    await invoke(page, "submit", bomb.answerText);
+    state = await invoke(page, "advanceBossTime", 400); // round cleared -> step to 2
     expect(state.bossMode.challengeLoad).toBe(2);
     await expect(page.locator("#bossHudMeta")).toContainText("2 at once");
     const waveMetaAfter = await page.locator("#bossHudMeta").textContent();
@@ -579,29 +567,49 @@ test.describe("desktop gameplay", () => {
     expect(bests.boss.durationMs).toBeGreaterThan(0);
   });
 
-  test("boss ship parts clear only after all problem nodes are solved", async ({ page }) => {
+  test("boss reveals nodes in capped batches and clears parts only when fully solved", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
     await invoke(page, "startBoss", "add");
     let state = await invoke(page, "skipToBossFight");
 
+    const revealedCount = (s) => s.bossMode.parts
+      .flatMap((part) => part.problems)
+      .filter((problem) => problem.revealed && !problem.destroyed).length;
+
+    // The fact-sheet boss holds the whole level universe (capped at 50).
+    const universeSize = await page.evaluate(
+      () => window.RainMathProgress.getSkillUniverseProblems("add", 1).length
+    );
+    const totalNodes = state.bossMode.parts.reduce((sum, part) => sum + part.problems.length, 0);
+    expect(totalNodes).toBe(Math.min(50, universeSize));
+
     let shield = state.bossMode.parts.find((part) => part.id === "shield");
-    expect(shield.problems).toHaveLength(3);
+    expect(shield.problems.length).toBeGreaterThan(0);
     expect(shield.destroyed).toBe(false);
+    // Only a capped batch of nodes is ever visible at once (no false-positive soup).
+    expect(revealedCount(state)).toBeGreaterThan(0);
+    expect(revealedCount(state)).toBeLessThanOrEqual(6);
 
-    await invoke(page, "submit", shield.problems[0].answerText);
-    state = await invoke(page, "getState");
-    shield = state.bossMode.parts.find((part) => part.id === "shield");
-    expect(shield.problems.filter((problem) => problem.destroyed)).toHaveLength(1);
-    expect(shield.destroyed).toBe(false);
+    // Solve every revealed node until the shield part falls; it must not be
+    // destroyed until ALL of its nodes are solved.
+    let guard = 0;
+    while (!shield.destroyed && guard < 120) {
+      guard += 1;
+      const revealed = shield.problems.filter((problem) => problem.revealed && !problem.destroyed);
+      if (revealed.length === 0) {
+        state = await invoke(page, "advanceBossTime", 50);
+        shield = state.bossMode.parts.find((part) => part.id === "shield");
+        continue;
+      }
+      await invoke(page, "submit", revealed[0].answerText);
+      state = await invoke(page, "getState");
+      shield = state.bossMode.parts.find((part) => part.id === "shield");
+      expect(revealedCount(state)).toBeLessThanOrEqual(6);
+    }
 
-    await invoke(page, "submit", shield.problems[1].answerText);
-    await invoke(page, "submit", shield.problems[2].answerText);
-    state = await invoke(page, "getState");
-    shield = state.bossMode.parts.find((part) => part.id === "shield");
-    const guns = state.bossMode.parts.find((part) => part.id === "guns");
-    expect(shield.problems.every((problem) => problem.destroyed)).toBe(true);
     expect(shield.destroyed).toBe(true);
+    const guns = state.bossMode.parts.find((part) => part.id === "guns");
     expect(guns.locked).toBe(false);
   });
 

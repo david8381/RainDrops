@@ -3,6 +3,15 @@
 ## Purpose
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
+## 2026-06-14
+- Redesigned the final mothership as a "fact sheet": it now draws from the whole current-level problem universe (randomly sampled, capped at 50) split across the four ship parts, so clearing the boss means working through every problem type like a math worksheet.
+- Boss nodes now reveal in small capped batches (at most 6 visible at once) and never reveal two answers that collide, so a typed answer can no longer clear the wrong node (no false positives).
+- Empty trailing ship parts (when a level's universe is smaller than the part count, e.g. low-level SI/factor) now auto-collapse so the boss can always be completed.
+- Scored Wave 1 (and standalone Blitz) on the number of problems solved, matching Wave 2; relabeled HUD, Results, and end-of-run summaries to "solved".
+- Changed Wave 2 to clear-gated rounds: it presents N problems, waits until the whole batch is cleared, then steps up to N+1, instead of ramping the simultaneous load on a timer/score.
+- Added an on-ship shield + solved counter near the player base during Wave 1/Wave 2 so the live shield and solved count are visible without reading the corner HUD.
+- Challenge bombs now appear just inside the top edge so they are readable and answerable immediately.
+
 ## 2026-06-13
 - Moved the boss HUD from the top-left to the bottom-left and made it fade quieter/sooner so it no longer covers falling problems and bombs.
 - Drew boss-ship problem nodes in a second pass on top of all part bodies so an overlapping part box can no longer hide a problem's text.
