@@ -1627,6 +1627,7 @@ function drawDrops() {
   }
 
   drawSplashes();
+  drawLoomingBoss();
   drawBossShip();
   drawChallengeBurst();
 
@@ -1803,6 +1804,54 @@ function strokeRoundRect(x, y, w, h, r) {
     ctx.rect(x, y, w, h);
   }
   ctx.stroke();
+}
+
+// During the full-boss lead-up (Wave 1 and Wave 2) the mothership looms overhead,
+// peeking a little further onto the screen each wave before it drops into full
+// position for the fight. It is purely cosmetic — the idea is that the boss is
+// the one launching the waves.
+function drawLoomingBoss() {
+  if (!bossMode?.active || bossMode.mode !== "full") return;
+  if (!["announce", "challenge", "challengeComplete"].includes(bossMode.phase)) return;
+
+  // Wave 1 barely shows the underside; Wave 2 comes noticeably closer.
+  const reveal = bossMode.challengeType === "wave" ? 0.34 : 0.14;
+  const w = Math.min(560, Math.max(340, canvasW * 0.74));
+  const h = Math.min(185, Math.max(138, canvasH * 0.32));
+  const left = (canvasW - w) / 2;
+  const top = -h * (1 - reveal) + Math.sin(gameTime / 700) * 6;
+
+  ctx.save();
+  ctx.globalAlpha = 0.5;
+  ctx.shadowColor = "rgba(96, 180, 240, 0.18)";
+  ctx.shadowBlur = 22;
+  const hull = ctx.createLinearGradient(left, top, left, top + h);
+  hull.addColorStop(0, "rgba(40, 52, 86, 0.9)");
+  hull.addColorStop(1, "rgba(9, 14, 28, 0.9)");
+  ctx.fillStyle = hull;
+  ctx.strokeStyle = "rgba(125, 211, 252, 0.3)";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(left + w * 0.5, top);
+  ctx.lineTo(left + w * 0.93, top + h * 0.48);
+  ctx.lineTo(left + w * 0.78, top + h * 0.82);
+  ctx.lineTo(left + w * 0.61, top + h * 0.94);
+  ctx.lineTo(left + w * 0.39, top + h * 0.94);
+  ctx.lineTo(left + w * 0.22, top + h * 0.82);
+  ctx.lineTo(left + w * 0.07, top + h * 0.48);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Menacing underside lights.
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "rgba(240, 96, 96, 0.55)";
+  for (const fx of [0.3, 0.5, 0.7]) {
+    ctx.beginPath();
+    ctx.arc(left + w * fx, top + h * 0.88, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 function drawBossShip() {
