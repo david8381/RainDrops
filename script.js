@@ -113,6 +113,9 @@ let gameTime = 0;
 let laser = null;
 let ambiguousTimer = null;
 const AMBIGUOUS_DELAY_MS = 400;
+// Tracks `${opKey}:${level}` we have already offered a boss for, so the unlock
+// toast appears once per op/level rather than on every subsequent correct answer.
+const bossOfferShown = new Set();
 let factorTargetId = null; // id of the targeted factor drop, or null
 let bossMode = null;
 
@@ -126,11 +129,15 @@ let progressProfile = readProfile();
 function applyProfileSettingsToControls() {
   const settings = progressProfile.settings || {};
   const savedDifficulties = settings.difficulties || {};
+  const summary = summarizeProfile(progressProfile);
   for (const opKey of Object.keys(opConfig)) {
     const savedLevel = savedDifficulties[opKey] ?? progressProfile.skills?.[opKey]?.currentLevel;
-    if (Number.isFinite(savedLevel)) {
-      opConfig[opKey].difficulty = clamp(1, 10, Math.round(savedLevel));
-    }
+    // Resume at least at the level after the highest cleared boss, so a
+    // temporarily lowered selector (e.g. to replay a cleared level) does not
+    // strand the player below their actual progress on reload.
+    const clearedNext = (summary.skills[opKey]?.blitzUnlockedLevel || 0) + 1;
+    const resume = Math.max(Number.isFinite(savedLevel) ? savedLevel : 1, clearedNext);
+    opConfig[opKey].difficulty = clamp(1, 10, Math.round(resume));
   }
   gameSpeed = clamp(0, 100, Math.round(Number.isFinite(settings.speed) ? settings.speed : 30));
   dropLimit = clamp(0, 10, Math.round(Number.isFinite(settings.rate) ? settings.rate : 3));
@@ -166,6 +173,8 @@ function resetRunState({ resume = true, focus = true } = {}) {
 
 function activateProfile(nextProfile, { resetRun = true } = {}) {
   progressProfile = nextProfile;
+  bossOfferShown.clear();
+  closeBossOffer();
   applyProfileSettingsToControls();
   resetProblemStats(problemStats);
   mirrorLegacyProblemStats(progressProfile, problemStats);
@@ -204,6 +213,7 @@ function recordLearningResult(drop, outcome) {
   });
   saveProfile(progressProfile);
   updateReadinessDisplays();
+  maybeOfferBoss(drop.opKey);
 }
 
 function getUnclearedDrops() {
@@ -2361,9 +2371,8 @@ function handleWrongInput({ targets = null } = {}) {
   for (const drop of targetsToRecord) {
     recordLearningResult(drop, "wrong");
   }
-  if (bossMode?.phase === "challenge" && visibleTargets.length > 0) {
-    changeBlitzShield(-BLITZ_MISTAKE_SHIELD_LOSS, "wrong");
-  }
+  // A wrong typed answer does not drain shields — consistent with normal play,
+  // where a wrong answer simply doesn't clear. Only landed bombs cost shields.
   playWrongInput();
   answerInput.value = "";
   currentInput = "";
@@ -2736,6 +2745,59 @@ function formatReadyText(skill) {
 
 function shouldPromptBossAttempt(skill) {
   return Boolean(skill?.bossReady && !skill?.bossAttemptedForLevel);
+}
+
+// When an operation first reaches boss-readiness, surface a one-time, non-modal
+// toast offering to start the boss so the player doesn't have to hunt for the
+// pulsing Mastered control.
+function maybeOfferBoss(opKey) {
+  if (isBossActive()) return;
+  const skill = getProgressSkill(opKey);
+  if (!shouldPromptBossAttempt(skill)) return;
+  const key = `${opKey}:${opConfig[opKey].difficulty}`;
+  if (bossOfferShown.has(key)) return;
+  bossOfferShown.add(key);
+  showBossOffer(opKey);
+}
+
+function closeBossOffer() {
+  const existing = document.getElementById("bossOfferToast");
+  if (existing) existing.remove();
+}
+
+function showBossOffer(opKey) {
+  closeBossOffer();
+  const level = opConfig[opKey]?.difficulty;
+  const toast = document.createElement("div");
+  toast.className = "boss-offer";
+  toast.id = "bossOfferToast";
+
+  const msg = document.createElement("span");
+  msg.className = "boss-offer-msg";
+  msg.textContent = `${opDisplayNames[opKey]} Level ${level} mastered — boss unlocked!`;
+
+  const start = document.createElement("button");
+  start.type = "button";
+  start.className = "boss-offer-start";
+  start.textContent = "Start Boss";
+  start.addEventListener("click", () => {
+    initAudio();
+    closeBossOffer();
+    startBossMode(opKey);
+  });
+
+  const dismiss = document.createElement("button");
+  dismiss.type = "button";
+  dismiss.className = "boss-offer-dismiss";
+  dismiss.textContent = "✕";
+  dismiss.setAttribute("aria-label", "Dismiss");
+  dismiss.addEventListener("click", closeBossOffer);
+
+  toast.append(msg, start, dismiss);
+  document.body.appendChild(toast);
+  window.setTimeout(() => {
+    if (document.getElementById("bossOfferToast") === toast) toast.remove();
+  }, 12000);
 }
 
 function getBossButtonTitle(skill) {

@@ -622,6 +622,43 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#statsOverlay")).toContainText("Add");
   });
 
+  test("offers the boss with a toast when an operation reaches mastery", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await invoke(page, "masterCurrentLevel", "add");
+    await freezeAutoSpawns(page);
+    await invoke(page, "addDrop", {
+      opKey: "add",
+      text: "1 + 1",
+      answer: 2,
+      answerText: "2",
+      statsKey: "1,1",
+      y: 120,
+    });
+
+    await page.locator("#answer").fill("2"); // a correct answer re-checks readiness
+    await expect(page.locator("#bossOfferToast")).toBeVisible();
+    await expect(page.locator("#bossOfferToast")).toContainText("boss unlocked");
+
+    await page.locator(".boss-offer-start").click();
+    expect((await invoke(page, "getState")).bossMode.active).toBe(true);
+  });
+
+  test("resumes at the unlocked level on reload even if the selector was lowered", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await invoke(page, "startBoss", "add");
+    await invoke(page, "forceBossVictory"); // clears the L1 boss, advances to L2
+    await invoke(page, "setOpDifficulty", "add", 1); // lower the selector to replay L1
+
+    // Reload (no reset) so the persisted profile is read back.
+    await page.goto("/?test=1");
+    await page.waitForFunction(() => window.__RAIN_MATH_READY__ && window.__RAIN_MATH_TEST__);
+
+    const state = await invoke(page, "getState");
+    expect(state.opConfig.add.difficulty).toBe(2);
+  });
+
   test("boss reveals nodes in capped batches and clears parts only when fully solved", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);

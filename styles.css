@@ -614,6 +614,49 @@ body {
   display: none !important;
 }
 
+/* One-time non-modal toast offering the boss when an op hits mastery. */
+.boss-offer {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 14px;
+  border-radius: 999px;
+  background: rgba(13, 20, 38, 0.96);
+  border: 1px solid rgba(251, 191, 36, 0.6);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  color: var(--text);
+  font-size: 0.85rem;
+  max-width: calc(100% - 24px);
+}
+
+.boss-offer-msg {
+  font-weight: 600;
+}
+
+.boss-offer-start {
+  border: none;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-weight: 700;
+  background: linear-gradient(180deg, #fbbf24, #f59e0b);
+  color: #1a1206;
+  cursor: pointer;
+}
+
+.boss-offer-dismiss {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
 .boss-hud {
   position: absolute;
   left: 18px;
