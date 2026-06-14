@@ -30,7 +30,7 @@ See `docs/Ai/TESTING.md` for details.
 
 GitHub Pages deploys via `.github/workflows/pages.yml` on pushes to `main`. Test CI runs separately via `.github/workflows/tests.yml`.
 
-Before deploying asset changes, run `npm run stamp` to bump the version and cache-busters. It updates the visible `vX.Y.Z` in `index.html`, the `?v=` query strings, and `package.json` together. With no argument it bumps the patch; pass an explicit version (e.g. `npm run stamp 0.4.0`) to set one.
+Versioning is stamped automatically: `core.hooksPath` is `.githooks`, and `.githooks/pre-commit` runs `scripts/stamp-version.sh` and stages `index.html` + `package.json`, so every commit bumps the patch and refreshes the `?v=` cache-busters. To set an explicit version, run `npm run stamp 0.4.0` (or `npm run stamp` to bump the patch manually). Do not hand-edit the version strings — let the hook own them.
 
 ## Documentation
 

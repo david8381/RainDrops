@@ -31,7 +31,7 @@ Rain Math is a small static browser game with a focused production surface: HTML
 - A targeted factor drop could become complete but not clear on Enter because the input was already empty. Enter now clears the completed targeted drop and increments score.
 
 ## Remaining Risks And Follow-Ups
-- Versioning is stamped by `npm run stamp` (`scripts/stamp-version.sh`), which bumps the visible version, the `index.html` cache-busters, and `package.json` together. It is run deliberately (not a commit hook), so remember to run it before a deploy when assets change.
+- Versioning is stamped automatically by the `.githooks/pre-commit` hook (`core.hooksPath = .githooks`), which runs `scripts/stamp-version.sh` and stages `index.html` + `package.json`, so each commit bumps the patch and cache-busters. `npm run stamp 0.4.0` sets an explicit version. Note the patch climbs on every commit, including docs-only ones.
 - External services are not end-to-end tested: FormSubmit submission and GoatCounter analytics are intentionally not exercised by Playwright.
 - Canvas tests are smoke-level only. They verify that the canvas paints, not exact rendering.
 - Progress persists locally only. There is no backend sync, authentication, or player-facing export flow yet.

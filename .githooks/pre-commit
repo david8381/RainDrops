@@ -4,4 +4,4 @@ set -e
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 "$ROOT_DIR/scripts/stamp-version.sh"
 
-git add "$ROOT_DIR/script.js"
+git add "$ROOT_DIR/index.html" "$ROOT_DIR/package.json"
