@@ -55,10 +55,45 @@ test("loads directly from index.html and operation chits respond", async ({ page
   await page.route("**/gc.zgo.at/**", (route) => route.abort());
 
   await page.goto(pathToFileURL(resolve("index.html")).href);
+  if (await page.locator("#welcomeOverlay").isVisible()) {
+    await page.locator("#welcomePlay").click();
+  }
   await expect(page.locator(".op-chit")).toHaveCount(8);
 
   await page.locator('.op-chit[data-op="add"]').click();
   await expect(page.locator('.op-chit[data-op="add"]')).toHaveClass(/active/);
+});
+
+test("first visit menu creates a player, starts the tutorial, and enters play", async ({ page }) => {
+  await page.route("https://fonts.googleapis.com/**", (route) => route.abort());
+  await page.route("https://fonts.gstatic.com/**", (route) => route.abort());
+  await page.route("**/gc.zgo.at/**", (route) => route.abort());
+
+  await page.goto("/?test=1&welcome=1");
+  await page.waitForFunction(() => window.__RAIN_MATH_READY__ && window.__RAIN_MATH_TEST__);
+
+  await expect(page.locator("#welcomeOverlay")).toBeVisible();
+  await expect(page.locator(".welcome-card h1")).toHaveText("Rain Math");
+  await expect(page.locator("#welcomePlay")).toBeVisible();
+
+  await page.locator("#welcomeProfileName").fill("Grace Hopper");
+  await page.locator(".welcome-create button").click();
+  await expect(page.locator("#loginLink")).toHaveText("Grace Hopper");
+  await expect(page.locator(".welcome-profile-btn.active .welcome-profile-name")).toHaveText("Grace Hopper");
+
+  await page.locator("#welcomeTutorial").click();
+  await expect(page.locator("#tutorialOverlay")).toBeVisible();
+  await expect(page.locator(".tutorial-kicker")).toContainText("1/8");
+  await expect(page.locator(".tutorial-card h2")).toContainText("Choose what kind of math");
+
+  await page.locator(".tutorial-next").click();
+  await expect(page.locator(".tutorial-kicker")).toContainText("2/8");
+  await expect(page.locator(".tutorial-card h2")).toContainText("Read the drop");
+
+  await page.locator(".tutorial-skip").click();
+  await expect(page.locator("#tutorialOverlay")).toHaveCount(0);
+  await expect(page.locator("#welcomeOverlay")).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem("rainMath.welcomeSeen.v1"))).toBe("1");
 });
 
 test.describe("desktop gameplay", () => {
@@ -171,6 +206,48 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#answer")).toHaveValue("");
     expect(state.problemStats.add).toEqual({});
     expect(state.progressSummary.skills.add.attempts).toBe(0);
+  });
+
+  test("NumLock does not break numpad answer entry", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await freezeAutoSpawns(page);
+    await invoke(page, "addDrop", {
+      opKey: "add",
+      text: "5 + 7",
+      answer: 12,
+      answerText: "12",
+      statsKey: "5,7",
+      y: 120,
+    });
+
+    await page.locator("#answer").focus();
+    await page.evaluate(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "NumLock",
+        code: "NumLock",
+        bubbles: true,
+        cancelable: true,
+      }));
+      const input = document.getElementById("answer");
+      input.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "End",
+        code: "Numpad1",
+        bubbles: true,
+        cancelable: true,
+      }));
+      input.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "ArrowDown",
+        code: "Numpad2",
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
+    await expect(page.locator("#score")).toHaveText("1");
+    const state = await invoke(page, "getState");
+    expect(state.drops).toHaveLength(0);
+    expect(state.problemStats.add["5,7"]).toEqual({ asked: 1, correct: 1 });
   });
 
   test("shades falling drops by accuracy hue and attempt evidence", async ({ page }) => {

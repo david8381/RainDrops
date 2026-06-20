@@ -3,6 +3,15 @@
 ## Purpose
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
+## 2026-06-20
+- Tutorial steps now omit the tip callout when `tip` is missing or blank in `src/text/english.js`, so manual copy edits do not leave empty boxes.
+
+## 2026-06-19
+- Moved welcome-menu and Tutorial copy into `src/text/english.js`, a plain-script English catalog loaded before `script.js` so onboarding text is editable in one place while preserving direct `file://` loading.
+- Added a first-visit welcome menu with Play, Tutorial, and local player selection/creation; choosing Play or leaving the Tutorial stores a local flag so returning visits go straight into the game, and the Menu link can reopen it.
+- Added an in-app Tutorial stepper that highlights existing controls and explains problem types, typing, Speed/Drops pressure, mastery grids, Spacebar Breather, boss mode, and profiles/results.
+- Normalized physical numpad input so pressing NumLock does not break answer entry; numpad digits still enter numbers even when the browser reports them as navigation keys.
+
 ## 2026-06-14
 - Added a parallax starfield behind boss mode so the lead-up reads as flying forward toward the mothership between waves.
 - Replaced the post-victory accuracy grid with a victory summary popup: a "Boss Defeated" congratulations, the three stage results (Wave 1 / Wave 2 solved counts and Boss time), and a Next Level button (the accuracy grid is still reachable from it).

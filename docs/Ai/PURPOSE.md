@@ -4,7 +4,7 @@
 Build a fast, friendly math game where falling drops are cleared by typing answers. The game should feel responsive, playable immediately, and let the user control their own practice mix while the game is running.
 
 ## Design Principles
-- No setup friction: the game loads directly into play.
+- Low setup friction: first visit shows a Play/Tutorial/player menu, then returning visits load directly into play.
 - Fast input: ordinary numeric answers clear immediately; multi-step or symbolic answers use Enter only where needed.
 - User-controlled pacing: operation types, per-operation difficulty, fall speed, and active-drop load are adjustable during play.
 - Content level and practice pressure are separate mastery axes: levels measure problem scope, while speed/drop load, Blitz/Wave scores, and Boss time give optional fluency goals.
@@ -13,6 +13,9 @@ Build a fast, friendly math game where falling drops are cleared by typing answe
 
 ## Current Player-Facing Behavior
 - Drops fall from the sky and clear when the correct answer is typed.
+- First-time visitors see a polished welcome menu with Play, Tutorial, and local player selection/creation. Choosing Play dismisses the menu for future visits; the Menu link can reopen it later.
+- The Tutorial is an in-app stepper that highlights real controls and explains problem types, typing rules, Speed/Drops pressure, mastery grids, Spacebar Breather, boss mode, and local profiles/results.
+- Welcome-menu and Tutorial copy lives in `src/text/english.js` so it can be edited in one place and later mirrored into other locale files.
 - Immediate-clear operations: add, subtract, multiply, divide, factors of 10, and Shapes (level-gated: 2D square/rectangle/triangle/circle perimeter & area, then 3D cube/rectangular-prism/cylinder/sphere surface area & volume; round shapes answer as the π coefficient).
 - Enter-required operations: SI metric conversions such as `*1000` or `/100`, and full prime factorization answers such as `2^2*3`.
 - Prime factor drops can be targeted with Tab and simplified one factor at a time; when factoring is the only operation in play the most urgent drop is auto-targeted, so you can either step through factors or type the full `2^2*3` and press Enter.
@@ -40,6 +43,7 @@ Build a fast, friendly math game where falling drops are cleared by typing answe
 - Falling drops are shaded with the same accuracy/evidence palette as the stats popup: untested problems are black, hue runs from red through yellow to green by accuracy, and brightness/opacity increases with repeated attempts.
 - During boss/challenge play the header readout (normally the session Cleared count) shows live stage progress instead: Wave 1 solved count and current speed, Wave 2 solved count and current load, and the mothership's nodes cleared. A full boss clear opens a victory summary (congratulations, the three stage results, and a Next Level button), with the accuracy grid reachable from it. A parallax starfield and a mothership that looms closer each wave reinforce the sense of approaching the boss.
 - Touch devices use an on-screen keypad and compact controls.
+- Physical numpad entry is normalized so bumping NumLock does not break answer entry; numpad digits still enter numbers when the browser reports them as navigation keys.
 - Feedback opens a FormSubmit-backed feedback form.
 
 ## Non-Goals

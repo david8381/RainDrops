@@ -42,6 +42,8 @@ const {
   syncSettings,
 } = globalThis.RainMathProgress;
 
+const TEXT = globalThis.RainMathText || {};
+
 // ============================================================
 // 1. Constants and State
 // ============================================================
@@ -87,6 +89,43 @@ const WAVE_TWO_ROUND_GAP_MS = 700;
 const WAVE_TWO_MAX_LOAD = 25;
 const FACT_SHEET_CAP = 50;
 const MAX_VISIBLE_BOSS_NODES = 6;
+const WELCOME_SEEN_KEY = "rainMath.welcomeSeen.v1";
+const NUMPAD_INPUT_BY_CODE = {
+  Numpad0: "0",
+  Numpad1: "1",
+  Numpad2: "2",
+  Numpad3: "3",
+  Numpad4: "4",
+  Numpad5: "5",
+  Numpad6: "6",
+  Numpad7: "7",
+  Numpad8: "8",
+  Numpad9: "9",
+  NumpadDecimal: ".",
+  NumpadMultiply: "*",
+  NumpadDivide: "/",
+  NumpadSubtract: "-",
+  NumpadAdd: "+",
+};
+const LOCK_AND_MODIFIER_KEYS = new Set([
+  "Alt",
+  "AltGraph",
+  "CapsLock",
+  "ContextMenu",
+  "Control",
+  "Fn",
+  "FnLock",
+  "Hyper",
+  "Meta",
+  "NumLock",
+  "OS",
+  "ScrollLock",
+  "Shift",
+  "Super",
+  "Symbol",
+  "SymbolLock",
+]);
+const LOCK_KEY_CODES = new Set(["CapsLock", "NumLock", "ScrollLock"]);
 const BOSS_PART_DEFS = [
   { id: "shield", name: "Shields", kind: "shield", problemCount: 3, quartile: 0 },
   { id: "guns", name: "Guns", kind: "cannon", problemCount: 4, quartile: 1 },
@@ -122,6 +161,10 @@ let starfield = [];
 let lastBossVictory = null;
 let factorTargetId = null; // id of the targeted factor drop, or null
 let bossMode = null;
+let tutorialStepIndex = 0;
+let tutorialFromWelcome = false;
+
+const TUTORIAL_STEPS = Array.isArray(TEXT.tutorial?.steps) ? TEXT.tutorial.steps : [];
 
 // Problem stats: tracks every problem ever seen.
 // For add/sub/mul/div: keyed by "a,b" (for div: "quotient,divisor").
@@ -278,6 +321,102 @@ function syncProgressSettings({ persist = true } = {}) {
 // ============================================================
 // 2. Utility Functions
 // ============================================================
+
+function getSearchParams() {
+  return new URLSearchParams(window.location.search);
+}
+
+function isTestMode() {
+  return getSearchParams().has("test");
+}
+
+function storageGet(key) {
+  try {
+    return window.localStorage?.getItem(key) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function storageSet(key, value) {
+  try {
+    window.localStorage?.setItem(key, value);
+  } catch {
+    // LocalStorage can be unavailable in privacy modes; the menu still works.
+  }
+}
+
+function storageRemove(key) {
+  try {
+    window.localStorage?.removeItem(key);
+  } catch {
+    // Ignore unavailable localStorage.
+  }
+}
+
+function getText(path, fallback = path) {
+  const value = path.split(".").reduce((node, key) => (
+    node && Object.prototype.hasOwnProperty.call(node, key) ? node[key] : undefined
+  ), TEXT);
+  return typeof value === "string" ? value : fallback;
+}
+
+function formatText(template, values = {}) {
+  return String(template || "").replace(/\{([a-zA-Z0-9_]+)\}/g, (match, key) => (
+    Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : match
+  ));
+}
+
+function shouldShowWelcomeOnLoad() {
+  const params = getSearchParams();
+  if (params.has("welcome")) return true;
+  if (params.has("test")) return false;
+  return storageGet(WELCOME_SEEN_KEY) !== "1";
+}
+
+function markWelcomeSeen() {
+  storageSet(WELCOME_SEEN_KEY, "1");
+}
+
+function clearWelcomeSeenFlag() {
+  storageRemove(WELCOME_SEEN_KEY);
+}
+
+function isLockOrModifierKey(event) {
+  return LOCK_AND_MODIFIER_KEYS.has(event.key) || LOCK_KEY_CODES.has(event.code);
+}
+
+function isNumLockKey(event) {
+  return event.key === "NumLock" || event.code === "NumLock";
+}
+
+function refocusAnswerInputSoon() {
+  if (document.getElementById("welcomeOverlay") || document.getElementById("tutorialOverlay")) return;
+  setTimeout(() => {
+    if (!isPaused && !isBossStunned()) answerInput.focus();
+  }, 0);
+}
+
+function getKeyboardText(event) {
+  if (event.ctrlKey || event.metaKey || event.altKey) return "";
+  if (NUMPAD_INPUT_BY_CODE[event.code]) return NUMPAD_INPUT_BY_CODE[event.code];
+  return event.key && event.key.length === 1 ? event.key : "";
+}
+
+function getNumpadTextForLockedState(event) {
+  if (event.ctrlKey || event.metaKey || event.altKey) return "";
+  if (!NUMPAD_INPUT_BY_CODE[event.code]) return "";
+  return event.key && event.key.length === 1 ? "" : NUMPAD_INPUT_BY_CODE[event.code];
+}
+
+function appendTypedText(text) {
+  if (!text || isPaused || isBossStunned()) return;
+  answerInput.focus();
+  answerInput.value = currentInput + text;
+  currentInput = answerInput.value;
+  processInput(currentInput);
+  updateKpDisplay();
+}
 
 // ============================================================
 // 3. Practice Controls
@@ -3669,7 +3808,354 @@ function closeResultsPopup() {
 }
 
 // ============================================================
-// 13d. Login Popup
+// 13d. Welcome Menu and Tutorial
+// ============================================================
+
+function closeWelcomeMenu({ markSeen = false, focus = true } = {}) {
+  const existing = document.getElementById("welcomeOverlay");
+  if (existing) existing.remove();
+  if (markSeen) markWelcomeSeen();
+  if (focus) answerInput.focus();
+}
+
+function rebuildWelcomeMenu() {
+  const wasVisible = Boolean(document.getElementById("welcomeOverlay"));
+  if (wasVisible) buildWelcomeMenu({ firstVisit: false });
+}
+
+function selectWelcomeProfile(profileId) {
+  saveProfile(progressProfile);
+  const selected = switchStoredProfile(profileId);
+  activateProfile(selected);
+  rebuildWelcomeMenu();
+}
+
+function buildWelcomeProfileList() {
+  const wrap = document.createElement("div");
+  wrap.className = "welcome-profile-list";
+  const profiles = getProfileList();
+  profiles.forEach((profile) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "welcome-profile-btn";
+    btn.classList.toggle("active", profile.active);
+    btn.setAttribute("aria-pressed", profile.active ? "true" : "false");
+    btn.addEventListener("click", () => selectWelcomeProfile(profile.id));
+
+    const name = document.createElement("span");
+    name.className = "welcome-profile-name";
+    name.textContent = profile.name === "Local Player"
+      ? getText("welcome.localPlayer")
+      : profile.name;
+    const meta = document.createElement("span");
+    meta.className = "welcome-profile-meta";
+    meta.textContent = profile.active
+      ? getText("welcome.playingNow")
+      : formatProfileUpdatedAt(profile.updatedAt);
+
+    btn.appendChild(name);
+    btn.appendChild(meta);
+    wrap.appendChild(btn);
+  });
+  return wrap;
+}
+
+function buildWelcomeCreateForm() {
+  const form = document.createElement("form");
+  form.className = "welcome-create";
+  const input = document.createElement("input");
+  input.id = "welcomeProfileName";
+  input.type = "text";
+  input.maxLength = 40;
+  input.autocomplete = "off";
+  input.placeholder = getText("welcome.newPlayerPlaceholder");
+  const btn = document.createElement("button");
+  btn.type = "submit";
+  btn.textContent = getText("common.create");
+  const error = document.createElement("div");
+  error.className = "welcome-error";
+  error.setAttribute("role", "alert");
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const name = input.value.trim();
+    if (!name) {
+      error.textContent = getText("welcome.emptyNameError");
+      input.focus();
+      return;
+    }
+    saveProfile(progressProfile);
+    const created = createStoredProfile(name);
+    activateProfile(created);
+    buildWelcomeMenu({ firstVisit: false });
+  });
+
+  form.appendChild(input);
+  form.appendChild(btn);
+  form.appendChild(error);
+  return form;
+}
+
+function buildWelcomeMenu({ firstVisit = false } = {}) {
+  closeWelcomeMenu({ focus: false });
+  closeTutorialOverlay({ focus: false });
+  closeLoginPopup();
+  closeStatsPopup();
+  closeResultsPopup();
+
+  const overlay = document.createElement("div");
+  overlay.className = "overlay welcome-overlay";
+  overlay.id = "welcomeOverlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", getText("welcome.ariaLabel"));
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay && !firstVisit) closeWelcomeMenu();
+  });
+
+  const card = document.createElement("div");
+  card.className = "card welcome-card";
+
+  const hero = document.createElement("div");
+  hero.className = "welcome-hero";
+  const badge = document.createElement("div");
+  badge.className = "welcome-badge";
+  badge.textContent = "MR";
+  const copy = document.createElement("div");
+  const eyebrow = document.createElement("div");
+  eyebrow.className = "welcome-eyebrow";
+  eyebrow.textContent = firstVisit
+    ? getText("welcome.firstVisitEyebrow")
+    : getText("welcome.menuEyebrow");
+  const title = document.createElement("h1");
+  title.textContent = getText("welcome.title");
+  const sub = document.createElement("p");
+  sub.textContent = getText("welcome.subtitle");
+  copy.appendChild(eyebrow);
+  copy.appendChild(title);
+  copy.appendChild(sub);
+  hero.appendChild(badge);
+  hero.appendChild(copy);
+
+  const panels = document.createElement("div");
+  panels.className = "welcome-panels";
+
+  const playerPanel = document.createElement("section");
+  playerPanel.className = "welcome-panel";
+  const playerTitle = document.createElement("h2");
+  playerTitle.textContent = getText("welcome.playerTitle");
+  const playerSub = document.createElement("p");
+  playerSub.textContent = getText("welcome.playerSubtitle");
+  playerPanel.appendChild(playerTitle);
+  playerPanel.appendChild(playerSub);
+  playerPanel.appendChild(buildWelcomeProfileList());
+  playerPanel.appendChild(buildWelcomeCreateForm());
+
+  const actionPanel = document.createElement("section");
+  actionPanel.className = "welcome-panel welcome-action-panel";
+  const actionTitle = document.createElement("h2");
+  const playerName = getActiveProfileName() === "Local Player"
+    ? getText("welcome.localPlayer")
+    : getActiveProfileName();
+  actionTitle.textContent = formatText(getText("welcome.playAs"), { playerName });
+  const actionSub = document.createElement("p");
+  actionSub.textContent = getText("welcome.actionSubtitle");
+  const actions = document.createElement("div");
+  actions.className = "welcome-actions";
+
+  const playBtn = document.createElement("button");
+  playBtn.type = "button";
+  playBtn.className = "primary welcome-play";
+  playBtn.id = "welcomePlay";
+  playBtn.textContent = getText("common.play");
+  playBtn.addEventListener("click", () => {
+    closeWelcomeMenu({ markSeen: true });
+  });
+
+  const tutorialBtn = document.createElement("button");
+  tutorialBtn.type = "button";
+  tutorialBtn.className = "welcome-tutorial";
+  tutorialBtn.id = "welcomeTutorial";
+  tutorialBtn.textContent = getText("welcome.tutorial");
+  tutorialBtn.addEventListener("click", () => {
+    closeWelcomeMenu({ focus: false });
+    startTutorial({ fromWelcome: true });
+  });
+
+  const loginBtn = document.createElement("button");
+  loginBtn.type = "button";
+  loginBtn.className = "welcome-login";
+  loginBtn.textContent = getText("welcome.fullLoginMenu");
+  loginBtn.addEventListener("click", () => {
+    closeWelcomeMenu({ focus: false });
+    buildLoginPopup();
+  });
+
+  actions.appendChild(playBtn);
+  actions.appendChild(tutorialBtn);
+  actions.appendChild(loginBtn);
+  actionPanel.appendChild(actionTitle);
+  actionPanel.appendChild(actionSub);
+  actionPanel.appendChild(actions);
+
+  panels.appendChild(playerPanel);
+  panels.appendChild(actionPanel);
+  card.appendChild(hero);
+  card.appendChild(panels);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  playBtn.focus();
+}
+
+function closeTutorialOverlay({ markSeen = false, focus = true } = {}) {
+  const existing = document.getElementById("tutorialOverlay");
+  if (existing) existing.remove();
+  if (markSeen) markWelcomeSeen();
+  if (focus) answerInput.focus();
+}
+
+function getTutorialTargetRect(selector) {
+  if (!selector) return null;
+  const target = document.querySelector(selector);
+  if (!target) return null;
+  const rect = target.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  return rect;
+}
+
+function positionTutorialSpotlight(spotlight, rect) {
+  if (!rect) {
+    spotlight.hidden = true;
+    return;
+  }
+  const margin = 8;
+  spotlight.hidden = false;
+  spotlight.style.left = `${Math.max(8, rect.left - margin)}px`;
+  spotlight.style.top = `${Math.max(8, rect.top - margin)}px`;
+  spotlight.style.width = `${Math.min(window.innerWidth - 16, rect.width + margin * 2)}px`;
+  spotlight.style.height = `${Math.min(window.innerHeight - 16, rect.height + margin * 2)}px`;
+}
+
+function startTutorial({ fromWelcome = false } = {}) {
+  if (TUTORIAL_STEPS.length === 0) return;
+  closeWelcomeMenu({ focus: false });
+  closeTutorialOverlay({ focus: false });
+  tutorialStepIndex = 0;
+  tutorialFromWelcome = fromWelcome;
+  renderTutorialStep();
+}
+
+function renderTutorialStep({ fromWelcome = tutorialFromWelcome } = {}) {
+  tutorialFromWelcome = fromWelcome;
+  closeTutorialOverlay({ focus: false });
+  const step = TUTORIAL_STEPS[tutorialStepIndex] || TUTORIAL_STEPS[0];
+  const overlay = document.createElement("div");
+  overlay.className = "overlay tutorial-overlay";
+  overlay.id = "tutorialOverlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", getText("tutorial.ariaLabel"));
+
+  const spotlight = document.createElement("div");
+  spotlight.className = "tutorial-spotlight";
+  positionTutorialSpotlight(spotlight, getTutorialTargetRect(step.target));
+
+  const card = document.createElement("div");
+  card.className = "card tutorial-card";
+
+  const progress = document.createElement("div");
+  progress.className = "tutorial-progress";
+  TUTORIAL_STEPS.forEach((_, index) => {
+    const dot = document.createElement("span");
+    dot.className = "tutorial-dot";
+    dot.classList.toggle("active", index === tutorialStepIndex);
+    dot.setAttribute("aria-hidden", "true");
+    progress.appendChild(dot);
+  });
+
+  const kicker = document.createElement("div");
+  kicker.className = "tutorial-kicker";
+  kicker.textContent = formatText(getText("tutorial.progressLabel"), {
+    kicker: step.kicker,
+    current: tutorialStepIndex + 1,
+    total: TUTORIAL_STEPS.length,
+  });
+  const title = document.createElement("h2");
+  title.textContent = step.title;
+  const body = document.createElement("p");
+  body.textContent = step.body;
+  const tipText = String(step.tip || "").trim();
+
+  const actions = document.createElement("div");
+  actions.className = "tutorial-actions";
+
+  const skipBtn = document.createElement("button");
+  skipBtn.type = "button";
+  skipBtn.className = "tutorial-skip";
+  skipBtn.textContent = fromWelcome
+    ? getText("tutorial.skipToPlay")
+    : getText("common.close");
+  skipBtn.addEventListener("click", () => closeTutorialOverlay({ markSeen: true }));
+
+  const backBtn = document.createElement("button");
+  backBtn.type = "button";
+  backBtn.textContent = getText("common.back");
+  backBtn.disabled = tutorialStepIndex === 0;
+  backBtn.addEventListener("click", () => {
+    tutorialStepIndex = Math.max(0, tutorialStepIndex - 1);
+    renderTutorialStep({ fromWelcome });
+  });
+
+  const nextBtn = document.createElement("button");
+  nextBtn.type = "button";
+  nextBtn.className = "primary tutorial-next";
+  nextBtn.textContent = tutorialStepIndex === TUTORIAL_STEPS.length - 1
+    ? getText("common.play")
+    : getText("common.next");
+  nextBtn.addEventListener("click", () => {
+    if (tutorialStepIndex >= TUTORIAL_STEPS.length - 1) {
+      closeTutorialOverlay({ markSeen: true });
+      return;
+    }
+    tutorialStepIndex += 1;
+    renderTutorialStep({ fromWelcome });
+  });
+
+  actions.appendChild(skipBtn);
+  actions.appendChild(backBtn);
+  actions.appendChild(nextBtn);
+
+  card.appendChild(progress);
+  card.appendChild(kicker);
+  card.appendChild(title);
+  card.appendChild(body);
+  if (tipText) {
+    const tip = document.createElement("div");
+    tip.className = "tutorial-tip";
+    tip.textContent = tipText;
+    card.appendChild(tip);
+  }
+  card.appendChild(actions);
+  overlay.appendChild(spotlight);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  nextBtn.focus();
+}
+
+function showNextTutorialStep() {
+  if (!document.getElementById("tutorialOverlay")) return;
+  tutorialStepIndex = Math.min(TUTORIAL_STEPS.length - 1, tutorialStepIndex + 1);
+  renderTutorialStep();
+}
+
+function showPreviousTutorialStep() {
+  if (!document.getElementById("tutorialOverlay")) return;
+  tutorialStepIndex = Math.max(0, tutorialStepIndex - 1);
+  renderTutorialStep();
+}
+
+// ============================================================
+// 13e. Login Popup
 // ============================================================
 
 function getActiveProfileName() {
@@ -3693,6 +4179,14 @@ function updateLoginLink() {
   });
 }
 
+function updateStaticText() {
+  const menuText = getText("welcome.menuLink");
+  ["menuLink", "touchMenuLink"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = menuText;
+  });
+}
+
 function formatProfileUpdatedAt(value) {
   if (!value) return "No saved practice yet";
   const date = new Date(value);
@@ -3701,6 +4195,8 @@ function formatProfileUpdatedAt(value) {
 }
 
 function buildLoginPopup() {
+  closeWelcomeMenu({ focus: false });
+  closeTutorialOverlay({ focus: false });
   closeLoginPopup();
   closeStatsPopup();
   closeResultsPopup();
@@ -4114,6 +4610,18 @@ answerInput.addEventListener("input", (event) => {
 
 // Input keydown for Enter, Backspace, and space prevention
 answerInput.addEventListener("keydown", (event) => {
+  if (isLockOrModifierKey(event)) {
+    if (isNumLockKey(event)) refocusAnswerInputSoon();
+    return;
+  }
+
+  const lockedNumpadText = getNumpadTextForLockedState(event);
+  if (lockedNumpadText) {
+    event.preventDefault();
+    appendTypedText(lockedNumpadText);
+    return;
+  }
+
   if (event.key === " ") {
     event.preventDefault();
   }
@@ -4180,6 +4688,31 @@ document.addEventListener("keydown", (event) => {
     }
     return;
   }
+  if (document.getElementById("welcomeOverlay")) {
+    if (event.key === "Escape") {
+      closeWelcomeMenu({ markSeen: true });
+      event.preventDefault();
+    }
+    return;
+  }
+  if (document.getElementById("tutorialOverlay")) {
+    if (event.key === "Escape") {
+      closeTutorialOverlay({ markSeen: true });
+      event.preventDefault();
+    } else if (event.key === "ArrowRight") {
+      showNextTutorialStep();
+      event.preventDefault();
+    } else if (event.key === "ArrowLeft") {
+      showPreviousTutorialStep();
+      event.preventDefault();
+    }
+    return;
+  }
+
+  if (isLockOrModifierKey(event)) {
+    if (isNumLockKey(event)) refocusAnswerInputSoon();
+    return;
+  }
 
   initAudio();
 
@@ -4236,15 +4769,12 @@ document.addEventListener("keydown", (event) => {
     !isPaused &&
     !isBossStunned() &&
     document.activeElement !== answerInput &&
-    event.key.length === 1 &&
+    getKeyboardText(event) &&
     !event.ctrlKey &&
     !event.metaKey
   ) {
     event.preventDefault();
-    answerInput.focus();
-    answerInput.value = currentInput + event.key;
-    currentInput = answerInput.value;
-    processInput(currentInput);
+    appendTypedText(getKeyboardText(event));
   }
 });
 
@@ -4319,11 +4849,18 @@ canvas.addEventListener("click", (event) => {
 
 // Feedback popup
 const feedbackOverlay = document.getElementById("feedbackOverlay");
+const menuLink = document.getElementById("menuLink");
 const loginLink = document.getElementById("loginLink");
 const resultsLink = document.getElementById("resultsLink");
 const feedbackLink = document.getElementById("feedbackLink");
 const fbCancel = document.getElementById("fbCancel");
 
+if (menuLink) {
+  menuLink.addEventListener("click", (e) => {
+    e.preventDefault();
+    buildWelcomeMenu({ firstVisit: false });
+  });
+}
 if (loginLink) {
   loginLink.addEventListener("click", (e) => {
     e.preventDefault();
@@ -4406,8 +4943,15 @@ function setupTouchKeypad() {
   if (controlsBar && opChits) {
     const touchBrand = document.createElement("div");
     touchBrand.className = "touch-brand";
-    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score"><span id="touchScoreLabel">Cleared</span>: <span id="touchScore">0</span></div><a href="#" class="touch-login" id="touchLoginLink">Login</a><a href="#" class="touch-results" id="touchResultsLink">R</a><a href="#" class="touch-fb" id="touchFbLink">?</a>`;
+    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score"><span id="touchScoreLabel">Cleared</span>: <span id="touchScore">0</span></div><a href="#" class="touch-menu" id="touchMenuLink">${getText("welcome.menuLink")}</a><a href="#" class="touch-login" id="touchLoginLink">Login</a><a href="#" class="touch-results" id="touchResultsLink">R</a><a href="#" class="touch-fb" id="touchFbLink">?</a>`;
     controlsBar.insertBefore(touchBrand, opChits);
+    const touchMenuLink = document.getElementById("touchMenuLink");
+    if (touchMenuLink) {
+      touchMenuLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        buildWelcomeMenu({ firstVisit: false });
+      });
+    }
     const touchLoginLink = document.getElementById("touchLoginLink");
     if (touchLoginLink) {
       touchLoginLink.addEventListener("click", (e) => {
@@ -4656,6 +5200,9 @@ function getTestState() {
     isBreatherMode,
     factorTargetId,
     currentInput,
+    welcomeVisible: Boolean(document.getElementById("welcomeOverlay")),
+    tutorialVisible: Boolean(document.getElementById("tutorialOverlay")),
+    tutorialStepIndex,
   };
 }
 
@@ -4724,6 +5271,8 @@ function installTestHooks() {
       factorTargetId = null;
       answerInput.value = "";
       isPaused = false;
+      closeWelcomeMenu({ focus: false });
+      closeTutorialOverlay({ focus: false });
       setPracticeControls({ speed: 30, drops: 3 }, { persist: false });
       updateOpChits();
       updateDifficultyDisplays();
@@ -4734,6 +5283,18 @@ function installTestHooks() {
       updateBreatherHud();
       if (pauseBtn) pauseBtn.textContent = "Pause";
       drawDrops();
+      return getTestState();
+    },
+    showWelcome() {
+      buildWelcomeMenu({ firstVisit: true });
+      return getTestState();
+    },
+    clearWelcomeSeen() {
+      clearWelcomeSeenFlag();
+      return getTestState();
+    },
+    startTutorial() {
+      startTutorial();
       return getTestState();
     },
     enableOps(opKeys) {
@@ -4894,10 +5455,15 @@ function init() {
   }
 
   setupTouchKeypad();
+  updateStaticText();
   updateLoginLink();
   installTestHooks();
   window.__RAIN_MATH_READY__ = true;
-  answerInput.focus();
+  if (shouldShowWelcomeOnLoad()) {
+    buildWelcomeMenu({ firstVisit: true });
+  } else {
+    answerInput.focus();
+  }
   requestAnimationFrame(tick);
 }
 
