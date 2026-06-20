@@ -14,7 +14,7 @@ globalThis.RainMathText = {
     label: "Support",
     shortLabel: "Ko-fi",
     welcomeTitle: "Support Rain Math",
-    welcomeBody: "Optional: help fund new problem types, polish, and hosting.",
+    welcomeBody: "",
     welcomeLink: "Buy me a coffee on Ko-fi",
   },
   welcome: {
