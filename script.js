@@ -152,6 +152,7 @@ let currentInput = "";
 let gameTime = 0;
 let laser = null;
 let ambiguousTimer = null;
+let canvasDpr = 1;
 const AMBIGUOUS_DELAY_MS = 400;
 // Tracks `${opKey}:${level}` we have already offered a boss for, so the unlock
 // toast appears once per op/level rather than on every subsequent correct answer.
@@ -1773,8 +1774,28 @@ function getDropAccuracyVisual(drop) {
   };
 }
 
-function drawDrops() {
+function resetCanvasPaintState() {
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = "source-over";
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.setLineDash([]);
+}
+
+function clearCanvasFrame() {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = "source-over";
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
+  resetCanvasPaintState();
+}
+
+function drawDrops() {
+  clearCanvasFrame();
 
   drawStarfield();
 
@@ -1794,6 +1815,7 @@ function drawDrops() {
   const hasNumMatch = !Number.isNaN(inputNum);
 
   for (const drop of drops) {
+    ctx.save();
     const dropTop = drop.y - 26;
     const dropBottom = drop.y + 22;
     const dropRadius = 22;
@@ -1897,6 +1919,7 @@ function drawDrops() {
       ctx.strokeText(displayText, drop.x, drop.y + 2);
       ctx.fillText(displayText, drop.x, drop.y + 2);
     }
+    ctx.restore();
   }
 
   drawLaser();
@@ -2941,12 +2964,15 @@ function playWrongInput() {
 
 function resizeCanvas() {
   const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  canvasW = rect.width;
-  canvasH = rect.height;
+  canvasDpr = window.devicePixelRatio || 1;
+  const width = Math.max(1, Math.round(rect.width * canvasDpr));
+  const height = Math.max(1, Math.round(rect.height * canvasDpr));
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+  ctx.setTransform(canvasDpr, 0, 0, canvasDpr, 0, 0);
+  resetCanvasPaintState();
+  canvasW = Math.max(1, rect.width);
+  canvasH = Math.max(1, rect.height);
 }
 
 // ============================================================

@@ -3,4 +3,5 @@ node_modules/
 test-results/
 playwright-report/
 blob-report/
+issues/
 docs/Ai/DIALOGUE.md
