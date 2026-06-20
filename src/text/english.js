@@ -10,6 +10,13 @@ globalThis.RainMathText = {
     play: "Play",
     next: "Next",
   },
+  support: {
+    label: "Support",
+    shortLabel: "Ko-fi",
+    welcomeTitle: "Support Rain Math",
+    welcomeBody: "Optional: help fund new problem types, polish, and hosting.",
+    welcomeLink: "Buy me a coffee on Ko-fi",
+  },
   welcome: {
     menuLink: "Menu",
     firstVisitEyebrow: "First visit",

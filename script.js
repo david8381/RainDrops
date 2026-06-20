@@ -90,6 +90,7 @@ const WAVE_TWO_MAX_LOAD = 25;
 const FACT_SHEET_CAP = 50;
 const MAX_VISIBLE_BOSS_NODES = 6;
 const WELCOME_SEEN_KEY = "rainMath.welcomeSeen.v1";
+const SUPPORT_URL = "https://ko-fi.com/davidedaniels";
 const NUMPAD_INPUT_BY_CODE = {
   Numpad0: "0",
   Numpad1: "1",
@@ -3994,9 +3995,27 @@ function buildWelcomeMenu({ firstVisit = false } = {}) {
   actions.appendChild(playBtn);
   actions.appendChild(tutorialBtn);
   actions.appendChild(loginBtn);
+
+  const supportBox = document.createElement("div");
+  supportBox.className = "welcome-support";
+  const supportTitle = document.createElement("div");
+  supportTitle.className = "welcome-support-title";
+  supportTitle.textContent = getText("support.welcomeTitle");
+  const supportBody = document.createElement("p");
+  supportBody.textContent = getText("support.welcomeBody");
+  const supportAnchor = document.createElement("a");
+  supportAnchor.href = SUPPORT_URL;
+  supportAnchor.target = "_blank";
+  supportAnchor.rel = "noopener noreferrer";
+  supportAnchor.textContent = getText("support.welcomeLink");
+  supportBox.appendChild(supportTitle);
+  supportBox.appendChild(supportBody);
+  supportBox.appendChild(supportAnchor);
+
   actionPanel.appendChild(actionTitle);
   actionPanel.appendChild(actionSub);
   actionPanel.appendChild(actions);
+  actionPanel.appendChild(supportBox);
 
   panels.appendChild(playerPanel);
   panels.appendChild(actionPanel);
@@ -4185,6 +4204,12 @@ function updateStaticText() {
     const el = document.getElementById(id);
     if (el) el.textContent = menuText;
   });
+  const supportText = getText("support.label");
+  const supportShortText = getText("support.shortLabel");
+  const supportLink = document.getElementById("supportLink");
+  if (supportLink) supportLink.textContent = supportText;
+  const touchSupportLink = document.getElementById("touchSupportLink");
+  if (touchSupportLink) touchSupportLink.textContent = supportShortText;
 }
 
 function formatProfileUpdatedAt(value) {
@@ -4943,7 +4968,7 @@ function setupTouchKeypad() {
   if (controlsBar && opChits) {
     const touchBrand = document.createElement("div");
     touchBrand.className = "touch-brand";
-    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score"><span id="touchScoreLabel">Cleared</span>: <span id="touchScore">0</span></div><a href="#" class="touch-menu" id="touchMenuLink">${getText("welcome.menuLink")}</a><a href="#" class="touch-login" id="touchLoginLink">Login</a><a href="#" class="touch-results" id="touchResultsLink">R</a><a href="#" class="touch-fb" id="touchFbLink">?</a>`;
+    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score"><span id="touchScoreLabel">Cleared</span>: <span id="touchScore">0</span></div><a href="#" class="touch-menu" id="touchMenuLink">${getText("welcome.menuLink")}</a><a href="#" class="touch-login" id="touchLoginLink">Login</a><a href="#" class="touch-results" id="touchResultsLink">R</a><a href="${SUPPORT_URL}" class="touch-support" id="touchSupportLink" target="_blank" rel="noopener noreferrer">${getText("support.shortLabel")}</a><a href="#" class="touch-fb" id="touchFbLink">?</a>`;
     controlsBar.insertBefore(touchBrand, opChits);
     const touchMenuLink = document.getElementById("touchMenuLink");
     if (touchMenuLink) {

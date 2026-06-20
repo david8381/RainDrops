@@ -75,6 +75,8 @@ test("first visit menu creates a player, starts the tutorial, and enters play", 
   await expect(page.locator("#welcomeOverlay")).toBeVisible();
   await expect(page.locator(".welcome-card h1")).toHaveText("Rain Math");
   await expect(page.locator("#welcomePlay")).toBeVisible();
+  await expect(page.locator(".welcome-support a")).toHaveAttribute("href", "https://ko-fi.com/davidedaniels");
+  await expect(page.locator("#supportLink")).toHaveAttribute("href", "https://ko-fi.com/davidedaniels");
 
   await page.locator("#welcomeProfileName").fill("Grace Hopper");
   await page.locator(".welcome-create button").click();
@@ -84,7 +86,7 @@ test("first visit menu creates a player, starts the tutorial, and enters play", 
   await page.locator("#welcomeTutorial").click();
   await expect(page.locator("#tutorialOverlay")).toBeVisible();
   await expect(page.locator(".tutorial-kicker")).toContainText("1/8");
-  await expect(page.locator(".tutorial-card h2")).toContainText("Choose what kind of math");
+  await expect(page.locator(".tutorial-card h2")).toContainText("Choose problem types");
 
   await page.locator(".tutorial-next").click();
   await expect(page.locator(".tutorial-kicker")).toContainText("2/8");
@@ -946,6 +948,8 @@ test.describe("mobile gameplay", () => {
   test("opens results from the touch header", async ({ page }) => {
     await openApp(page);
 
+    await expect(page.locator("#touchSupportLink")).toBeVisible();
+    await expect(page.locator("#touchSupportLink")).toHaveAttribute("href", "https://ko-fi.com/davidedaniels");
     await expect(page.locator("#touchResultsLink")).toBeVisible();
     await page.locator("#touchResultsLink").click();
 

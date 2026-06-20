@@ -4,6 +4,7 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-20
+- Added a Ko-fi support link to the desktop header, compact mobile header, and welcome/menu panel, with support copy centralized in `src/text/english.js`.
 - Tutorial steps now omit the tip callout when `tip` is missing or blank in `src/text/english.js`, so manual copy edits do not leave empty boxes.
 
 ## 2026-06-19

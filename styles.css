@@ -1096,6 +1096,31 @@ button.primary:hover {
   background: transparent;
 }
 
+.welcome-support {
+  margin-top: auto;
+  padding-top: 18px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.welcome-support-title {
+  color: var(--text);
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.welcome-support a {
+  display: inline-flex;
+  margin-top: 10px;
+  color: var(--accent);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.welcome-support a:hover {
+  color: #f5c860;
+}
+
 .tutorial-overlay {
   place-items: end center;
   padding: 24px;
@@ -1896,7 +1921,8 @@ button.primary:hover {
 .touch-fb,
 .touch-menu,
 .touch-login,
-.touch-results {
+.touch-results,
+.touch-support {
   width: 22px;
   height: 22px;
   display: grid;
@@ -1912,7 +1938,8 @@ button.primary:hover {
 
 .touch-login,
 .touch-menu,
-.touch-results {
+.touch-results,
+.touch-support {
   border-radius: 6px;
   width: auto;
   padding: 0 6px;
@@ -1927,6 +1954,10 @@ button.primary:hover {
 
 .touch-menu {
   max-width: 52px;
+}
+
+.touch-support {
+  max-width: 58px;
 }
 
 /* Op chits scroll horizontally */
