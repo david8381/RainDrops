@@ -230,9 +230,16 @@ body {
 }
 
 .op-chit {
+  --course-progress: 10%;
   padding: 6px 14px;
   border-radius: 20px;
-  background: transparent;
+  background: linear-gradient(
+    90deg,
+    rgba(96, 180, 240, 0.26) 0%,
+    rgba(96, 180, 240, 0.26) var(--course-progress),
+    transparent var(--course-progress),
+    transparent 100%
+  );
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: var(--muted);
   font-size: 0.85rem;
@@ -246,7 +253,13 @@ body {
 }
 
 .op-chit.active {
-  background: var(--accent-2);
+  background: linear-gradient(
+    90deg,
+    rgba(251, 191, 36, 0.5) 0%,
+    rgba(251, 191, 36, 0.5) var(--course-progress),
+    var(--accent-2) var(--course-progress),
+    var(--accent-2) 100%
+  );
   color: #0a0e1a;
   border: 1px solid transparent;
   box-shadow: 0 1px 6px rgba(96, 180, 240, 0.3);

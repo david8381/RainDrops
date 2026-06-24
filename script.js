@@ -676,6 +676,7 @@ function setDifficulty(opKey, level, { force = false } = {}) {
   }
   opConfig[opKey].difficulty = nextLevel;
   syncProgressSettings();
+  updateOpChitProgress();
   updateDifficultyDisplays();
 }
 
@@ -3602,12 +3603,48 @@ function formatBossReplayText(skill) {
   return `Boss L${skill.blitzUnlockedLevel} ${formatDuration(best.durationMs)}`;
 }
 
+function getCourseProgressPercent(level) {
+  return clamp(0, 100, Math.round((clamp(1, 10, level) / 10) * 100));
+}
+
+function formatOpChitTip(opKey, baseTip) {
+  const level = opConfig[opKey]?.difficulty || 1;
+  const progress = getCourseProgressPercent(level);
+  const fallbackTitle = opDisplayNames[opKey] || opKey;
+  const lines = String(baseTip || fallbackTitle).split("\n");
+  const title = lines.shift() || fallbackTitle;
+  return [
+    title,
+    `Level ${level} of 10 · Course ${progress}%`,
+    ...lines,
+  ].join("\n");
+}
+
+function updateOpChitProgress() {
+  document.querySelectorAll(".op-chit").forEach((btn) => {
+    const opKey = btn.dataset.op;
+    if (!opKey || !opConfig[opKey]) return;
+    const baseTip = btn.dataset.baseTip || btn.dataset.tip || "";
+    if (!btn.dataset.baseTip) btn.dataset.baseTip = baseTip;
+    const level = opConfig[opKey].difficulty;
+    const progress = getCourseProgressPercent(level);
+    const tip = formatOpChitTip(opKey, baseTip);
+    btn.dataset.tip = tip;
+    btn.dataset.level = String(level);
+    btn.dataset.courseProgress = String(progress);
+    btn.style.setProperty("--course-progress", `${progress}%`);
+    btn.setAttribute("aria-label", `${tip.replace(/\s+/g, " ")}. ${opConfig[opKey].enabled ? "On" : "Off"}.`);
+    btn.setAttribute("aria-pressed", String(Boolean(opConfig[opKey].enabled)));
+  });
+}
+
 function updateOpChits() {
   document.querySelectorAll(".op-chit").forEach((btn) => {
     const opKey = btn.dataset.op;
     if (!opKey || !opConfig[opKey]) return;
     btn.classList.toggle("active", opConfig[opKey].enabled);
   });
+  updateOpChitProgress();
   buildDiffCards();
   buildKpDiffStrip();
   updateInputHint();

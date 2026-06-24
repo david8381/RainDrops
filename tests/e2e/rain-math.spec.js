@@ -64,6 +64,22 @@ test("loads directly from index.html and operation chits respond", async ({ page
   await expect(page.locator('.op-chit[data-op="add"]')).toHaveClass(/active/);
 });
 
+test("operation chits show current level and course progress", async ({ page }) => {
+  await openApp(page);
+  const addChit = page.locator('.op-chit[data-op="add"]');
+
+  await expect(addChit).toHaveAttribute("data-tip", /Level 1 of 10 · Course 10%/);
+  await expect(addChit).toHaveAttribute("data-course-progress", "10");
+
+  await invoke(page, "setOpDifficulty", "add", 5, { force: true });
+  await expect(addChit).toHaveAttribute("data-tip", /Level 5 of 10 · Course 50%/);
+  await expect(addChit).toHaveAttribute("data-level", "5");
+  await expect(addChit).toHaveAttribute("data-course-progress", "50");
+
+  const courseProgress = await addChit.evaluate((el) => getComputedStyle(el).getPropertyValue("--course-progress").trim());
+  expect(courseProgress).toBe("50%");
+});
+
 test("first visit menu creates a player, starts the tutorial, and enters play", async ({ page }) => {
   await page.route("https://fonts.googleapis.com/**", (route) => route.abort());
   await page.route("https://fonts.gstatic.com/**", (route) => route.abort());
