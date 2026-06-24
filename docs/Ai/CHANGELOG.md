@@ -4,6 +4,7 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-24
+- Raised boss unlocks to 100% current-level mastery and added finish-level focus practice once an operation reaches 80%, so remaining unmastered facts appear much more often near the end of a level.
 - Added current level text and a subtle course-progress fill to operation chits so the top-level problem selector communicates where each operation sits in the 10-level course.
 - Replaced the post-wave burst/explosion visual with a screen-wide top-to-bottom laser sweep so it reads as the player's super weapon clearing the wave.
 - Made the session report Donate prompt less prominent by moving it from a primary-looking action button into small footer text.
@@ -87,7 +88,7 @@ This file records meaningful project changes so future collaborators (including 
 - Tightened the falling-drop/stats-grid visual palette so color and opacity reflect learning evidence instead of showing unseen and lightly seen problems the same way.
 - Renamed the visible Boss readiness percentage to Mastered, added a real stats-grid hover tooltip, and hardened the visible Blitz button click path.
 - Excluded Boss, Blitz, and Wave problem answers/misses from ordinary mastery stats and the session Cleared counter.
-- Changed Mastered % to the percentage of current-level problems with at least 3 attempts and at least 90% current accuracy, and locked boss starts until that value reaches 80%.
+- Changed Mastered % to the percentage of current-level problems with at least 3 attempts and at least 90% current accuracy, and locked boss starts until that value reaches the configured boss threshold.
 - Added recent-weighted current accuracy so old misses fade over time while lifetime accuracy still contributes to mastery.
 - Increased practice weighting for unmastered, low-accuracy, and under-attempted problems so weak spots appear more often, using the profile's current-weighted mastery when available.
 - Added hover/tap title details to stats-grid cells and softened impossible typed input so it no longer penalizes every visible drop.

@@ -11,6 +11,7 @@ const {
   getDifficultyRange,
   getFactorRemainingText,
   getFullFactorization,
+  getSelectionWeight,
   getSIPrefixesForDifficulty,
   matchesFactorDrop,
   normalizeTypedValue,
@@ -19,10 +20,13 @@ const {
   recordProblemResult: recordProblemResultCore,
   resetProblemStats,
   lerp,
+  weightedPick,
 } = globalThis.RainMathCore;
 
 const {
+  BOSS_READY_SCORE,
   createStoredProfile,
+  getFinishLevelPracticeProblems,
   getPressureTier,
   getProfileList,
   getSkillUniverseProblems,
@@ -94,6 +98,7 @@ const WAVE_TWO_ROUND_GAP_MS = 700;
 const WAVE_TWO_MAX_LOAD = 25;
 const FACT_SHEET_CAP = 50;
 const MAX_VISIBLE_BOSS_NODES = 6;
+const FINISH_LEVEL_FOCUS_CHANCE = 0.85;
 const PLAYER_SHIP_IDLE_ANGLE = 0;
 const PLAYER_SHIP_NOSE_LENGTH = 31;
 const PLAYER_SHIP_FIRE_PULSE_MS = 190;
@@ -644,7 +649,7 @@ function showBossLocked(opKey) {
   const labels = document.querySelectorAll(`.diff-ready[data-op="${opKey}"], .kp-diff-ready[data-op="${opKey}"]`);
   labels.forEach((label) => {
     label.classList.add("needs-ready");
-    label.textContent = "Reach 80% mastery";
+    label.textContent = `Reach ${BOSS_READY_SCORE}% mastery`;
   });
   window.setTimeout(updateReadinessDisplays, 1400);
 }
@@ -689,7 +694,23 @@ function getProfileMasteryForGeneration(opKey, statsKey) {
   return problem ? getProgressProblemMastery(problem) / 100 : null;
 }
 
+function generateFinishLevelProblem(opKey) {
+  const skill = progressProfile.skills?.[opKey];
+  const candidates = getFinishLevelPracticeProblems(skill);
+  if (candidates.length === 0 || Math.random() > FINISH_LEVEL_FOCUS_CHANCE) return null;
+  const picked = weightedPick(
+    candidates.map((problem) => ({
+      value: problem,
+      weight: getSelectionWeight((problem.mastery || 0) / 100),
+    })),
+    Math.random
+  );
+  return makeProblemFromUniverseEntry(opKey, picked);
+}
+
 function generateWeightedProblem(opKey) {
+  const finishProblem = generateFinishLevelProblem(opKey);
+  if (finishProblem) return finishProblem;
   return generateCoreWeightedProblem(opKey, opConfig, problemStats, Math.random, getProfileMasteryForGeneration);
 }
 
@@ -3579,7 +3600,7 @@ function showBossVictoryPopup(info) {
 
 function getBossButtonTitle(skill) {
   if (skill?.bossReady) return "Start boss mode";
-  return "Boss unlocks when 80% of current-level problems have at least 3 attempts and 90% current accuracy.";
+  return `Boss unlocks when ${BOSS_READY_SCORE}% of current-level problems have at least 3 attempts and 90% current accuracy.`;
 }
 
 function formatBlitzText(skill) {
@@ -4216,7 +4237,7 @@ function buildResultsPopup() {
 
   const sub = document.createElement("p");
   sub.className = "results-sub";
-  sub.textContent = "Mastered % is the share of current-level problems with at least 3 attempts and at least 90% current accuracy. Boss unlocks at 80%.";
+  sub.textContent = `Mastered % is the share of current-level problems with at least 3 attempts and at least 90% current accuracy. Boss unlocks at ${BOSS_READY_SCORE}%.`;
   card.appendChild(sub);
 
   const list = document.createElement("div");

@@ -5,6 +5,7 @@ import "../../src/game-core.js";
 import "../../src/player-progress.js";
 
 const {
+  BOSS_READY_SCORE,
   PROFILE_STORE_KEY,
   STORAGE_KEY,
   computeSkillReadiness,
@@ -26,6 +27,7 @@ const {
   recordChallengeAttempt,
   getChallengeBest,
   getChallengeBests,
+  getFinishLevelPracticeProblems,
   recordProgressEvent,
   recordSessionChallenge,
   recordSessionEvent,
@@ -626,7 +628,7 @@ describe("player progress profile", () => {
     assert.equal(summarizeProfile(profile).skills.add.bossReady, true);
   });
 
-  it("unlocks boss readiness when 80 percent of the current level universe is mastered", () => {
+  it("focuses remaining practice at 80 percent but unlocks boss only at 100 percent", () => {
     const profile = createDefaultProfile();
     syncSettings(profile, { difficulties: { add: 3 } });
     let mastered = 0;
@@ -650,9 +652,21 @@ describe("player progress profile", () => {
 
     const summary = computeSkillReadiness(profile.skills.add);
 
+    assert.equal(BOSS_READY_SCORE, 100);
     assert.equal(summary.masteredCount, 39);
     assert.equal(summary.readiness, 80);
-    assert.equal(summary.bossReady, true);
+    assert.equal(summary.bossReady, false);
+
+    const finishProblems = getFinishLevelPracticeProblems(profile.skills.add);
+    assert.equal(finishProblems.length, 10);
+    assert.deepEqual(finishProblems[0], {
+      statsKey: "6,5",
+      text: "6 + 5",
+      attempts: 0,
+      mastery: 0,
+      currentAccuracy: 0,
+      kind: "new",
+    });
   });
 
   it("mirrors durable profile stats into legacy problemStats", () => {

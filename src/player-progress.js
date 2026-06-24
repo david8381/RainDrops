@@ -6,7 +6,8 @@ const PROFILE_STORE_VERSION = 1;
 const RECENT_LIMIT = 20;
 const SESSION_LOG_LIMIT = 50;
 const SESSION_RESPONSE_MS_CAP = 60000;
-const BOSS_READY_SCORE = 80;
+const BOSS_READY_SCORE = 100;
+const FINISH_LEVEL_FOCUS_SCORE = 80;
 const DEFAULT_START_LEVEL = 1;
 const LEGACY_START_LEVEL = 3;
 const MIGRATED_USER_ID = "david";
@@ -1499,6 +1500,27 @@ function getPracticeSuggestions(skill, limit = 4) {
   return suggestions;
 }
 
+function getFinishLevelPracticeProblems(skill) {
+  if (!skill) return [];
+  const summary = computeSkillReadiness(skill);
+  if (summary.readiness < FINISH_LEVEL_FOCUS_SCORE || summary.readiness >= BOSS_READY_SCORE) {
+    return [];
+  }
+  return getSkillUniverseProblems(skill.opKey, skill.currentLevel)
+    .map((problem) => {
+      const stored = skill.problems[problem.statsKey];
+      return {
+        ...problem,
+        attempts: stored?.attempts || 0,
+        mastery: stored ? problemMastery(stored) : 0,
+        currentAccuracy: stored ? problemCurrentAccuracy(stored) : 0,
+        kind: stored ? "review" : "new",
+      };
+    })
+    .filter((problem) => !isBossMasteredProblem(skill.problems[problem.statsKey]))
+    .sort((a, b) => a.mastery - b.mastery || b.attempts - a.attempts || a.statsKey.localeCompare(b.statsKey));
+}
+
 function getSessionDurationMs(session) {
   const start = new Date(session.startedAt).getTime();
   const end = new Date(session.endedAt || session.lastSeenAt || session.startedAt).getTime();
@@ -1692,6 +1714,7 @@ globalThis.RainMathProgress = {
   PROFILE_STORE_KEY,
   PROFILE_STORE_VERSION,
   DEFAULT_START_LEVEL,
+  FINISH_LEVEL_FOCUS_SCORE,
   PROBLEM_MASTERY_THRESHOLD,
   PRESSURE_TIERS,
   RECENT_LIMIT,
@@ -1717,6 +1740,7 @@ globalThis.RainMathProgress = {
   getSpeedTier,
   getSkillUniverseSize,
   getSkillUniverseProblems,
+  getFinishLevelPracticeProblems,
   getPracticeSuggestions,
   getUnseenProblems,
   getWeakProblems,
