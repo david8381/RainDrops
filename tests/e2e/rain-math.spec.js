@@ -425,7 +425,8 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#sessionReportOverlay")).toContainText("Correct/missed: 3/0");
     await expect(page.locator("#sessionReportOverlay")).toContainText("Mastery by level: L1 0% -> 11%");
     await expect(page.locator("#sessionReportOverlay")).toContainText("0/9 -> 1/9 mastered");
-    await expect(page.locator("#sessionReportOverlay .session-report-donate")).toHaveText("Donate");
+    await expect(page.locator("#sessionReportOverlay .session-report-donate-note")).toContainText("Enjoying and benefiting? Please consider donating.");
+    await expect(page.locator("#sessionReportOverlay .session-report-donate")).toHaveText("donating");
   });
 
   test("stats grid hover text shows problem attempts and mastery state", async ({ page }) => {
@@ -666,7 +667,7 @@ test.describe("desktop gameplay", () => {
     }
     expect(state.bossMode.phase).toBe("challengeComplete");
     expect(state.bossMode.transitionAction).toBe("wave");
-    await expect(page.locator("#bossHudStatus")).toContainText("Nuclear burst");
+    await expect(page.locator("#bossHudStatus")).toContainText("Super weapon");
 
     state = await invoke(page, "advanceBossTime", 1900);
     expect(state.bossMode.phase).toBe("challenge");
@@ -692,7 +693,7 @@ test.describe("desktop gameplay", () => {
     }
     expect(state.bossMode.phase).toBe("challengeComplete");
     expect(state.bossMode.transitionAction).toBe("boss");
-    await expect(page.locator("#bossHudStatus")).toContainText("mothership is exposed");
+    await expect(page.locator("#bossHudStatus")).toContainText("Super weapon clears the path");
 
     state = await invoke(page, "advanceBossTime", 1900);
     expect(state.bossMode.phase).toBe("boss");

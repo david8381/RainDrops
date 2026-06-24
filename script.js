@@ -1482,10 +1482,10 @@ function completeChallengeFailure() {
   bossMode.transitionMs = CHALLENGE_TRANSITION_MS;
   drops = [];
   if (bossMode.mode === "full" && type === "blitz") {
-    bossMode.message = "Shields are down. Backup power online. Nuclear burst clearing the sky.";
+    bossMode.message = "Shields are down. Super weapon sweeping the sky.";
     bossMode.transitionAction = "wave";
   } else if (bossMode.mode === "full" && type === "wave") {
-    bossMode.message = "Backup shields are down. Target lock acquired. The mothership is exposed.";
+    bossMode.message = "Backup shields are down. Super weapon clears the path.";
     bossMode.transitionAction = "boss";
   } else {
     bossMode.message = type === "wave"
@@ -2297,16 +2297,78 @@ function drawBossShip() {
 
 function drawChallengeBurst() {
   if (!bossMode?.active || !bossMode.burstMs) return;
-  const progress = clamp(0, 1, 1 - bossMode.burstMs / CHALLENGE_TRANSITION_MS);
-  const alpha = Math.max(0, 1 - progress);
-  const radius = Math.max(canvasW, canvasH) * (0.16 + progress * 0.9);
+  const rawProgress = clamp(0, 1, 1 - bossMode.burstMs / CHALLENGE_TRANSITION_MS);
+  const progress = smoothProgress(rawProgress);
+  const fadeIn = clamp(0, 1, rawProgress / 0.12);
+  const fadeOut = clamp(0, 1, (1 - rawProgress) / 0.2);
+  const alpha = Math.min(fadeIn, fadeOut);
+  const beamY = lerp(-70, canvasH + 90, progress);
+  const beamHeight = clamp(42, 78, canvasH * 0.09);
+  const beamCore = clamp(10, 18, canvasH * 0.02);
+  const glowTop = beamY - beamHeight * 2.4;
+  const glowBottom = beamY + beamHeight * 1.8;
+  const shimmer = Math.sin(gameTime / 58) * 0.5 + 0.5;
+
   ctx.save();
+  ctx.globalCompositeOperation = "lighter";
   ctx.globalAlpha = alpha;
-  const gradient = ctx.createRadialGradient(canvasW / 2, canvasH * 0.58, 10, canvasW / 2, canvasH * 0.58, radius);
-  gradient.addColorStop(0, "rgba(255, 255, 255, 0.9)");
-  gradient.addColorStop(0.35, "rgba(91, 217, 255, 0.36)");
-  gradient.addColorStop(1, "rgba(251, 191, 36, 0)");
-  ctx.fillStyle = gradient;
+
+  const wash = ctx.createLinearGradient(0, glowTop, 0, glowBottom);
+  wash.addColorStop(0, "rgba(14, 165, 233, 0)");
+  wash.addColorStop(0.24, "rgba(14, 165, 233, 0.16)");
+  wash.addColorStop(0.5, "rgba(240, 249, 255, 0.42)");
+  wash.addColorStop(0.68, "rgba(251, 191, 36, 0.22)");
+  wash.addColorStop(1, "rgba(251, 191, 36, 0)");
+  ctx.fillStyle = wash;
+  ctx.fillRect(0, glowTop, canvasW, glowBottom - glowTop);
+
+  const beam = ctx.createLinearGradient(0, beamY - beamHeight / 2, 0, beamY + beamHeight / 2);
+  beam.addColorStop(0, "rgba(56, 189, 248, 0)");
+  beam.addColorStop(0.32, "rgba(125, 211, 252, 0.42)");
+  beam.addColorStop(0.47, "rgba(255, 255, 255, 0.95)");
+  beam.addColorStop(0.54, "rgba(255, 255, 255, 0.98)");
+  beam.addColorStop(0.7, "rgba(253, 224, 71, 0.42)");
+  beam.addColorStop(1, "rgba(253, 224, 71, 0)");
+  ctx.fillStyle = beam;
+  ctx.fillRect(0, beamY - beamHeight / 2, canvasW, beamHeight);
+
+  ctx.shadowColor = "rgba(125, 211, 252, 0.92)";
+  ctx.shadowBlur = 28 + shimmer * 18;
+  ctx.fillStyle = "rgba(255, 255, 255, 0.94)";
+  ctx.fillRect(0, beamY - beamCore / 2, canvasW, beamCore);
+
+  ctx.shadowColor = "rgba(251, 191, 36, 0.72)";
+  ctx.shadowBlur = 18;
+  ctx.fillStyle = "rgba(251, 191, 36, 0.76)";
+  ctx.fillRect(0, beamY + beamCore * 0.78, canvasW, 3);
+
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = alpha * 0.44;
+  ctx.strokeStyle = "rgba(186, 230, 253, 0.72)";
+  ctx.lineWidth = 1;
+  for (let x = 18; x < canvasW; x += 48) {
+    const offset = Math.sin((gameTime + x * 7) / 140) * 8;
+    ctx.beginPath();
+    ctx.moveTo(x + offset, Math.max(0, beamY - beamHeight * 2.2));
+    ctx.lineTo(x - offset * 0.35, Math.min(canvasH, beamY - beamHeight * 0.22));
+    ctx.stroke();
+  }
+
+  ctx.globalAlpha = alpha * 0.9;
+  for (let i = 0; i < 18; i += 1) {
+    const x = ((i * 83 + gameTime * 0.08) % (canvasW + 80)) - 40;
+    const y = beamY + Math.sin((gameTime + i * 37) / 90) * beamHeight * 0.42;
+    const len = 10 + (i % 5) * 4;
+    ctx.strokeStyle = i % 3 === 0 ? "rgba(254, 240, 138, 0.9)" : "rgba(125, 211, 252, 0.84)";
+    ctx.lineWidth = i % 3 === 0 ? 2 : 1.2;
+    ctx.beginPath();
+    ctx.moveTo(x - len, y - 4);
+    ctx.lineTo(x + len, y + 4);
+    ctx.stroke();
+  }
+
+  ctx.globalAlpha = alpha * 0.16;
+  ctx.fillStyle = "rgba(240, 249, 255, 1)";
   ctx.fillRect(0, 0, canvasW, canvasH);
   ctx.restore();
 }
@@ -4449,12 +4511,6 @@ function buildSessionReportPopup(sessionId) {
 
   const actions = document.createElement("div");
   actions.className = "session-report-actions";
-  const donate = document.createElement("a");
-  donate.className = "session-report-donate";
-  donate.href = SUPPORT_URL;
-  donate.target = "_blank";
-  donate.rel = "noopener noreferrer";
-  donate.textContent = "Donate";
   const backBtn = document.createElement("button");
   backBtn.type = "button";
   backBtn.className = "session-report-back";
@@ -4468,10 +4524,22 @@ function buildSessionReportPopup(sessionId) {
   closeBtn.className = "primary";
   closeBtn.textContent = "Close";
   closeBtn.addEventListener("click", closeSessionReportPopup);
-  actions.appendChild(donate);
   actions.appendChild(backBtn);
   actions.appendChild(closeBtn);
   card.appendChild(actions);
+
+  const donateNote = document.createElement("p");
+  donateNote.className = "session-report-donate-note";
+  donateNote.append("Enjoying and benefiting? Please consider ");
+  const donate = document.createElement("a");
+  donate.className = "session-report-donate";
+  donate.href = SUPPORT_URL;
+  donate.target = "_blank";
+  donate.rel = "noopener noreferrer";
+  donate.textContent = "donating";
+  donateNote.appendChild(donate);
+  donateNote.append(".");
+  card.appendChild(donateNote);
 
   overlay.appendChild(card);
   document.body.appendChild(overlay);

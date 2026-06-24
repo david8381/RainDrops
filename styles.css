@@ -1707,16 +1707,17 @@ button.primary:hover {
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
+.session-report-donate-note {
+  margin: 2px 0 0;
+  color: rgba(148, 163, 184, 0.78);
+  font-size: 0.68rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
 .session-report-donate {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  padding: 7px 12px;
-  color: #1a1206;
-  background: linear-gradient(180deg, #fbbf24, #f59e0b);
-  font-weight: 700;
-  font-size: 0.82rem;
+  color: rgba(251, 191, 36, 0.88);
+  font-weight: 600;
   text-decoration: none;
 }
 
@@ -1726,8 +1727,8 @@ button.primary:hover {
 }
 
 .session-report-donate:hover {
-  color: #1a1206;
-  filter: brightness(1.05);
+  color: #fbbf24;
+  text-decoration: underline;
 }
 
 /* ── Login popup ── */
@@ -2067,10 +2068,6 @@ button.primary:hover {
   }
 
   .session-report-actions button {
-    width: 100%;
-  }
-
-  .session-report-donate {
     width: 100%;
   }
 

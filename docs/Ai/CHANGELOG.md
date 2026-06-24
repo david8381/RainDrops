@@ -4,6 +4,8 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-24
+- Replaced the post-wave burst/explosion visual with a screen-wide top-to-bottom laser sweep so it reads as the player's super weapon clearing the wave.
+- Made the session report Donate prompt less prominent by moving it from a primary-looking action button into small footer text.
 - Smoothed boss Wave 1 pressure by removing double-applied bomb speed and easing the speed ramp before it reaches the unreadable zone.
 - Changed final-boss missiles into slower moving copies of remaining mothership nodes; solving a missile clears that node, so the final boss still measures the current-level fact sheet rather than adding extra generated problems.
 - Made boss-ready prompts modal with Boss / No boss choices, and paused gameplay under modal overlays so boss victory summaries and reports cannot cause background misses.
