@@ -35,9 +35,14 @@ const {
   recordBossAttempt,
   recordChallengeAttempt,
   recordProgressEvent,
+  recordSessionChallenge,
+  recordSessionEvent,
+  recordSessionHeartbeat,
+  recordSessionStart,
   resetStoredProfile,
   saveProfile,
   summarizeProfile,
+  summarizeSessionLog,
   switchStoredProfile,
   syncSettings,
 } = globalThis.RainMathProgress;
@@ -89,6 +94,12 @@ const WAVE_TWO_ROUND_GAP_MS = 700;
 const WAVE_TWO_MAX_LOAD = 25;
 const FACT_SHEET_CAP = 50;
 const MAX_VISIBLE_BOSS_NODES = 6;
+const PLAYER_SHIP_IDLE_ANGLE = 0;
+const PLAYER_SHIP_NOSE_LENGTH = 31;
+const PLAYER_SHIP_FIRE_PULSE_MS = 190;
+const PLAYER_SHIP_RECOIL_MS = 150;
+const PLAYER_SHIP_TURN_MS = 90;
+const PLAYER_SHIP_RETURN_MS = 280;
 const WELCOME_SEEN_KEY = "rainMath.welcomeSeen.v1";
 const SUPPORT_URL = "https://ko-fi.com/davidedaniels";
 const NUMPAD_INPUT_BY_CODE = {
@@ -151,6 +162,13 @@ let groundFlash = 0;
 let currentInput = "";
 let gameTime = 0;
 let laser = null;
+const playerShip = {
+  angle: PLAYER_SHIP_IDLE_ANGLE,
+  targetAngle: PLAYER_SHIP_IDLE_ANGLE,
+  firePulseMs: 0,
+  recoilMs: 0,
+  lastTarget: null,
+};
 let ambiguousTimer = null;
 let canvasDpr = 1;
 const AMBIGUOUS_DELAY_MS = 400;
@@ -165,6 +183,7 @@ let factorTargetId = null; // id of the targeted factor drop, or null
 let bossMode = null;
 let tutorialStepIndex = 0;
 let tutorialFromWelcome = false;
+let activeSessionId = null;
 
 const TUTORIAL_STEPS = Array.isArray(TEXT.tutorial?.steps) ? TEXT.tutorial.steps : [];
 
@@ -174,6 +193,47 @@ const TUTORIAL_STEPS = Array.isArray(TEXT.tutorial?.steps) ? TEXT.tutorial.steps
 // Each entry: { asked: number, correct: number }
 const problemStats = createProblemStats();
 let progressProfile = readProfile();
+
+function createSessionId() {
+  const random = Math.random().toString(36).slice(2, 8);
+  return `session-${Date.now()}-${random}`;
+}
+
+function startVisitSession({ persist = true } = {}) {
+  activeSessionId = createSessionId();
+  progressProfile = recordSessionStart(progressProfile, {
+    id: activeSessionId,
+    speed: gameSpeed,
+    rate: dropLimit,
+    userAgent: navigator.userAgent || "",
+  });
+  if (persist) saveProfile(progressProfile);
+}
+
+function recordActiveSessionOutcome(drop, outcome) {
+  if (!activeSessionId || !drop?.opKey) return false;
+  progressProfile = recordSessionEvent(progressProfile, activeSessionId, {
+    outcome,
+    opKey: drop.opKey,
+    statsKey: drop.statsKey || drop.text,
+    text: drop.text,
+    assessment: isBossActive() || isAssessmentTarget(drop),
+    responseMs: getDropResponseMs(drop),
+  });
+  return true;
+}
+
+function recordActiveSessionChallenge(event = {}) {
+  if (!activeSessionId) return false;
+  progressProfile = recordSessionChallenge(progressProfile, activeSessionId, event);
+  return true;
+}
+
+function heartbeatActiveSession({ persist = false } = {}) {
+  if (!activeSessionId) return;
+  progressProfile = recordSessionHeartbeat(progressProfile, activeSessionId);
+  if (persist) saveProfile(progressProfile);
+}
 
 function applyProfileSettingsToControls() {
   const settings = progressProfile.settings || {};
@@ -195,6 +255,14 @@ function applyProfileSettingsToControls() {
 applyProfileSettingsToControls();
 mirrorLegacyProblemStats(progressProfile, problemStats);
 
+function resetPlayerShipVisuals() {
+  playerShip.angle = PLAYER_SHIP_IDLE_ANGLE;
+  playerShip.targetAngle = PLAYER_SHIP_IDLE_ANGLE;
+  playerShip.firePulseMs = 0;
+  playerShip.recoilMs = 0;
+  playerShip.lastTarget = null;
+}
+
 function resetRunState({ resume = true, focus = true } = {}) {
   clearAmbiguousTimer();
   bossMode = null;
@@ -203,6 +271,7 @@ function resetRunState({ resume = true, focus = true } = {}) {
   drops = [];
   splashes = [];
   laser = null;
+  resetPlayerShipVisuals();
   score = 0;
   spawnTimer = 0;
   lastTime = 0;
@@ -225,6 +294,7 @@ function activateProfile(nextProfile, { resetRun = true } = {}) {
   bossOfferShown.clear();
   closeBossOffer();
   applyProfileSettingsToControls();
+  startVisitSession();
   resetProblemStats(problemStats);
   mirrorLegacyProblemStats(progressProfile, problemStats);
   if (resetRun) resetRunState({ focus: false });
@@ -241,6 +311,10 @@ function recordProblemResult(drop, correct) {
   recordProblemResultCore(problemStats, drop, correct);
 }
 
+function isAssessmentTarget(drop) {
+  return Boolean(drop?.bossKind || drop?.targetType === "bossProblem");
+}
+
 function getDropResponseMs(drop) {
   if (!drop || !Number.isFinite(drop.createdAtMs)) return null;
   return Math.max(0, performance.now() - drop.createdAtMs);
@@ -248,7 +322,11 @@ function getDropResponseMs(drop) {
 
 function recordLearningResult(drop, outcome) {
   if (!drop || !drop.opKey) return;
-  if (isBossActive()) return;
+  if (isBossActive() || isAssessmentTarget(drop)) {
+    const sessionChanged = recordActiveSessionOutcome(drop, outcome);
+    if (sessionChanged) saveProfile(progressProfile);
+    return;
+  }
   recordProblemResult(drop, outcome === "correct");
   progressProfile = recordProgressEvent(progressProfile, {
     opKey: drop.opKey,
@@ -260,6 +338,7 @@ function recordLearningResult(drop, outcome) {
     speedPercent: getActivePressure().speed,
     spawnRate: getActivePressure().rate,
   });
+  recordActiveSessionOutcome(drop, outcome);
   saveProfile(progressProfile);
   updateReadinessDisplays();
   maybeOfferBoss(drop.opKey);
@@ -473,10 +552,7 @@ function getSpeedMultiplier() {
 }
 
 function getBossSpeedMultiplier() {
-  if (bossMode?.phase === "challenge") {
-    return getBlitzBombSpeedMultiplier();
-  }
-  return getActivePressure().bossSpeedMultiplier;
+  return 1;
 }
 
 function getSpawnInterval() {
@@ -931,6 +1007,7 @@ function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficul
   drops = [];
   splashes = [];
   laser = null;
+  resetPlayerShipVisuals();
   factorTargetId = null;
   currentInput = "";
   answerInput.value = "";
@@ -984,6 +1061,13 @@ function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficul
     lastHudMessage: null,
     bossStartedAtMs: 0,
   };
+  recordActiveSessionChallenge({
+    action: "start",
+    type: mode,
+    opKey,
+    level,
+  });
+  saveProfile(progressProfile);
   updateBossPartLocks();
   updateScoreDisplay();
   updateKpDisplay();
@@ -1144,6 +1228,15 @@ function getBlitzProgress() {
   return clamp(0, 1, (bossMode.challengeElapsedMs || bossMode.blitzElapsedMs || 0) / BLITZ_RAMP_MS);
 }
 
+function smoothProgress(value) {
+  const t = clamp(0, 1, value);
+  return t * t * (3 - 2 * t);
+}
+
+function getBlitzRampProgress() {
+  return smoothProgress(getBlitzProgress());
+}
+
 function getBlitzScore() {
   // Both Wave 1 and Wave 2 score on the number of problems solved.
   return Math.min(999, bossMode?.blitzClearedCount || 0);
@@ -1153,7 +1246,7 @@ function getBlitzSpeedPercent() {
   if (bossMode?.challengeType === "wave") {
     return clamp(25, 65, Math.round(Number.isFinite(bossMode.waveTwoSpeedPercent) ? bossMode.waveTwoSpeedPercent : WAVE_TWO_BASE_SPEED));
   }
-  return Math.round(lerp(BLITZ_START_SPEED, 100, getBlitzProgress()));
+  return Math.round(lerp(BLITZ_START_SPEED, 85, getBlitzRampProgress()));
 }
 
 function getBlitzDropLimit() {
@@ -1161,13 +1254,6 @@ function getBlitzDropLimit() {
     return clamp(1, WAVE_TWO_MAX_LOAD, Math.max(1, bossMode.challengeLoad || 1));
   }
   return BLITZ_START_DROPS;
-}
-
-function getBlitzBombSpeedMultiplier() {
-  if (bossMode?.challengeType === "wave") {
-    return lerp(0.78, 1.05, getBlitzSpeedPercent() / 100);
-  }
-  return lerp(0.65, 1.75, getBlitzProgress());
 }
 
 function getBlitzShieldRatio() {
@@ -1261,13 +1347,13 @@ function updateBossDebris(dt) {
 function getBossBombFallSeconds() {
   if (bossMode?.phase === "challenge") {
     if (bossMode.challengeType === "wave") {
-      return lerp(5.0, 3.4, getBlitzSpeedPercent() / 100);
+      return lerp(5.4, 3.8, getBlitzSpeedPercent() / 100);
     }
-    return lerp(4.6, 1.25, getBlitzProgress());
+    return lerp(5.4, 2.2, getBlitzRampProgress());
   }
-  if (!bossMode?.parts) return 3.4;
+  if (!bossMode?.parts) return 4.8;
   const wingsAlive = bossMode.parts.some((part) => part.id === "wings" && !part.destroyed);
-  return wingsAlive ? 2.8 : 4.2;
+  return wingsAlive ? 4.8 : 6.0;
 }
 
 function getBossBombIntervalMs() {
@@ -1275,14 +1361,41 @@ function getBossBombIntervalMs() {
     if (bossMode.challengeType === "wave") {
       return Math.max(360, 1150 - (getBlitzDropLimit() - 1) * 90);
     }
-    return Math.round(lerp(2100, 430, getBlitzProgress()));
+    return Math.round(lerp(2200, 700, getBlitzRampProgress()));
   }
   if (!bossMode?.parts) return 2200;
   const gunsAlive = bossMode.parts.some((part) => part.id === "guns" && !part.destroyed);
   const wingsAlive = bossMode.parts.some((part) => part.id === "wings" && !part.destroyed);
   if (!gunsAlive) return Infinity;
-  const base = Math.max(1300, 2600 - (wingsAlive ? 350 : 0));
-  return Math.max(900, Math.round(base * getActivePressure().bombIntervalMultiplier));
+  const base = Math.max(2200, 3600 - (wingsAlive ? 450 : 0));
+  return Math.max(1800, Math.round(base * getActivePressure().bombIntervalMultiplier));
+}
+
+function findBossProblemById(partId, problemId) {
+  const part = bossMode?.parts?.find((candidate) => candidate.id === partId);
+  if (!part) return null;
+  return part.problems.find((problem) => problem.id === problemId) || null;
+}
+
+function getBossMissileSourceNode(usedAnswers = new Set()) {
+  if (!bossMode?.parts || bossMode.phase !== "boss") return null;
+  const activePart = bossMode.parts.find((part) => !part.destroyed && !part.locked);
+  const allCandidates = bossMode.parts.flatMap((part) => part.problems).filter((problem) => (
+    !problem.destroyed
+    && !usedAnswers.has(getProblemAnswerKey(problem))
+  ));
+  const activeCandidates = activePart
+    ? allCandidates.filter((problem) => problem.partId === activePart.id)
+    : [];
+  const pools = [
+    activeCandidates.filter((problem) => !problem.revealed),
+    allCandidates.filter((problem) => !problem.revealed),
+    activeCandidates,
+    allCandidates,
+  ];
+  const pool = pools.find((candidates) => candidates.length > 0) || [];
+  if (pool.length === 0) return null;
+  return pool[randInt(0, pool.length - 1)];
 }
 
 function spawnBossBomb() {
@@ -1290,13 +1403,15 @@ function spawnBossBomb() {
   const interval = getBossBombIntervalMs();
   if (!Number.isFinite(interval)) return false;
   const usedAnswers = new Set([...drops, ...getActiveBossParts()].map((target) => getProblemAnswerKey(target)));
-  const missilePool = bossMode.phase === "boss"
-    ? getBossProblemPool(bossMode.opKey, bossMode.level, 3)
-    : null;
-  const problem = missilePool
-    ? makeBossProblemFromPool(bossMode.opKey, missilePool, usedAnswers, getProblemAnswerKey, bossMode.level)
-    : makeBossProblem(bossMode.opKey, usedAnswers, getProblemAnswerKey, bossMode.level);
+  const sourceNode = bossMode.phase === "boss" ? getBossMissileSourceNode(usedAnswers) : null;
+  if (bossMode.phase === "boss" && !sourceNode) return false;
+  const problem = sourceNode || makeBossProblem(bossMode.opKey, usedAnswers, getProblemAnswerKey, bossMode.level);
+  if (!problem) return false;
   const bomb = makeBossDrop(problem, "bomb", 0, 1);
+  if (sourceNode) {
+    bomb.bossSourcePartId = sourceNode.partId;
+    bomb.bossSourceNodeId = sourceNode.id;
+  }
   const source = bossMode.phase === "boss"
     ? bossMode.parts.find((part) => part.id === "guns" && !part.destroyed)
     : null;
@@ -1341,6 +1456,17 @@ function recordActiveChallengeAttempt(result = "survived") {
       clearedCount: bossMode.blitzClearedCount || 0,
       cleared: false,
       result,
+    });
+  }
+  if (bossMode.mode !== "full") {
+    recordActiveSessionChallenge({
+      action: "complete",
+      type,
+      opKey: bossMode.opKey,
+      level: bossMode.level,
+      score: bossMode.blitzFinalScore,
+      result,
+      cleared: false,
     });
   }
   saveProfile(progressProfile);
@@ -1529,6 +1655,16 @@ function completeBossVictory() {
     : null;
   progressProfile = recordChallengeAttempt(progressProfile, opKey, {
     type: "boss",
+    level,
+    durationMs,
+    score: durationMs ? Math.max(1, Math.round(300000 / Math.max(1000, durationMs))) : 0,
+    cleared: true,
+    result: "cleared",
+  });
+  recordActiveSessionChallenge({
+    action: "complete",
+    type: "boss",
+    opKey,
     level,
     durationMs,
     score: durationMs ? Math.max(1, Math.round(300000 / Math.max(1000, durationMs))) : 0,
@@ -1923,7 +2059,7 @@ function drawDrops() {
   }
 
   drawLaser();
-  drawGun();
+  drawPlayerShip();
   drawChallengeStatus();
   drawBossStunOverlay();
 }
@@ -2080,41 +2216,72 @@ function drawBossShip() {
   if (!bossMode?.active || !["boss", "victory"].includes(bossMode.phase)) return;
   updateBossPartPositions();
   const { left, top, w, h } = bossMode.shipBounds;
+  const cx = left + w * 0.5;
+  const pulse = 0.5 + Math.sin(gameTime / 420) * 0.5;
 
   ctx.save();
-  ctx.shadowColor = "rgba(96, 180, 240, 0.24)";
-  ctx.shadowBlur = 18;
+  ctx.shadowColor = "rgba(96, 180, 240, 0.28)";
+  ctx.shadowBlur = 24;
   const hull = ctx.createLinearGradient(left, top, left, top + h);
-  hull.addColorStop(0, "rgba(40, 52, 86, 0.96)");
-  hull.addColorStop(0.55, "rgba(24, 34, 62, 0.96)");
-  hull.addColorStop(1, "rgba(9, 14, 28, 0.96)");
+  hull.addColorStop(0, "rgba(71, 85, 130, 0.98)");
+  hull.addColorStop(0.34, "rgba(30, 41, 74, 0.98)");
+  hull.addColorStop(0.72, "rgba(15, 23, 42, 0.98)");
+  hull.addColorStop(1, "rgba(2, 6, 23, 0.98)");
   ctx.fillStyle = hull;
-  ctx.strokeStyle = "rgba(125, 211, 252, 0.34)";
+  ctx.strokeStyle = "rgba(186, 230, 253, 0.46)";
   ctx.lineWidth = 2.5;
   ctx.beginPath();
-  ctx.moveTo(left + w * 0.5, top);
-  ctx.lineTo(left + w * 0.93, top + h * 0.48);
+  ctx.moveTo(cx, top);
+  ctx.bezierCurveTo(left + w * 0.68, top + h * 0.08, left + w * 0.88, top + h * 0.32, left + w * 0.96, top + h * 0.5);
   ctx.lineTo(left + w * 0.78, top + h * 0.82);
-  ctx.lineTo(left + w * 0.61, top + h * 0.94);
-  ctx.lineTo(left + w * 0.39, top + h * 0.94);
+  ctx.lineTo(left + w * 0.6, top + h * 0.95);
+  ctx.quadraticCurveTo(cx, top + h * 1.03, left + w * 0.4, top + h * 0.95);
   ctx.lineTo(left + w * 0.22, top + h * 0.82);
-  ctx.lineTo(left + w * 0.07, top + h * 0.48);
+  ctx.lineTo(left + w * 0.04, top + h * 0.5);
+  ctx.bezierCurveTo(left + w * 0.12, top + h * 0.32, left + w * 0.32, top + h * 0.08, cx, top);
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
 
   ctx.shadowBlur = 0;
-  ctx.fillStyle = "rgba(96, 180, 240, 0.12)";
+  const canopy = ctx.createRadialGradient(cx, top + h * 0.34, 4, cx, top + h * 0.34, w * 0.16);
+  canopy.addColorStop(0, `rgba(125, 211, 252, ${(0.34 + pulse * 0.16).toFixed(2)})`);
+  canopy.addColorStop(0.64, "rgba(30, 64, 175, 0.18)");
+  canopy.addColorStop(1, "rgba(15, 23, 42, 0)");
+  ctx.fillStyle = canopy;
   ctx.beginPath();
-  ctx.ellipse(left + w * 0.5, top + h * 0.48, w * 0.19, h * 0.24, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, top + h * 0.36, w * 0.17, h * 0.18, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.strokeStyle = "rgba(240, 168, 48, 0.26)";
+  ctx.strokeStyle = "rgba(125, 211, 252, 0.18)";
+  ctx.lineWidth = 1.5;
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(cx + side * w * 0.08, top + h * 0.12);
+    ctx.lineTo(cx + side * w * 0.32, top + h * 0.76);
+    ctx.lineTo(cx + side * w * 0.18, top + h * 0.9);
+    ctx.stroke();
+  }
+
+  const coreGlow = ctx.createRadialGradient(cx, top + h * 0.55, 4, cx, top + h * 0.55, w * 0.11);
+  coreGlow.addColorStop(0, `rgba(248, 113, 113, ${(0.38 + pulse * 0.22).toFixed(2)})`);
+  coreGlow.addColorStop(1, "rgba(127, 29, 29, 0)");
+  ctx.fillStyle = coreGlow;
+  ctx.fillRect(cx - w * 0.13, top + h * 0.42, w * 0.26, h * 0.27);
+
+  ctx.strokeStyle = "rgba(251, 191, 36, 0.34)";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(left + w * 0.18, top + h * 0.58);
-  ctx.lineTo(left + w * 0.82, top + h * 0.58);
+  ctx.moveTo(left + w * 0.16, top + h * 0.6);
+  ctx.lineTo(left + w * 0.84, top + h * 0.6);
   ctx.stroke();
+
+  ctx.fillStyle = "rgba(251, 191, 36, 0.55)";
+  for (const fx of [0.26, 0.38, 0.62, 0.74]) {
+    ctx.beginPath();
+    ctx.arc(left + w * fx, top + h * 0.88, 2.4 + pulse * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   for (const part of bossMode.parts) {
     drawBossPart(part);
@@ -2148,23 +2315,32 @@ function drawBossPart(part) {
   if (part.destroyed) return;
   const x = part.x - part.w / 2;
   const y = part.y - part.h / 2;
+  const lockedAlpha = part.locked ? 0.42 : 1;
 
   if (part.kind === "cannon") {
     ctx.save();
     ctx.translate(part.x, part.y);
-    ctx.fillStyle = "rgba(240, 168, 48, 0.74)";
-    ctx.strokeStyle = "rgba(255, 232, 170, 0.84)";
+    ctx.globalAlpha = lockedAlpha;
+    ctx.fillStyle = "rgba(245, 158, 11, 0.72)";
+    ctx.strokeStyle = "rgba(254, 240, 138, 0.86)";
     ctx.lineWidth = 2;
-    fillRoundRect(-part.w / 2, -part.h / 2, part.w, part.h, 14);
-    strokeRoundRect(-part.w / 2, -part.h / 2, part.w, part.h, 14);
+    fillRoundRect(-part.w * 0.34, -part.h * 0.34, part.w * 0.68, part.h * 0.68, 14);
+    strokeRoundRect(-part.w * 0.34, -part.h * 0.34, part.w * 0.68, part.h * 0.68, 14);
     for (const offset of [-0.32, 0, 0.32]) {
-      fillRoundRect(part.w * offset - 20, -part.h / 2 - 8, 40, 22, 8);
-      strokeRoundRect(part.w * offset - 20, -part.h / 2 - 8, 40, 22, 8);
+      fillRoundRect(part.w * offset - 13, -part.h / 2 - 13, 26, 30, 9);
+      strokeRoundRect(part.w * offset - 13, -part.h / 2 - 13, 26, 30, 9);
+      ctx.beginPath();
+      ctx.moveTo(part.w * offset, -part.h / 2 - 13);
+      ctx.lineTo(part.w * offset, -part.h / 2 - 30);
+      ctx.stroke();
     }
     ctx.restore();
   } else if (part.kind === "wing") {
-    ctx.fillStyle = part.locked ? "rgba(71, 85, 105, 0.38)" : "rgba(129, 140, 248, 0.46)";
-    ctx.strokeStyle = part.locked ? "rgba(148, 163, 184, 0.42)" : "rgba(199, 210, 254, 0.72)";
+    const wing = ctx.createLinearGradient(part.x, part.y - part.h / 2, part.x, part.y + part.h / 2);
+    wing.addColorStop(0, part.locked ? "rgba(71, 85, 105, 0.34)" : "rgba(129, 140, 248, 0.56)");
+    wing.addColorStop(1, part.locked ? "rgba(30, 41, 59, 0.34)" : "rgba(49, 46, 129, 0.62)");
+    ctx.fillStyle = wing;
+    ctx.strokeStyle = part.locked ? "rgba(148, 163, 184, 0.42)" : "rgba(199, 210, 254, 0.78)";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(part.x - part.w / 2, part.y);
@@ -2176,6 +2352,11 @@ function drawBossPart(part) {
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
+    ctx.strokeStyle = "rgba(224, 231, 255, 0.22)";
+    ctx.beginPath();
+    ctx.moveTo(part.x - part.w * 0.34, part.y);
+    ctx.lineTo(part.x + part.w * 0.34, part.y);
+    ctx.stroke();
   } else if (part.kind === "shield") {
     ctx.fillStyle = part.locked ? "rgba(96, 180, 240, 0.16)" : "rgba(96, 180, 240, 0.32)";
     ctx.strokeStyle = "rgba(186, 230, 253, 0.62)";
@@ -2185,11 +2366,18 @@ function drawBossPart(part) {
     ctx.fill();
     ctx.stroke();
   } else {
-    ctx.fillStyle = part.locked ? "rgba(71, 85, 105, 0.46)" : "rgba(240, 96, 96, 0.7)";
+    const core = ctx.createLinearGradient(x, y, x, y + part.h);
+    core.addColorStop(0, part.locked ? "rgba(71, 85, 105, 0.46)" : "rgba(248, 113, 113, 0.82)");
+    core.addColorStop(1, part.locked ? "rgba(30, 41, 59, 0.5)" : "rgba(127, 29, 29, 0.86)");
+    ctx.fillStyle = core;
     ctx.strokeStyle = part.locked ? "rgba(148, 163, 184, 0.42)" : "rgba(255, 190, 190, 0.82)";
     ctx.lineWidth = 2.5;
     fillRoundRect(x, y, part.w, part.h, 16);
     strokeRoundRect(x, y, part.w, part.h, 16);
+    ctx.fillStyle = "rgba(254, 202, 202, 0.18)";
+    ctx.beginPath();
+    ctx.arc(part.x, part.y, Math.min(part.w, part.h) * 0.26, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
 
@@ -2371,20 +2559,81 @@ function drawSplashes() {
 }
 
 // ============================================================
-// 8b. Laser and Gun
+// 8b. Laser and Player Ship
 // ============================================================
 
+function normalizeAngleDelta(delta) {
+  let next = delta;
+  while (next > Math.PI) next -= Math.PI * 2;
+  while (next < -Math.PI) next += Math.PI * 2;
+  return next;
+}
+
+function getPlayerShipScale() {
+  return clamp(0.74, 1.1, canvasW / 760);
+}
+
+function getPlayerShipPosition() {
+  const scale = getPlayerShipScale();
+  return {
+    x: canvasW / 2,
+    y: canvasH - 24 * scale,
+    scale,
+  };
+}
+
+function getPlayerShipNose(angle = playerShip.angle) {
+  const ship = getPlayerShipPosition();
+  const length = PLAYER_SHIP_NOSE_LENGTH * ship.scale;
+  return {
+    x: ship.x + Math.sin(angle) * length,
+    y: ship.y - Math.cos(angle) * length,
+  };
+}
+
+function getPlayerShipAngleTo(target) {
+  const ship = getPlayerShipPosition();
+  const targetX = Number.isFinite(target?.x) ? target.x : ship.x;
+  const targetY = Number.isFinite(target?.y) ? target.y : ship.y - 120;
+  return Math.atan2(targetX - ship.x, ship.y - targetY);
+}
+
 function fireLaser(target) {
-  const gunY = canvasH - 20;
-  const gunX = canvasW / 2;
+  const targetX = Number.isFinite(target?.x) ? target.x : canvasW / 2;
+  const targetY = Number.isFinite(target?.y) ? target.y : canvasH / 2;
+  const targetAngle = getPlayerShipAngleTo({ x: targetX, y: targetY });
+  const initialTurn = normalizeAngleDelta(targetAngle - playerShip.angle);
+  playerShip.angle += initialTurn * 0.72;
+  playerShip.targetAngle = targetAngle;
+  playerShip.firePulseMs = PLAYER_SHIP_FIRE_PULSE_MS;
+  playerShip.recoilMs = PLAYER_SHIP_RECOIL_MS;
+  playerShip.lastTarget = { x: targetX, y: targetY };
+
+  const nose = getPlayerShipNose(playerShip.angle);
   laser = {
-    x1: gunX,
-    y1: gunY - 10,
-    x2: target.x,
-    y2: target.y,
+    x1: nose.x,
+    y1: nose.y,
+    x2: targetX,
+    y2: targetY,
     life: 140,
     maxLife: 140,
   };
+}
+
+function updatePlayerShip(dt) {
+  const shooting = Boolean(laser) || playerShip.firePulseMs > 0 || playerShip.recoilMs > 0;
+  const targetAngle = shooting ? playerShip.targetAngle : PLAYER_SHIP_IDLE_ANGLE;
+  const turnMs = shooting ? PLAYER_SHIP_TURN_MS : PLAYER_SHIP_RETURN_MS;
+  const ratio = clamp(0, 1, dt / turnMs);
+  const delta = normalizeAngleDelta(targetAngle - playerShip.angle);
+  playerShip.angle += delta * ratio;
+  if (Math.abs(delta) < 0.002) playerShip.angle = targetAngle;
+
+  playerShip.firePulseMs = Math.max(0, playerShip.firePulseMs - dt);
+  playerShip.recoilMs = Math.max(0, playerShip.recoilMs - dt);
+  if (!shooting && Math.abs(playerShip.angle - PLAYER_SHIP_IDLE_ANGLE) < 0.004) {
+    playerShip.lastTarget = null;
+  }
 }
 
 function updateLaser(dt) {
@@ -2408,17 +2657,17 @@ function drawLaser() {
   ctx.restore();
 }
 
-function drawBlitzShield() {
+function drawBlitzShield(ship = getPlayerShipPosition()) {
   if (!bossMode?.active || !["challenge", "challengeComplete"].includes(bossMode.phase)) return;
-  const gunY = canvasH - 20;
-  const gunX = canvasW / 2;
+  const shieldY = ship.y + 4 * ship.scale;
+  const shieldX = ship.x;
   const ratio = bossMode.phase === "challengeComplete" ? 0 : getBlitzShieldRatio();
   const pulse = clamp(0, 1, (bossMode.blitzShieldPulseMs || 0) / BLITZ_SHIELD_PULSE_MS);
   const hit = clamp(0, 1, (bossMode.blitzShieldHitMs || 0) / BLITZ_SHIELD_HIT_MS);
   const low = ratio <= 0.28 || bossMode.phase === "challengeComplete";
   const color = low ? "248, 113, 113" : "56, 189, 248";
-  const arcW = 62 + ratio * 32 + pulse * 6;
-  const arcH = 26 + ratio * 16 + pulse * 4;
+  const arcW = (62 + ratio * 32 + pulse * 6) * ship.scale;
+  const arcH = (26 + ratio * 16 + pulse * 4) * ship.scale;
 
   ctx.save();
   ctx.fillStyle = `rgba(${color}, ${(0.03 + ratio * 0.1 + pulse * 0.05).toFixed(2)})`;
@@ -2427,7 +2676,7 @@ function drawBlitzShield() {
   ctx.shadowColor = `rgba(${color}, ${(0.22 + ratio * 0.36).toFixed(2)})`;
   ctx.shadowBlur = 10 + ratio * 18 + pulse * 14;
   ctx.beginPath();
-  ctx.ellipse(gunX, gunY - 11, arcW, arcH, 0, 0, Math.PI * 2);
+  ctx.ellipse(shieldX, shieldY - 11 * ship.scale, arcW, arcH, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
 
@@ -2435,34 +2684,113 @@ function drawBlitzShield() {
     ctx.shadowBlur = 0;
     ctx.strokeStyle = `rgba(254, 202, 202, ${(0.36 + hit * 0.46).toFixed(2)})`;
     ctx.lineWidth = 2;
-    const crack = 18 + hit * 10;
+    const crack = (18 + hit * 10) * ship.scale;
     ctx.beginPath();
-    ctx.moveTo(gunX - 22, gunY - 34);
-    ctx.lineTo(gunX - 8, gunY - 20);
-    ctx.lineTo(gunX - 16, gunY - 7);
-    ctx.moveTo(gunX + 20, gunY - 33);
-    ctx.lineTo(gunX + 7, gunY - 18);
-    ctx.lineTo(gunX + crack, gunY - 9);
+    ctx.moveTo(shieldX - 22 * ship.scale, shieldY - 34 * ship.scale);
+    ctx.lineTo(shieldX - 8 * ship.scale, shieldY - 20 * ship.scale);
+    ctx.lineTo(shieldX - 16 * ship.scale, shieldY - 7 * ship.scale);
+    ctx.moveTo(shieldX + 20 * ship.scale, shieldY - 33 * ship.scale);
+    ctx.lineTo(shieldX + 7 * ship.scale, shieldY - 18 * ship.scale);
+    ctx.lineTo(shieldX + crack, shieldY - 9 * ship.scale);
     ctx.stroke();
   }
 
   ctx.restore();
 }
 
-function drawGun() {
-  const gunY = canvasH - 20;
-  const gunX = canvasW / 2;
-  drawBlitzShield();
-  ctx.fillStyle = "#1f2937";
+function drawPlayerShip() {
+  const ship = getPlayerShipPosition();
+  const fire = clamp(0, 1, playerShip.firePulseMs / PLAYER_SHIP_FIRE_PULSE_MS);
+  const recoil = clamp(0, 1, playerShip.recoilMs / PLAYER_SHIP_RECOIL_MS);
+  const engineFlicker = 0.5 + Math.sin(gameTime * 0.016) * 0.5;
+  const flame = 0.45 + engineFlicker * 0.25 + fire * 0.45;
+
+  drawBlitzShield(ship);
+
+  ctx.save();
+  ctx.translate(ship.x, ship.y);
+  ctx.rotate(playerShip.angle);
+  ctx.scale(ship.scale, ship.scale);
+  ctx.translate(0, recoil * 4);
+
+  ctx.save();
+  ctx.globalAlpha = 0.55 + flame * 0.35;
+  const flameGradient = ctx.createLinearGradient(0, 14, 0, 42 + fire * 8);
+  flameGradient.addColorStop(0, "rgba(125, 211, 252, 0.95)");
+  flameGradient.addColorStop(0.38, "rgba(251, 191, 36, 0.82)");
+  flameGradient.addColorStop(1, "rgba(249, 115, 22, 0)");
+  ctx.fillStyle = flameGradient;
   ctx.beginPath();
-  if (typeof ctx.roundRect === "function") {
-    ctx.roundRect(gunX - 22, gunY - 10, 44, 16, 5);
-  } else {
-    ctx.rect(gunX - 22, gunY - 10, 44, 16);
-  }
+  ctx.moveTo(-7 - fire * 2, 13);
+  ctx.quadraticCurveTo(0, 34 + flame * 10, 7 + fire * 2, 13);
+  ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = "#475569";
-  ctx.fillRect(gunX - 3, gunY - 20, 6, 12);
+  ctx.restore();
+
+  ctx.shadowColor = "rgba(56, 189, 248, 0.28)";
+  ctx.shadowBlur = 14 + fire * 10;
+
+  const wingGradient = ctx.createLinearGradient(0, -30, 0, 26);
+  wingGradient.addColorStop(0, "#64748b");
+  wingGradient.addColorStop(0.42, "#1e293b");
+  wingGradient.addColorStop(1, "#0f172a");
+  ctx.fillStyle = wingGradient;
+  ctx.strokeStyle = "rgba(125, 211, 252, 0.68)";
+  ctx.lineWidth = 1.7;
+  ctx.beginPath();
+  ctx.moveTo(0, -32);
+  ctx.bezierCurveTo(13, -18, 20, 0, 30, 19);
+  ctx.lineTo(11, 13);
+  ctx.lineTo(5, 25);
+  ctx.quadraticCurveTo(0, 21, -5, 25);
+  ctx.lineTo(-11, 13);
+  ctx.lineTo(-30, 19);
+  ctx.bezierCurveTo(-20, 0, -13, -18, 0, -32);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  const bodyGradient = ctx.createLinearGradient(0, -31, 0, 23);
+  bodyGradient.addColorStop(0, "#e0f2fe");
+  bodyGradient.addColorStop(0.22, "#38bdf8");
+  bodyGradient.addColorStop(0.5, "#1e3a8a");
+  bodyGradient.addColorStop(1, "#0f172a");
+  ctx.fillStyle = bodyGradient;
+  ctx.strokeStyle = "rgba(224, 242, 254, 0.74)";
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  ctx.moveTo(0, -34);
+  ctx.bezierCurveTo(9, -24, 13, -6, 9, 11);
+  ctx.quadraticCurveTo(7, 20, 0, 24);
+  ctx.quadraticCurveTo(-7, 20, -9, 11);
+  ctx.bezierCurveTo(-13, -6, -9, -24, 0, -34);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "rgba(14, 165, 233, 0.75)";
+  ctx.strokeStyle = "rgba(224, 242, 254, 0.9)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(0, -11, 5.4, 9.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(148, 163, 184, 0.95)";
+  fillRoundRect(-19, 2, 5, 13, 2);
+  fillRoundRect(14, 2, 5, 13, 2);
+
+  if (fire > 0) {
+    ctx.shadowColor = "rgba(96, 180, 240, 0.82)";
+    ctx.shadowBlur = 18 * fire;
+    ctx.fillStyle = `rgba(224, 242, 254, ${(0.48 + fire * 0.5).toFixed(2)})`;
+    ctx.beginPath();
+    ctx.arc(0, -31, 3.5 + fire * 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
 }
 
 // ============================================================
@@ -2606,6 +2934,12 @@ function handleCorrectAnswer(match) {
     handleBossProblemDestroyed(match);
   } else {
     drops = drops.filter((d) => d.id !== match.id);
+    if (match.bossKind === "bomb" && bossMode?.phase === "boss" && match.bossSourceNodeId) {
+      const sourceNode = findBossProblemById(match.bossSourcePartId, match.bossSourceNodeId);
+      if (sourceNode && !sourceNode.destroyed) {
+        handleBossProblemDestroyed(sourceNode);
+      }
+    }
   }
   createSplash(match);
   fireLaser(match);
@@ -2840,7 +3174,7 @@ function tick(timestamp) {
   const dt = timestamp - lastTime;
   lastTime = timestamp;
 
-  if (!isPaused) {
+  if (!isPaused && !isGameplayOverlayOpen()) {
     gameTime += dt;
 
     if (isBossActive()) {
@@ -2876,12 +3210,29 @@ function tick(timestamp) {
     }
     maybeAutoTargetFactor();
     updateSplashes(dt);
+    updatePlayerShip(dt);
     updateLaser(dt);
     if (groundFlash > 0) groundFlash = Math.max(0, groundFlash - dt);
     drawDrops();
   }
 
   requestAnimationFrame(tick);
+}
+
+function isGameplayOverlayOpen() {
+  const feedback = document.getElementById("feedbackOverlay");
+  return Boolean(
+    document.getElementById("welcomeOverlay")
+    || document.getElementById("tutorialOverlay")
+    || document.getElementById("loginOverlay")
+    || document.getElementById("statsOverlay")
+    || document.getElementById("resultsOverlay")
+    || document.getElementById("sessionLogOverlay")
+    || document.getElementById("sessionReportOverlay")
+    || document.getElementById("bossVictoryOverlay")
+    || document.getElementById("bossOfferOverlay")
+    || (feedback && !feedback.classList.contains("hidden"))
+  );
 }
 
 // ============================================================
@@ -3022,9 +3373,8 @@ function shouldPromptBossAttempt(skill) {
   return Boolean(skill?.bossReady && !skill?.bossAttemptedForLevel);
 }
 
-// When an operation first reaches boss-readiness, surface a one-time, non-modal
-// toast offering to start the boss so the player doesn't have to hunt for the
-// pulsing Mastered control.
+// When an operation first reaches boss-readiness, interrupt briefly with a
+// choice. The game loop pauses under modal overlays, so this does not cost drops.
 function maybeOfferBoss(opKey) {
   if (isBossActive()) return;
   const skill = getProgressSkill(opKey);
@@ -3036,25 +3386,37 @@ function maybeOfferBoss(opKey) {
 }
 
 function closeBossOffer() {
-  const existing = document.getElementById("bossOfferToast");
+  const existing = document.getElementById("bossOfferOverlay");
   if (existing) existing.remove();
 }
 
 function showBossOffer(opKey) {
   closeBossOffer();
   const level = opConfig[opKey]?.difficulty;
-  const toast = document.createElement("div");
-  toast.className = "boss-offer";
-  toast.id = "bossOfferToast";
+  const overlay = document.createElement("div");
+  overlay.className = "overlay boss-offer-overlay";
+  overlay.id = "bossOfferOverlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Boss unlocked");
+
+  const card = document.createElement("div");
+  card.className = "card boss-offer";
+
+  const title = document.createElement("h2");
+  title.textContent = "Boss Unlocked";
 
   const msg = document.createElement("span");
   msg.className = "boss-offer-msg";
-  msg.textContent = `${opDisplayNames[opKey]} Level ${level} mastered — boss unlocked!`;
+  msg.textContent = `${opDisplayNames[opKey]} Level ${level} is mastered. Try the boss now?`;
+
+  const actions = document.createElement("div");
+  actions.className = "boss-offer-actions";
 
   const start = document.createElement("button");
   start.type = "button";
   start.className = "boss-offer-start";
-  start.textContent = "Start Boss";
+  start.textContent = "Boss";
   start.addEventListener("click", () => {
     initAudio();
     closeBossOffer();
@@ -3064,15 +3426,17 @@ function showBossOffer(opKey) {
   const dismiss = document.createElement("button");
   dismiss.type = "button";
   dismiss.className = "boss-offer-dismiss";
-  dismiss.textContent = "✕";
-  dismiss.setAttribute("aria-label", "Dismiss");
+  dismiss.textContent = "No boss";
   dismiss.addEventListener("click", closeBossOffer);
 
-  toast.append(msg, start, dismiss);
-  document.body.appendChild(toast);
-  window.setTimeout(() => {
-    if (document.getElementById("bossOfferToast") === toast) toast.remove();
-  }, 12000);
+  actions.appendChild(dismiss);
+  actions.appendChild(start);
+  card.appendChild(title);
+  card.appendChild(msg);
+  card.appendChild(actions);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  start.focus();
 }
 
 function closeBossVictoryPopup() {
@@ -3726,6 +4090,8 @@ function buildChallengeRow(skill) {
 
 function buildResultsPopup() {
   closeResultsPopup();
+  closeSessionLogPopup();
+  closeSessionReportPopup();
 
   const summary = summarizeProfile(progressProfile);
   const overlay = document.createElement("div");
@@ -3834,6 +4200,288 @@ function closeResultsPopup() {
   if (existing) existing.remove();
 }
 
+function formatSessionStartedAt(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown time";
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatSessionAccuracy(stats) {
+  if (!stats || stats.attempts === 0) return "no practice attempts";
+  return `${stats.correct}/${stats.attempts} correct (${formatPercent(stats.accuracy)})`;
+}
+
+function getSessionSummaryById(sessionId) {
+  return summarizeSessionLog(progressProfile, 20).find((session) => session.id === sessionId) || null;
+}
+
+function formatMasteryDelta(value) {
+  if (value > 0) return `+${value}%`;
+  if (value < 0) return `${value}%`;
+  return "no change";
+}
+
+function formatSessionLevelProgress(level) {
+  const start = level.started;
+  const end = level.ended;
+  const mastered = `${start.masteredCount}/${start.universeCount} -> ${end.masteredCount}/${end.universeCount}`;
+  return `L${level.level} ${start.readiness}% -> ${end.readiness}% (${formatMasteryDelta(level.masteryDelta)}; ${mastered} mastered)`;
+}
+
+function buildSessionLogPopup() {
+  closeWelcomeMenu({ focus: false });
+  closeTutorialOverlay({ focus: false });
+  closeLoginPopup();
+  closeStatsPopup();
+  closeResultsPopup();
+  closeSessionLogPopup();
+  closeSessionReportPopup();
+  heartbeatActiveSession({ persist: true });
+
+  const sessions = summarizeSessionLog(progressProfile, 20);
+  const overlay = document.createElement("div");
+  overlay.className = "overlay session-log-overlay";
+  overlay.id = "sessionLogOverlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Session log");
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) closeSessionLogPopup();
+  });
+
+  const card = document.createElement("div");
+  card.className = "card session-log-card";
+
+  const header = document.createElement("div");
+  header.className = "session-log-header";
+  const title = document.createElement("h2");
+  title.textContent = "Session Log";
+  const active = document.createElement("div");
+  active.className = "session-log-active";
+  active.textContent = getActiveProfileName();
+  header.appendChild(title);
+  header.appendChild(active);
+  card.appendChild(header);
+
+  const sub = document.createElement("p");
+  sub.className = "session-log-sub";
+  sub.textContent = "Each visit or player switch creates a local session. Boss/challenge work is listed separately from ordinary practice accuracy.";
+  card.appendChild(sub);
+
+  const list = document.createElement("div");
+  list.className = "session-log-list";
+
+  if (sessions.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "session-log-empty";
+    empty.textContent = "No sessions recorded yet.";
+    list.appendChild(empty);
+  } else {
+    sessions.forEach((session) => {
+      const row = document.createElement("div");
+      row.className = "session-log-row";
+      row.classList.toggle("is-current", session.id === activeSessionId);
+
+      const top = document.createElement("div");
+      top.className = "session-log-row-top";
+      const when = document.createElement("div");
+      when.className = "session-log-when";
+      when.textContent = `${formatSessionStartedAt(session.startedAt)}${session.id === activeSessionId ? " · current" : ""}`;
+      const duration = document.createElement("div");
+      duration.className = "session-log-duration";
+      duration.textContent = formatDuration(session.durationMs);
+      const reportBtn = document.createElement("button");
+      reportBtn.type = "button";
+      reportBtn.className = "session-log-report";
+      reportBtn.textContent = "Report";
+      reportBtn.addEventListener("click", () => buildSessionReportPopup(session.id));
+      top.appendChild(when);
+      top.appendChild(duration);
+      top.appendChild(reportBtn);
+
+      const details = document.createElement("div");
+      details.className = "session-log-details";
+      const practice = `Practice: ${formatSessionAccuracy(session.practice)}`;
+      const bossSolved = session.assessment.correct > 0
+        ? `Boss/challenge solved: ${session.assessment.correct}`
+        : "Boss/challenge solved: 0";
+      const bossPressure = session.assessment.wrong + session.assessment.missed > 0
+        ? `stress misses/wrongs: ${session.assessment.missed + session.assessment.wrong}`
+        : "stress misses/wrongs: 0";
+      const challenges = session.challenges.started || session.challenges.completed
+        ? `Challenges: ${session.challenges.started} started, ${session.challenges.completed} completed`
+        : "Challenges: none";
+      details.textContent = [practice, bossSolved, bossPressure, challenges].join(" · ");
+
+      row.appendChild(top);
+      row.appendChild(details);
+      list.appendChild(row);
+    });
+  }
+
+  card.appendChild(list);
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "primary";
+  closeBtn.textContent = "Close";
+  closeBtn.addEventListener("click", closeSessionLogPopup);
+  card.appendChild(closeBtn);
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+}
+
+function closeSessionLogPopup() {
+  const existing = document.getElementById("sessionLogOverlay");
+  if (existing) existing.remove();
+}
+
+function buildSessionReportPopup(sessionId) {
+  heartbeatActiveSession({ persist: true });
+  const session = getSessionSummaryById(sessionId);
+  if (!session) return;
+  closeSessionLogPopup();
+  closeSessionReportPopup();
+
+  const overlay = document.createElement("div");
+  overlay.className = "overlay session-report-overlay";
+  overlay.id = "sessionReportOverlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Session report");
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) closeSessionReportPopup();
+  });
+
+  const card = document.createElement("div");
+  card.className = "card session-report-card";
+
+  const header = document.createElement("div");
+  header.className = "session-report-header";
+  const title = document.createElement("h2");
+  title.textContent = "Session Report";
+  const meta = document.createElement("div");
+  meta.className = "session-report-meta";
+  meta.textContent = `${formatSessionStartedAt(session.startedAt)} · ${formatDuration(session.durationMs)}`;
+  header.appendChild(title);
+  header.appendChild(meta);
+  card.appendChild(header);
+
+  const sub = document.createElement("p");
+  sub.className = "session-report-sub";
+  sub.textContent = "Per-operation progress for this saved session. Time is engaged problem time, capped per problem so idle tabs do not inflate it.";
+  card.appendChild(sub);
+
+  const summary = document.createElement("div");
+  summary.className = "session-report-summary";
+  summary.textContent = [
+    `Practice ${formatSessionAccuracy(session.practice)}`,
+    `Boss/challenge solved ${session.assessment.correct}`,
+    `Challenges ${session.challenges.started} started / ${session.challenges.completed} completed`,
+  ].join(" · ");
+  card.appendChild(summary);
+
+  const list = document.createElement("div");
+  list.className = "session-report-list";
+  if (session.operations.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "session-report-empty";
+    empty.textContent = "No problem-type work was recorded in this session.";
+    list.appendChild(empty);
+  } else {
+    session.operations.forEach((operation) => {
+      const row = document.createElement("div");
+      row.className = "session-report-row";
+
+      const rowTop = document.createElement("div");
+      rowTop.className = "session-report-row-top";
+      const name = document.createElement("div");
+      name.className = "session-report-name";
+      name.textContent = opDisplayNames[operation.opKey] || operation.opKey;
+      const time = document.createElement("div");
+      time.className = "session-report-time";
+      time.textContent = formatDuration(operation.durationMs);
+      rowTop.appendChild(name);
+      rowTop.appendChild(time);
+
+      const stats = document.createElement("div");
+      stats.className = "session-report-stats";
+      const totalCorrect = operation.practice.correct + operation.assessment.correct;
+      const totalMissed = operation.practice.missed + operation.assessment.missed;
+      const totalWrong = operation.practice.wrong + operation.assessment.wrong;
+      const pieces = [
+        `Correct/missed: ${totalCorrect}/${totalMissed}`,
+        `Practice attempts: ${operation.practice.attempts}`,
+      ];
+      if (totalWrong > 0) pieces.push(`Wrong: ${totalWrong}`);
+      if (operation.assessment.attempts > 0) {
+        pieces.push(`Boss/challenge attempts: ${operation.assessment.attempts}`);
+      }
+      if (operation.challenges.started || operation.challenges.completed) {
+        pieces.push(`Challenges: ${operation.challenges.started} started, ${operation.challenges.completed} completed`);
+      }
+      stats.textContent = pieces.join(" · ");
+
+      const mastery = document.createElement("div");
+      mastery.className = "session-report-mastery";
+      const levels = Array.isArray(operation.levels) && operation.levels.length > 0
+        ? operation.levels
+        : [{
+          level: operation.started.level,
+          started: operation.started,
+          ended: operation.ended,
+          masteryDelta: operation.masteryDelta,
+        }];
+      mastery.textContent = `Mastery by level: ${levels.map(formatSessionLevelProgress).join(" · ")}`;
+
+      row.appendChild(rowTop);
+      row.appendChild(stats);
+      row.appendChild(mastery);
+      list.appendChild(row);
+    });
+  }
+  card.appendChild(list);
+
+  const actions = document.createElement("div");
+  actions.className = "session-report-actions";
+  const donate = document.createElement("a");
+  donate.className = "session-report-donate";
+  donate.href = SUPPORT_URL;
+  donate.target = "_blank";
+  donate.rel = "noopener noreferrer";
+  donate.textContent = "Donate";
+  const backBtn = document.createElement("button");
+  backBtn.type = "button";
+  backBtn.className = "session-report-back";
+  backBtn.textContent = "Back to Log";
+  backBtn.addEventListener("click", () => {
+    closeSessionReportPopup();
+    buildSessionLogPopup();
+  });
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "primary";
+  closeBtn.textContent = "Close";
+  closeBtn.addEventListener("click", closeSessionReportPopup);
+  actions.appendChild(donate);
+  actions.appendChild(backBtn);
+  actions.appendChild(closeBtn);
+  card.appendChild(actions);
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+}
+
+function closeSessionReportPopup() {
+  const existing = document.getElementById("sessionReportOverlay");
+  if (existing) existing.remove();
+}
+
 // ============================================================
 // 13d. Welcome Menu and Tutorial
 // ============================================================
@@ -3929,6 +4577,8 @@ function buildWelcomeMenu({ firstVisit = false } = {}) {
   closeLoginPopup();
   closeStatsPopup();
   closeResultsPopup();
+  closeSessionLogPopup();
+  closeSessionReportPopup();
 
   const overlay = document.createElement("div");
   overlay.className = "overlay welcome-overlay";
@@ -4286,6 +4936,7 @@ function buildLoginPopup() {
     btn.classList.toggle("active", profile.active);
     btn.setAttribute("aria-pressed", profile.active ? "true" : "false");
     btn.addEventListener("click", () => {
+      heartbeatActiveSession();
       saveProfile(progressProfile);
       const selected = switchStoredProfile(profile.id);
       activateProfile(selected);
@@ -4333,6 +4984,7 @@ function buildLoginPopup() {
       input.focus();
       return;
     }
+    heartbeatActiveSession();
     saveProfile(progressProfile);
     const created = createStoredProfile(name);
     activateProfile(created);
@@ -4354,6 +5006,7 @@ function buildLoginPopup() {
   clearBtn.className = "login-clear";
   clearBtn.textContent = "Clear Current Stats";
   clearBtn.addEventListener("click", () => {
+    heartbeatActiveSession();
     const resetProfile = resetStoredProfile();
     activateProfile(resetProfile);
     closeLoginPopup();
@@ -4739,6 +5392,27 @@ document.addEventListener("keydown", (event) => {
     }
     return;
   }
+  if (document.getElementById("sessionLogOverlay")) {
+    if (event.key === "Escape") {
+      closeSessionLogPopup();
+      event.preventDefault();
+    }
+    return;
+  }
+  if (document.getElementById("sessionReportOverlay")) {
+    if (event.key === "Escape") {
+      closeSessionReportPopup();
+      event.preventDefault();
+    }
+    return;
+  }
+  if (document.getElementById("bossOfferOverlay")) {
+    if (event.key === "Escape") {
+      closeBossOffer();
+      event.preventDefault();
+    }
+    return;
+  }
   if (document.getElementById("welcomeOverlay")) {
     if (event.key === "Escape") {
       closeWelcomeMenu({ markSeen: true });
@@ -4903,6 +5577,7 @@ const feedbackOverlay = document.getElementById("feedbackOverlay");
 const menuLink = document.getElementById("menuLink");
 const loginLink = document.getElementById("loginLink");
 const resultsLink = document.getElementById("resultsLink");
+const sessionLogLink = document.getElementById("sessionLogLink");
 const feedbackLink = document.getElementById("feedbackLink");
 const fbCancel = document.getElementById("fbCancel");
 
@@ -4924,6 +5599,12 @@ if (resultsLink) {
     buildResultsPopup();
   });
 }
+if (sessionLogLink) {
+  sessionLogLink.addEventListener("click", (e) => {
+    e.preventDefault();
+    buildSessionLogPopup();
+  });
+}
 if (feedbackLink) {
   feedbackLink.addEventListener("click", (e) => {
     e.preventDefault();
@@ -4943,6 +5624,9 @@ if (feedbackOverlay) {
 
 // Canvas resize
 window.addEventListener("resize", resizeCanvas);
+window.addEventListener("beforeunload", () => {
+  heartbeatActiveSession({ persist: true });
+});
 
 // On touch devices the browser address/toolbar overlays the layout viewport and
 // can push the bottom keypad off screen. Drive the app height from the actual
@@ -4994,7 +5678,7 @@ function setupTouchKeypad() {
   if (controlsBar && opChits) {
     const touchBrand = document.createElement("div");
     touchBrand.className = "touch-brand";
-    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score"><span id="touchScoreLabel">Cleared</span>: <span id="touchScore">0</span></div><a href="#" class="touch-menu" id="touchMenuLink">${getText("welcome.menuLink")}</a><a href="#" class="touch-login" id="touchLoginLink">Login</a><a href="#" class="touch-results" id="touchResultsLink">R</a><a href="${SUPPORT_URL}" class="touch-support" id="touchSupportLink" target="_blank" rel="noopener noreferrer">${getText("support.shortLabel")}</a><a href="#" class="touch-fb" id="touchFbLink">?</a>`;
+    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score"><span id="touchScoreLabel">Cleared</span>: <span id="touchScore">0</span></div><a href="#" class="touch-menu" id="touchMenuLink">${getText("welcome.menuLink")}</a><a href="#" class="touch-login" id="touchLoginLink">Login</a><a href="#" class="touch-results" id="touchResultsLink">R</a><a href="#" class="touch-log" id="touchSessionLogLink">Log</a><a href="${SUPPORT_URL}" class="touch-support" id="touchSupportLink" target="_blank" rel="noopener noreferrer">${getText("support.shortLabel")}</a><a href="#" class="touch-fb" id="touchFbLink">?</a>`;
     controlsBar.insertBefore(touchBrand, opChits);
     const touchMenuLink = document.getElementById("touchMenuLink");
     if (touchMenuLink) {
@@ -5015,6 +5699,13 @@ function setupTouchKeypad() {
       touchResultsLink.addEventListener("click", (e) => {
         e.preventDefault();
         buildResultsPopup();
+      });
+    }
+    const touchSessionLogLink = document.getElementById("touchSessionLogLink");
+    if (touchSessionLogLink) {
+      touchSessionLogLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        buildSessionLogPopup();
       });
     }
     const touchFbLink = document.getElementById("touchFbLink");
@@ -5243,7 +5934,11 @@ function getTestState() {
     problemStats: cloneForTest(problemStats),
     progressProfile: cloneForTest(progressProfile),
     progressSummary: cloneForTest(summarizeProfile(progressProfile)),
+    sessionLog: cloneForTest(summarizeSessionLog(progressProfile)),
+    activeSessionId,
     bossMode: cloneForTest(bossMode),
+    laser: cloneForTest(laser),
+    playerShip: cloneForTest(playerShip),
     currentPressure: cloneForTest(getCurrentPressure()),
     gameSpeed,
     dropLimit,
@@ -5311,6 +6006,7 @@ function installTestHooks() {
       drops = [];
       splashes = [];
       laser = null;
+      resetPlayerShipVisuals();
       bossMode = null;
       isBreatherMode = false;
       score = 0;
@@ -5333,6 +6029,7 @@ function installTestHooks() {
       updateBossHud();
       updateBreatherHud();
       if (pauseBtn) pauseBtn.textContent = "Pause";
+      startVisitSession();
       drawDrops();
       return getTestState();
     },
@@ -5404,6 +6101,11 @@ function installTestHooks() {
       if (bossMode?.active) {
         updateBossMode(Math.max(0, Number(ms) || 0));
       }
+      drawDrops();
+      return getTestState();
+    },
+    advanceDrops(ms = 16) {
+      updateDrops(Math.max(0, Number(ms) || 0));
       drawDrops();
       return getTestState();
     },
@@ -5499,6 +6201,7 @@ function init() {
   updateControlDisplay();
   updateScoreDisplay();
   syncProgressSettings();
+  startVisitSession();
   answerInput.tabIndex = -1;
 
   if (pauseBtn) {

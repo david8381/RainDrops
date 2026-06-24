@@ -4,6 +4,8 @@ const PROFILE_STORE_KEY = "rainMath.profiles.v1";
 const PROFILE_VERSION = 3;
 const PROFILE_STORE_VERSION = 1;
 const RECENT_LIMIT = 20;
+const SESSION_LOG_LIMIT = 50;
+const SESSION_RESPONSE_MS_CAP = 60000;
 const BOSS_READY_SCORE = 80;
 const DEFAULT_START_LEVEL = 1;
 const LEGACY_START_LEVEL = 3;
@@ -16,7 +18,7 @@ const MIN_RECENT_ACCURACY_FOR_READY = 0.85;
 const MIN_ACCURACY_FOR_READY = 0.85;
 const BOSS_MASTERY_MIN_ATTEMPTS = 3;
 const BOSS_MASTERY_MIN_ACCURACY = 0.9;
-const RECENT_ACCURACY_BLEND = 0.7;
+const RECENT_ACCURACY_BLEND = 0.9;
 const RECENT_ACCURACY_WEIGHTS = [0.3, 0.2, 0.15, 0.1, 0.08, 0.06, 0.04, 0.03, 0.02, 0.02];
 const PROBLEM_MASTERY_THRESHOLD = 80;
 const PRESSURE_TIERS = [
@@ -146,6 +148,120 @@ function createPressureTierStatsMap(raw = {}) {
       },
     ])
   );
+}
+
+function createSessionStats(raw = {}) {
+  return {
+    attempts: Math.max(0, Math.round(Number.isFinite(raw.attempts) ? raw.attempts : 0)),
+    correct: Math.max(0, Math.round(Number.isFinite(raw.correct) ? raw.correct : 0)),
+    wrong: Math.max(0, Math.round(Number.isFinite(raw.wrong) ? raw.wrong : 0)),
+    missed: Math.max(0, Math.round(Number.isFinite(raw.missed) ? raw.missed : 0)),
+    helped: Math.max(0, Math.round(Number.isFinite(raw.helped) ? raw.helped : 0)),
+    totalResponseMs: Math.max(0, Math.round(Number.isFinite(raw.totalResponseMs) ? raw.totalResponseMs : 0)),
+    responseCount: Math.max(0, Math.round(Number.isFinite(raw.responseCount) ? raw.responseCount : 0)),
+  };
+}
+
+function createSessionChallengeStats(raw = {}) {
+  return {
+    started: Math.max(0, Math.round(Number.isFinite(raw.started) ? raw.started : 0)),
+    completed: Math.max(0, Math.round(Number.isFinite(raw.completed) ? raw.completed : 0)),
+    cleared: Math.max(0, Math.round(Number.isFinite(raw.cleared) ? raw.cleared : 0)),
+    blitz: Math.max(0, Math.round(Number.isFinite(raw.blitz) ? raw.blitz : 0)),
+    wave: Math.max(0, Math.round(Number.isFinite(raw.wave) ? raw.wave : 0)),
+    boss: Math.max(0, Math.round(Number.isFinite(raw.boss) ? raw.boss : 0)),
+    bestScore: Math.max(0, Math.round(Number.isFinite(raw.bestScore) ? raw.bestScore : 0)),
+    bestBossTimeMs: Number.isFinite(raw.bestBossTimeMs) ? Math.max(0, Math.round(raw.bestBossTimeMs)) : null,
+  };
+}
+
+function normalizeSessionResponseMs(value) {
+  if (!Number.isFinite(value) || value < 0) return null;
+  return Math.min(SESSION_RESPONSE_MS_CAP, Math.round(value));
+}
+
+function createSessionLevelSnapshot(raw = {}, fallbackLevel = raw.level) {
+  return {
+    level: clamp(1, 10, Math.round(Number.isFinite(raw.level) ? raw.level : fallbackLevel || 1)),
+    readiness: clamp(0, 100, Math.round(Number.isFinite(raw.readiness) ? raw.readiness : 0)),
+    masteredCount: Math.max(0, Math.round(Number.isFinite(raw.masteredCount) ? raw.masteredCount : 0)),
+    universeCount: Math.max(0, Math.round(Number.isFinite(raw.universeCount) ? raw.universeCount : 0)),
+    attempts: Math.max(0, Math.round(Number.isFinite(raw.attempts) ? raw.attempts : 0)),
+    distinct: Math.max(0, Math.round(Number.isFinite(raw.distinct) ? raw.distinct : 0)),
+  };
+}
+
+function normalizeSessionLevelSnapshots(raw = {}) {
+  if (!raw || typeof raw !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(raw)
+      .filter(([, value]) => value && typeof value === "object")
+      .map(([level, value]) => {
+        const normalizedLevel = clamp(1, 10, Math.round(Number(level) || value.level || 1));
+        return [String(normalizedLevel), createSessionLevelSnapshot(value, normalizedLevel)];
+      })
+  );
+}
+
+function createSessionMasterySnapshot(raw = {}) {
+  return {
+    ...createSessionLevelSnapshot(raw),
+    levels: normalizeSessionLevelSnapshots(raw.levels),
+  };
+}
+
+function createSessionOperation(raw = {}, opKey = raw.opKey || "unknown") {
+  const started = createSessionMasterySnapshot(raw.started || raw.start || {});
+  return {
+    opKey,
+    durationMs: Math.max(0, Math.round(Number.isFinite(raw.durationMs) ? raw.durationMs : 0)),
+    practice: createSessionStats(raw.practice),
+    assessment: createSessionStats(raw.assessment),
+    challenges: createSessionChallengeStats(raw.challenges),
+    started,
+    ended: createSessionMasterySnapshot(raw.ended || raw.end || started),
+  };
+}
+
+function normalizeSessionOperations(raw = {}) {
+  if (!raw || typeof raw !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(raw)
+      .filter(([, value]) => value && typeof value === "object")
+      .map(([opKey, value]) => [opKey, createSessionOperation(value, opKey)])
+  );
+}
+
+function normalizeSessionEntry(raw = {}, nowMs = Date.now()) {
+  const at = nowIso(nowMs);
+  const id = String(raw.id || `session-${nowMs}`);
+  const startedAt = raw.startedAt || raw.createdAt || at;
+  const lastSeenAt = raw.lastSeenAt || raw.endedAt || startedAt;
+  return {
+    id,
+    startedAt,
+    lastSeenAt,
+    endedAt: raw.endedAt || lastSeenAt,
+    userAgent: typeof raw.userAgent === "string" ? raw.userAgent.slice(0, 180) : "",
+    settings: {
+      speed: normalizeSpeedPercent(raw.settings?.speed),
+      rate: normalizeLoad(raw.settings?.rate),
+      pressureTier: getPressureTier(raw.settings?.pressureTier || raw.settings?.speed).key,
+    },
+    practice: createSessionStats(raw.practice),
+    assessment: createSessionStats(raw.assessment),
+    challenges: createSessionChallengeStats(raw.challenges),
+    operations: normalizeSessionOperations(raw.operations),
+  };
+}
+
+function normalizeSessionLog(log = [], nowMs = Date.now()) {
+  if (!Array.isArray(log)) return [];
+  return log
+    .filter((entry) => entry && typeof entry === "object")
+    .map((entry) => normalizeSessionEntry(entry, nowMs))
+    .sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)))
+    .slice(0, SESSION_LOG_LIMIT);
 }
 
 // Backward-compatible aliases for profiles created while this axis was named "speed".
@@ -304,6 +420,7 @@ function createDefaultProfile(nowMs = Date.now()) {
       ),
     },
     skills,
+    sessionLog: [],
   };
 }
 
@@ -420,6 +537,7 @@ function ensureProfileShape(profile, nowMs = Date.now()) {
       speed,
       rate: load,
     },
+    sessionLog: normalizeSessionLog(profile.sessionLog, nowMs),
     // Only canonical operations are kept; skills for removed ops (e.g. legacy
     // rect/circ) are dropped rather than carried forward as orphans.
     skills: {},
@@ -601,6 +719,202 @@ function switchStoredProfile(userId, storage = globalThis.localStorage, nowMs = 
   store.activeUserId = userId;
   persistProfileStore(store, storage, nowMs);
   return ensureProfileShape(store.profiles[userId], nowMs);
+}
+
+function findSession(profile, sessionId) {
+  if (!profile.sessionLog) profile.sessionLog = [];
+  return profile.sessionLog.find((entry) => entry.id === sessionId) || null;
+}
+
+function getSkillSessionSnapshot(profile, opKey) {
+  const skill = profile.skills?.[opKey];
+  if (!skill) return createSessionMasterySnapshot();
+  const summary = computeSkillReadiness(skill);
+  return createSessionMasterySnapshot({
+    level: skill.currentLevel,
+    readiness: summary.readiness,
+    masteredCount: summary.masteredCount,
+    universeCount: summary.universeCount,
+    attempts: summary.attempts,
+    distinct: summary.distinct,
+    levels: getSkillSessionLevelSnapshots(profile, opKey),
+  });
+}
+
+function computeSkillReadinessForLevel(skill, level) {
+  if (!skill) return computeSkillReadiness(skill);
+  if (skill.currentLevel === level) return computeSkillReadiness(skill);
+  return computeSkillReadiness({
+    ...skill,
+    currentLevel: level,
+  });
+}
+
+function getSkillSessionLevelSnapshots(profile, opKey) {
+  const skill = profile.skills?.[opKey];
+  if (!skill) return {};
+  const highestLevel = clamp(1, 10, Math.max(1, Math.round(skill.currentLevel || 1)));
+  const levels = {};
+  for (let level = 1; level <= highestLevel; level += 1) {
+    const summary = computeSkillReadinessForLevel(skill, level);
+    levels[String(level)] = createSessionLevelSnapshot({
+      level,
+      readiness: summary.readiness,
+      masteredCount: summary.masteredCount,
+      universeCount: summary.universeCount,
+      attempts: summary.attempts,
+      distinct: summary.distinct,
+    }, level);
+  }
+  return levels;
+}
+
+function createSessionOperationFromProfile(profile, opKey) {
+  const snapshot = getSkillSessionSnapshot(profile, opKey);
+  return createSessionOperation({
+    opKey,
+    started: snapshot,
+    ended: snapshot,
+  }, opKey);
+}
+
+function createSessionOperations(profile) {
+  return Object.fromEntries(
+    Object.keys(operationDefaults).map((opKey) => [opKey, createSessionOperationFromProfile(profile, opKey)])
+  );
+}
+
+function getSessionOperation(profile, session, opKey) {
+  if (!opKey || !profile.skills?.[opKey]) return null;
+  if (!session.operations) session.operations = {};
+  if (!session.operations[opKey]) {
+    session.operations[opKey] = createSessionOperationFromProfile(profile, opKey);
+  }
+  return session.operations[opKey];
+}
+
+function updateSessionOperationSnapshot(profile, session, opKey) {
+  const operation = getSessionOperation(profile, session, opKey);
+  if (!operation) return null;
+  operation.ended = getSkillSessionSnapshot(profile, opKey);
+  return operation;
+}
+
+function updateAllSessionOperationSnapshots(profile, session) {
+  if (!session.operations) session.operations = {};
+  for (const opKey of Object.keys(session.operations)) {
+    updateSessionOperationSnapshot(profile, session, opKey);
+  }
+}
+
+function touchSession(profile, session, nowMs = Date.now()) {
+  const at = nowIso(nowMs);
+  updateAllSessionOperationSnapshots(profile, session);
+  session.lastSeenAt = at;
+  session.endedAt = at;
+  profile.user.updatedAt = at;
+  return session;
+}
+
+function recordSessionStart(profile, options = {}, nowMs = Date.now()) {
+  if (!profile || typeof profile !== "object") return profile;
+  profile.sessionLog = normalizeSessionLog(profile.sessionLog, nowMs);
+  const id = String(options.id || `session-${nowMs}`);
+  const existing = findSession(profile, id);
+  if (existing) {
+    touchSession(profile, existing, nowMs);
+    return profile;
+  }
+  const speed = normalizeSpeedPercent(options.speed ?? profile.settings?.speed);
+  const rate = normalizeLoad(options.rate ?? options.spawnRate ?? profile.settings?.rate);
+  const pressure = getPressureTier(options.pressureTier || speed);
+  const session = normalizeSessionEntry({
+    id,
+    userAgent: options.userAgent || "",
+    settings: {
+      speed,
+      rate,
+      pressureTier: pressure.key,
+    },
+  }, nowMs);
+  session.operations = createSessionOperations(profile);
+  profile.sessionLog.unshift(session);
+  if (profile.sessionLog.length > SESSION_LOG_LIMIT) {
+    profile.sessionLog.splice(SESSION_LOG_LIMIT);
+  }
+  profile.user.updatedAt = session.startedAt;
+  return profile;
+}
+
+function recordSessionHeartbeat(profile, sessionId, nowMs = Date.now()) {
+  const session = findSession(profile, sessionId);
+  if (!session) return profile;
+  touchSession(profile, session, nowMs);
+  return profile;
+}
+
+function recordSessionEvent(profile, sessionId, event = {}, nowMs = Date.now()) {
+  const session = findSession(profile, sessionId);
+  if (!session) return profile;
+  const outcome = normalizeOutcome(event.outcome);
+  const responseMs = normalizeSessionResponseMs(event.responseMs);
+  const bucket = event.assessment ? session.assessment : session.practice;
+  bucket.attempts += 1;
+  bucket[outcome] += 1;
+  if (responseMs !== null) {
+    bucket.totalResponseMs += responseMs;
+    bucket.responseCount += 1;
+  }
+  const operation = getSessionOperation(profile, session, event.opKey);
+  if (operation) {
+    const opBucket = event.assessment ? operation.assessment : operation.practice;
+    opBucket.attempts += 1;
+    opBucket[outcome] += 1;
+    if (responseMs !== null) {
+      opBucket.totalResponseMs += responseMs;
+      opBucket.responseCount += 1;
+      operation.durationMs += responseMs;
+    }
+    operation.ended = getSkillSessionSnapshot(profile, event.opKey);
+  }
+  touchSession(profile, session, nowMs);
+  return profile;
+}
+
+function recordSessionChallenge(profile, sessionId, event = {}, nowMs = Date.now()) {
+  const session = findSession(profile, sessionId);
+  if (!session) return profile;
+  const challenges = session.challenges;
+  const type = ["blitz", "wave", "boss", "full"].includes(event.type) ? event.type : "boss";
+  const normalizedType = type === "full" ? "boss" : type;
+  const updateChallengeStats = (target) => {
+    if (event.action === "start") {
+      target.started += 1;
+    } else {
+      target.completed += 1;
+    }
+    if (Object.hasOwn(target, normalizedType)) {
+      target[normalizedType] += 1;
+    }
+    if (event.cleared) target.cleared += 1;
+    if (Number.isFinite(event.score)) {
+      target.bestScore = Math.max(target.bestScore, Math.round(event.score));
+    }
+    if (Number.isFinite(event.durationMs)) {
+      const duration = Math.max(0, Math.round(event.durationMs));
+      target.bestBossTimeMs = target.bestBossTimeMs === null
+        ? duration
+        : Math.min(target.bestBossTimeMs, duration);
+    }
+  };
+  updateChallengeStats(challenges);
+  const operation = getSessionOperation(profile, session, event.opKey);
+  if (operation) {
+    updateChallengeStats(operation.challenges);
+    operation.ended = getSkillSessionSnapshot(profile, event.opKey);
+  }
+  touchSession(profile, session, nowMs);
+  return profile;
 }
 
 function hasBossAttemptForLevel(skill, level = skill?.currentLevel) {
@@ -1185,6 +1499,116 @@ function getPracticeSuggestions(skill, limit = 4) {
   return suggestions;
 }
 
+function getSessionDurationMs(session) {
+  const start = new Date(session.startedAt).getTime();
+  const end = new Date(session.endedAt || session.lastSeenAt || session.startedAt).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 0;
+  return end - start;
+}
+
+function summarizeSessionStats(stats = createSessionStats()) {
+  const weightedCorrect = stats.correct + stats.helped * OUTCOME_WEIGHTS.helped;
+  return {
+    ...stats,
+    accuracy: stats.attempts > 0 ? weightedCorrect / stats.attempts : 0,
+    averageResponseMs: stats.responseCount > 0
+      ? Math.round(stats.totalResponseMs / stats.responseCount)
+      : null,
+  };
+}
+
+function summarizeSessionOperation(operation) {
+  const normalized = createSessionOperation(operation, operation?.opKey);
+  const practice = summarizeSessionStats(normalized.practice);
+  const assessment = summarizeSessionStats(normalized.assessment);
+  const levels = summarizeSessionOperationLevels(normalized);
+  return {
+    opKey: normalized.opKey,
+    durationMs: normalized.durationMs,
+    practice,
+    assessment,
+    totalAttempts: practice.attempts + assessment.attempts,
+    totalSolved: practice.correct + assessment.correct,
+    challenges: { ...normalized.challenges },
+    started: { ...normalized.started },
+    ended: { ...normalized.ended },
+    levels,
+    masteryDelta: normalized.ended.readiness - normalized.started.readiness,
+    levelDelta: normalized.ended.level - normalized.started.level,
+  };
+}
+
+function summarizeSessionOperationLevels(operation) {
+  const startLevels = operation.started?.levels || {};
+  const endLevels = operation.ended?.levels || {};
+  const levels = new Set([...Object.keys(startLevels), ...Object.keys(endLevels)]);
+  levels.add(String(operation.started.level));
+  levels.add(String(operation.ended.level));
+  return [...levels]
+    .map((levelKey) => {
+      const level = clamp(1, 10, Math.round(Number(levelKey) || 1));
+      const started = createSessionLevelSnapshot(startLevels[levelKey] || (
+        operation.started.level === level ? operation.started : { level }
+      ), level);
+      const ended = createSessionLevelSnapshot(endLevels[levelKey] || (
+        operation.ended.level === level ? operation.ended : { level }
+      ), level);
+      return {
+        level,
+        started,
+        ended,
+        masteryDelta: ended.readiness - started.readiness,
+        masteredDelta: ended.masteredCount - started.masteredCount,
+        attemptsDelta: ended.attempts - started.attempts,
+      };
+    })
+    .filter((entry) => (
+      entry.masteryDelta !== 0
+      || entry.masteredDelta !== 0
+      || entry.attemptsDelta !== 0
+      || entry.level === operation.started.level
+      || entry.level === operation.ended.level
+    ))
+    .sort((a, b) => a.level - b.level);
+}
+
+function summarizeSessionLog(profile, limit = SESSION_LOG_LIMIT) {
+  return normalizeSessionLog(profile?.sessionLog || [])
+    .slice(0, Math.max(0, Math.round(Number.isFinite(limit) ? limit : SESSION_LOG_LIMIT)))
+    .map((session) => {
+      const practice = summarizeSessionStats(session.practice);
+      const assessment = summarizeSessionStats(session.assessment);
+      const operations = Object.values(session.operations || {})
+        .map(summarizeSessionOperation)
+        .filter((operation) => (
+          operation.totalAttempts > 0
+          || operation.durationMs > 0
+          || operation.challenges.started > 0
+          || operation.challenges.completed > 0
+          || operation.masteryDelta !== 0
+          || operation.levelDelta !== 0
+        ))
+        .sort((a, b) => {
+          const order = Object.keys(operationDefaults);
+          return order.indexOf(a.opKey) - order.indexOf(b.opKey);
+        });
+      return {
+        id: session.id,
+        startedAt: session.startedAt,
+        endedAt: session.endedAt,
+        lastSeenAt: session.lastSeenAt,
+        durationMs: getSessionDurationMs(session),
+        settings: { ...session.settings },
+        practice,
+        assessment,
+        totalAttempts: practice.attempts + assessment.attempts,
+        totalSolved: practice.correct + assessment.correct,
+        challenges: { ...session.challenges },
+        operations,
+      };
+    });
+}
+
 function summarizeProfile(profile) {
   const skills = {};
   const currentSpeedPercent = normalizeSpeedPercent(profile.settings?.speed);
@@ -1271,6 +1695,7 @@ globalThis.RainMathProgress = {
   PROBLEM_MASTERY_THRESHOLD,
   PRESSURE_TIERS,
   RECENT_LIMIT,
+  SESSION_LOG_LIMIT,
   SPEED_TIERS,
   STORAGE_KEY,
   computeSkillReadiness,
@@ -1308,10 +1733,15 @@ globalThis.RainMathProgress = {
   recordBlitzAttempt,
   recordChallengeAttempt,
   recordProgressEvent,
+  recordSessionChallenge,
+  recordSessionEvent,
+  recordSessionHeartbeat,
+  recordSessionStart,
   resetStoredProfile,
   saveProfile,
   switchStoredProfile,
   summarizeProfile,
+  summarizeSessionLog,
   summarizePressureTierStats,
   summarizeSpeedTierStats,
   syncSettings,

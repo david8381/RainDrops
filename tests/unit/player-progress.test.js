@@ -27,8 +27,13 @@ const {
   getChallengeBest,
   getChallengeBests,
   recordProgressEvent,
+  recordSessionChallenge,
+  recordSessionEvent,
+  recordSessionHeartbeat,
+  recordSessionStart,
   saveProfile,
   summarizeProfile,
+  summarizeSessionLog,
   switchStoredProfile,
   syncSettings,
 } = globalThis.RainMathProgress;
@@ -55,6 +60,7 @@ describe("player progress profile", () => {
 
     assert.equal(profile.version, 3);
     assert.equal(profile.user.id, "local-default");
+    assert.deepEqual(profile.sessionLog, []);
     assert.deepEqual(Object.keys(profile.skills), [
       "add",
       "sub",
@@ -67,6 +73,84 @@ describe("player progress profile", () => {
     ]);
     assert.equal(profile.skills.add.currentLevel, 1);
     assert.equal(profile.skills.add.readiness, 0);
+  });
+
+  it("records and summarizes local session logs", () => {
+    const profile = createDefaultProfile(Date.UTC(2026, 0, 1));
+    const start = Date.UTC(2026, 0, 1, 12, 0, 0);
+
+    recordSessionStart(profile, {
+      id: "visit-1",
+      speed: 40,
+      rate: 4,
+      userAgent: "test browser",
+    }, start);
+    for (let i = 0; i < 3; i += 1) {
+      recordProgressEvent(profile, {
+        opKey: "add",
+        statsKey: "1,1",
+        text: "1 + 1",
+        outcome: "correct",
+        responseMs: 1200,
+      }, start + 1000 + i);
+      recordSessionEvent(profile, "visit-1", {
+        opKey: "add",
+        outcome: "correct",
+        responseMs: 1200,
+      }, start + 1000 + i);
+    }
+    recordSessionEvent(profile, "visit-1", {
+      opKey: "add",
+      outcome: "missed",
+      assessment: true,
+    }, start + 2000);
+    recordSessionChallenge(profile, "visit-1", {
+      opKey: "add",
+      action: "start",
+      type: "full",
+    }, start + 3000);
+    recordSessionChallenge(profile, "visit-1", {
+      opKey: "add",
+      action: "complete",
+      type: "boss",
+      cleared: true,
+      durationMs: 45000,
+      score: 7,
+    }, start + 46000);
+    recordSessionHeartbeat(profile, "visit-1", start + 60000);
+
+    const [session] = summarizeSessionLog(profile);
+
+    assert.equal(session.id, "visit-1");
+    assert.equal(session.durationMs, 60000);
+    assert.equal(session.settings.speed, 40);
+    assert.equal(session.practice.attempts, 3);
+    assert.equal(session.practice.correct, 3);
+    assert.equal(session.practice.accuracy, 1);
+    assert.equal(session.practice.averageResponseMs, 1200);
+    assert.equal(session.assessment.attempts, 1);
+    assert.equal(session.assessment.missed, 1);
+    assert.equal(session.totalSolved, 3);
+    assert.equal(session.challenges.started, 1);
+    assert.equal(session.challenges.completed, 1);
+    assert.equal(session.challenges.cleared, 1);
+    assert.equal(session.challenges.boss, 2);
+    assert.equal(session.challenges.bestScore, 7);
+    assert.equal(session.challenges.bestBossTimeMs, 45000);
+    assert.equal(session.operations.length, 1);
+    assert.equal(session.operations[0].opKey, "add");
+    assert.equal(session.operations[0].durationMs, 3600);
+    assert.equal(session.operations[0].practice.correct, 3);
+    assert.equal(session.operations[0].assessment.missed, 1);
+    assert.equal(session.operations[0].challenges.started, 1);
+    assert.equal(session.operations[0].challenges.completed, 1);
+    assert.equal(session.operations[0].started.readiness, 0);
+    assert.equal(session.operations[0].ended.readiness, 11);
+    assert.equal(session.operations[0].masteryDelta, 11);
+    assert.equal(session.operations[0].levels.length, 1);
+    assert.equal(session.operations[0].levels[0].level, 1);
+    assert.equal(session.operations[0].levels[0].started.readiness, 0);
+    assert.equal(session.operations[0].levels[0].ended.readiness, 11);
   });
 
   it("preserves saved levels and records boss attempts per level", () => {
@@ -431,7 +515,7 @@ describe("player progress profile", () => {
   it("uses recent weighted accuracy so old misses can be overcome", () => {
     const profile = createDefaultProfile();
 
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    for (let attempt = 0; attempt < 1000; attempt += 1) {
       recordProgressEvent(profile, {
         opKey: "add",
         statsKey: "1,7",
@@ -453,6 +537,7 @@ describe("player progress profile", () => {
     const problem = profile.skills.add.problems["1,7"];
 
     assert.ok(problem.correct / problem.attempts < 0.9);
+    assert.ok(problem.correct / problem.attempts < 0.02);
     assert.ok(problemCurrentAccuracy(problem) >= 0.9);
     assert.equal(isBossMasteredProblem(problem), true);
   });

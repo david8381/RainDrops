@@ -3,6 +3,27 @@
 ## Purpose
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
+## 2026-06-24
+- Smoothed boss Wave 1 pressure by removing double-applied bomb speed and easing the speed ramp before it reaches the unreadable zone.
+- Changed final-boss missiles into slower moving copies of remaining mothership nodes; solving a missile clears that node, so the final boss still measures the current-level fact sheet rather than adding extra generated problems.
+- Made boss-ready prompts modal with Boss / No boss choices, and paused gameplay under modal overlays so boss victory summaries and reports cannot cause background misses.
+- Changed full boss session logging so a full boss run counts as one session challenge started/completed while still saving Blitz/Wave/Boss stage bests.
+- Renamed Support links to Donate and added a Donate link to each session report.
+- Updated session reports to show mastery changes level by level within each operation.
+- Increased the recent-performance weight in current accuracy so a long-ago bad streak can be overcome by a strong recent streak.
+- Expanded local session logs with a Report view showing per-operation engaged duration, correct/missed counts, challenge activity, and mastery start/end changes so a child can show concrete progress from a saved session.
+- Added operation-level session report data in the local profile: practice/assessment stats, challenge counters, capped response-time duration, and mastery snapshots.
+
+## 2026-06-23
+- Added per-profile local session logging: each visit or player switch starts a bounded session record with practice accuracy, boss/challenge solved counts, challenge starts/completions, and duration.
+- Added desktop and touch Log buttons with a session-log popup, plus tutorial copy pointing players to the new Log view.
+
+## 2026-06-22
+- Hardened boss/challenge problem handling so wrong answers, landed bombs, reveals, and solved boss nodes are intrinsically excluded from ordinary practice accuracy and mastery stats.
+
+## 2026-06-21
+- Replaced the bottom-center rectangle gun with a canvas-drawn player ship that turns toward solved problems, fires from its nose, pulses on shots, and returns to center afterward.
+
 ## 2026-06-20
 - Hardened canvas frame clearing and per-drop draw isolation to reduce ChromeOS/Chromebook paint trails from laser and drop effects.
 - Added a Ko-fi support link to the desktop header, compact mobile header, and welcome/menu panel, with support copy centralized in `src/text/english.js`.

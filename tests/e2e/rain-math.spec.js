@@ -170,13 +170,18 @@ test.describe("desktop gameplay", () => {
       answer: 8,
       answerText: "8",
       statsKey: "3,5",
+      x: 220,
       y: 120,
     });
 
-    await page.locator("#answer").fill("8");
+    const state = await invoke(page, "submit", "8");
+    expect(state.laser).not.toBeNull();
+    expect(Math.abs(state.playerShip.targetAngle)).toBeGreaterThan(0.1);
+    expect(Math.abs(state.playerShip.angle)).toBeGreaterThan(0.05);
+    expect(state.playerShip.firePulseMs).toBeGreaterThan(0);
+    expect(state.playerShip.lastTarget).toEqual({ x: 220, y: 120 });
 
     await expect(page.locator("#score")).toHaveText("1");
-    const state = await invoke(page, "getState");
     expect(state.drops).toHaveLength(0);
     expect(state.problemStats.add["3,5"]).toEqual({ asked: 1, correct: 1 });
   });
@@ -380,6 +385,49 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#resultsOverlay")).not.toContainText("Pressure clears:");
   });
 
+  test("session log report shows per-operation stats and mastery changes", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await freezeAutoSpawns(page);
+
+    let state;
+    for (let i = 0; i < 3; i += 1) {
+      await invoke(page, "addDrop", {
+        opKey: "add",
+        text: "1 + 1",
+        answer: 2,
+        answerText: "2",
+        statsKey: "1,1",
+        y: 120,
+      });
+      state = await invoke(page, "submit", "2");
+    }
+
+    expect(state.sessionLog).toHaveLength(1);
+    expect(state.sessionLog[0].id).toBe(state.activeSessionId);
+    expect(state.sessionLog[0].practice.correct).toBe(3);
+    expect(state.sessionLog[0].practice.attempts).toBe(3);
+    expect(state.sessionLog[0].operations[0].opKey).toBe("add");
+    expect(state.sessionLog[0].operations[0].durationMs).toBeGreaterThan(0);
+    expect(state.sessionLog[0].operations[0].started.readiness).toBe(0);
+    expect(state.sessionLog[0].operations[0].ended.readiness).toBe(11);
+
+    await page.locator("#sessionLogLink").click();
+    await expect(page.locator("#sessionLogOverlay")).toBeVisible();
+    await expect(page.locator("#sessionLogOverlay")).toContainText("Session Log");
+    await expect(page.locator("#sessionLogOverlay")).toContainText("current");
+    await expect(page.locator("#sessionLogOverlay")).toContainText("Practice: 3/3 correct (100%)");
+
+    await page.locator(".session-log-report").click();
+    await expect(page.locator("#sessionReportOverlay")).toBeVisible();
+    await expect(page.locator("#sessionReportOverlay h2")).toHaveText("Session Report");
+    await expect(page.locator("#sessionReportOverlay")).toContainText("Add");
+    await expect(page.locator("#sessionReportOverlay")).toContainText("Correct/missed: 3/0");
+    await expect(page.locator("#sessionReportOverlay")).toContainText("Mastery by level: L1 0% -> 11%");
+    await expect(page.locator("#sessionReportOverlay")).toContainText("0/9 -> 1/9 mastered");
+    await expect(page.locator("#sessionReportOverlay .session-report-donate")).toHaveText("Donate");
+  });
+
   test("stats grid hover text shows problem attempts and mastery state", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
@@ -506,6 +554,47 @@ test.describe("desktop gameplay", () => {
     expect(actualClear.spawnRate).toBe(3);
   });
 
+  test("boss wrong answers and landed bombs do not update practice accuracy", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await invoke(page, "startBoss", "add");
+    await invoke(page, "advanceBossTime", 1400);
+
+    await invoke(page, "addDrop", {
+      opKey: "add",
+      text: "1 + 2",
+      answer: 3,
+      answerText: "3",
+      statsKey: "1,2",
+      bossKind: "bomb",
+      y: 120,
+    });
+    let state = await invoke(page, "submit", "9", { enter: true });
+    expect(state.bossMode.phase).toBe("challenge");
+    expect(state.bossMode.blitzShield).toBe(20);
+    expect(state.problemStats.add).toEqual({});
+    expect(state.progressSummary.skills.add.attempts).toBe(0);
+    expect(state.progressProfile.skills.add.problems).toEqual({});
+
+    await invoke(page, "clearDrops");
+    await invoke(page, "addDrop", {
+      opKey: "add",
+      text: "2 + 2",
+      answer: 4,
+      answerText: "4",
+      statsKey: "2,2",
+      bossKind: "bomb",
+      y: 10000,
+      baseSpeed: 0,
+    });
+    state = await invoke(page, "advanceDrops", 16);
+    expect(state.bossMode.phase).toBe("challenge");
+    expect(state.bossMode.blitzShield).toBe(15);
+    expect(state.problemStats.add).toEqual({});
+    expect(state.progressSummary.skills.add.attempts).toBe(0);
+    expect(state.progressProfile.skills.add.problems).toEqual({});
+  });
+
   test("blitz records a shield endurance score without advancing the level", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
@@ -614,6 +703,8 @@ test.describe("desktop gameplay", () => {
     expect(attempts.some((attempt) => attempt.type === "blitz" && attempt.level === 1)).toBe(true);
     expect(attempts.some((attempt) => attempt.type === "wave" && attempt.level === 1)).toBe(true);
     expect(attempts.some((attempt) => attempt.type === "boss" && attempt.level === 1 && attempt.cleared)).toBe(true);
+    expect(state.sessionLog[0].challenges.started).toBe(1);
+    expect(state.sessionLog[0].challenges.completed).toBe(1);
   });
 
   test("wave and boss replay buttons save challenge bests for the cleared level", async ({ page }) => {
@@ -707,7 +798,7 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#statsOverlay")).toBeVisible();
   });
 
-  test("offers the boss with a toast when an operation reaches mastery", async ({ page }) => {
+  test("interrupts with a boss choice when an operation reaches mastery", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
     await invoke(page, "masterCurrentLevel", "add");
@@ -722,8 +813,8 @@ test.describe("desktop gameplay", () => {
     });
 
     await page.locator("#answer").fill("2"); // a correct answer re-checks readiness
-    await expect(page.locator("#bossOfferToast")).toBeVisible();
-    await expect(page.locator("#bossOfferToast")).toContainText("boss unlocked");
+    await expect(page.locator("#bossOfferOverlay")).toBeVisible();
+    await expect(page.locator("#bossOfferOverlay")).toContainText("Boss Unlocked");
 
     await page.locator(".boss-offer-start").click();
     expect((await invoke(page, "getState")).bossMode.active).toBe(true);
@@ -788,6 +879,41 @@ test.describe("desktop gameplay", () => {
     expect(shield.destroyed).toBe(true);
     const guns = state.bossMode.parts.find((part) => part.id === "guns");
     expect(guns.locked).toBe(false);
+  });
+
+  test("final boss missiles are slower copies of remaining boss nodes", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await invoke(page, "setOpDifficulty", "add", 3, { force: true });
+    await invoke(page, "startBoss", "add");
+    let state = await invoke(page, "skipToBossFight");
+
+    const remainingBefore = state.bossMode.parts
+      .flatMap((part) => part.problems)
+      .filter((problem) => !problem.destroyed).length;
+    state = await invoke(page, "advanceBossTime", 950);
+    const bomb = state.drops.find((drop) => drop.bossKind === "bomb");
+
+    expect(bomb).toBeTruthy();
+    expect(bomb.bossSourceNodeId).toBeTruthy();
+    expect(bomb.baseSpeed).toBeLessThan(140);
+
+    const sourceBefore = state.bossMode.parts
+      .find((part) => part.id === bomb.bossSourcePartId)
+      .problems.find((problem) => problem.id === bomb.bossSourceNodeId);
+    expect(sourceBefore.destroyed).toBe(false);
+
+    state = await invoke(page, "submit", bomb.answerText);
+    const sourceAfter = state.bossMode.parts
+      .find((part) => part.id === bomb.bossSourcePartId)
+      .problems.find((problem) => problem.id === bomb.bossSourceNodeId);
+    const remainingAfter = state.bossMode.parts
+      .flatMap((part) => part.problems)
+      .filter((problem) => !problem.destroyed).length;
+
+    expect(sourceAfter.destroyed).toBe(true);
+    expect(remainingAfter).toBe(remainingBefore - 1);
+    expect(state.progressSummary.skills.add.attempts).toBe(0);
   });
 
   test("requires Enter for SI conversion answers", async ({ page }) => {
@@ -955,6 +1081,16 @@ test.describe("mobile gameplay", () => {
 
     await expect(page.locator("#resultsOverlay")).toBeVisible();
     await expect(page.locator("#resultsOverlay h2")).toHaveText("Learning Results");
+  });
+
+  test("opens session log from the touch header", async ({ page }) => {
+    await openApp(page);
+
+    await expect(page.locator("#touchSessionLogLink")).toBeVisible();
+    await page.locator("#touchSessionLogLink").click();
+
+    await expect(page.locator("#sessionLogOverlay")).toBeVisible();
+    await expect(page.locator("#sessionLogOverlay h2")).toHaveText("Session Log");
   });
 
   test("opens login from the touch header", async ({ page }) => {

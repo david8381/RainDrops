@@ -11,11 +11,11 @@ globalThis.RainMathText = {
     next: "Next",
   },
   support: {
-    label: "Support",
-    shortLabel: "Ko-fi",
-    welcomeTitle: "Support Rain Math",
+    label: "Donate",
+    shortLabel: "Donate",
+    welcomeTitle: "Donate to Rain Math",
     welcomeBody: "",
-    welcomeLink: "Buy me a coffee on Ko-fi",
+    welcomeLink: "Donate on Ko-fi",
   },
   welcome: {
     menuLink: "Menu",
@@ -58,7 +58,7 @@ globalThis.RainMathText = {
         target: ".input-bar",
         kicker: "Typing rules",
         title: "Some answers use Enter.",
-        body: "SI conversions use answers like *1000 or /100 and need Enter. Prime factorization accepts full answers like 2^2*3 plus Enter, or Tab to target a drop and factor it step by step.",
+        body: "SI conversions use answers like *1000 or /100 and need Enter. Prime factorization accepts full answers like 2^2*3 plus Enter, or Tab to target a drop and factor it step by step. Tab and Shift+Tab switch factor targets.",
         tip: "",
       },
       {
@@ -73,7 +73,7 @@ globalThis.RainMathText = {
         kicker: "Mastery",
         title: "Each operation has its own level and grid.",
         body: "The level card shows Mastered %. The Grid opens per-problem history: black means unseen, hue shows accuracy, and brightness shows how much evidence the game has.",
-        tip: "Boss unlocks when enough current-level problems are mastered.",
+        tip: "Practice is weighted toward unseen and weaker problems, and boss unlocks when enough current-level problems are mastered.",
       },
       {
         target: ".game",
@@ -92,9 +92,9 @@ globalThis.RainMathText = {
       {
         target: ".version",
         kicker: "Profiles",
-        title: "Use local players and Results.",
-        body: "Profiles live in this browser's localStorage for now. Use Login to switch players, Results to inspect progress, and Menu to revisit this tutorial.",
-        tip: "This is local-only.",
+        title: "Use local players, Results, and Log.",
+        body: "Profiles live in this browser's localStorage for now. Use Login to switch players, Results to inspect mastery, and Log to review recent sessions.",
+        tip: "Open a session's Report to show time, correct/missed counts, and mastery changes by problem type.",
       },
     ],
   },
