@@ -85,8 +85,10 @@ const BOSS_VICTORY_MS = 1800;
 const DEFAULT_MAX_FALL_TIME_SEC = 10;
 const BLITZ_RAMP_MS = 70000;
 const BLITZ_START_SPEED = 20;
+const BLITZ_START_DROP_SECONDS = 5.4;
+const BLITZ_BASELINE_DROP_SECONDS = 2.2;
+const BLITZ_MIN_DROP_SECONDS = 0.85;
 const BLITZ_START_DROPS = 2;
-const BLITZ_MAX_DROPS = 10;
 const WAVE_TWO_BASE_SPEED = 42;
 const CHALLENGE_TRANSITION_MS = 1800;
 const BOSS_HUD_FRESH_MS = 2400;
@@ -1108,8 +1110,12 @@ function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficul
     blitzFinalScore: 0,
     blitzFinalSpeed: 0,
     blitzFinalDrops: 0,
+    blitzFinalDurationMs: 0,
+    blitzFinalDropSeconds: 0,
     blitzFinalShields: BLITZ_SHIELD_START,
     waveTwoSpeedPercent: WAVE_TWO_BASE_SPEED,
+    waveMaxLoadCleared: 0,
+    waveMaxLoadReached: mode === "wave" ? 1 : 0,
     hudFreshMs: BOSS_HUD_FRESH_MS,
     lastHudMessage: null,
     bossStartedAtMs: 0,
@@ -1188,7 +1194,11 @@ function startChallenge(type = "blitz") {
   bossMode.blitzShieldHitMs = 0;
   bossMode.blitzHits = 0;
   bossMode.blitzFinalScore = 0;
+  bossMode.blitzFinalDurationMs = 0;
+  bossMode.blitzFinalDropSeconds = 0;
   bossMode.challengeLoad = bossMode.challengeType === "wave" ? 1 : BLITZ_START_DROPS;
+  bossMode.waveMaxLoadCleared = 0;
+  bossMode.waveMaxLoadReached = bossMode.challengeType === "wave" ? 1 : bossMode.challengeLoad;
   bossMode.waveRoundSpawned = 0;
   bossMode.bombTimerMs = 250;
   if (bossMode.challengeType === "wave" && !Number.isFinite(bossMode.waveTwoSpeedPercent)) {
@@ -1289,6 +1299,11 @@ function getBlitzProgress() {
   return clamp(0, 1, (bossMode.challengeElapsedMs || bossMode.blitzElapsedMs || 0) / BLITZ_RAMP_MS);
 }
 
+function getBlitzElapsedRampUnits() {
+  if (!bossMode?.active) return 0;
+  return Math.max(0, (bossMode.challengeElapsedMs || bossMode.blitzElapsedMs || 0) / BLITZ_RAMP_MS);
+}
+
 function smoothProgress(value) {
   const t = clamp(0, 1, value);
   return t * t * (3 - 2 * t);
@@ -1299,15 +1314,28 @@ function getBlitzRampProgress() {
 }
 
 function getBlitzScore() {
-  // Both Wave 1 and Wave 2 score on the number of problems solved.
+  // Live solved count remains useful feedback, but saved challenge bests use
+  // survival time for Blitz and max cleared load for Wave.
   return Math.min(999, bossMode?.blitzClearedCount || 0);
+}
+
+function getBlitzSurvivalMs() {
+  return Math.max(0, Math.round(bossMode?.challengeElapsedMs || bossMode?.blitzElapsedMs || 0));
+}
+
+function getBlitzDropSeconds() {
+  const baselineSeconds = lerp(BLITZ_START_DROP_SECONDS, BLITZ_BASELINE_DROP_SECONDS, getBlitzRampProgress());
+  const overdriveUnits = Math.max(0, getBlitzElapsedRampUnits() - 1);
+  if (overdriveUnits <= 0) return baselineSeconds;
+  const overdriveReduction = Math.log1p(overdriveUnits * 1.4) * 0.55;
+  return Math.max(BLITZ_MIN_DROP_SECONDS, baselineSeconds - overdriveReduction);
 }
 
 function getBlitzSpeedPercent() {
   if (bossMode?.challengeType === "wave") {
     return clamp(25, 65, Math.round(Number.isFinite(bossMode.waveTwoSpeedPercent) ? bossMode.waveTwoSpeedPercent : WAVE_TWO_BASE_SPEED));
   }
-  return Math.round(lerp(BLITZ_START_SPEED, 85, getBlitzRampProgress()));
+  return Math.round(lerp(BLITZ_START_SPEED, 100, getBlitzRampProgress()) + Math.max(0, getBlitzElapsedRampUnits() - 1) * 25);
 }
 
 function getBlitzDropLimit() {
@@ -1415,7 +1443,7 @@ function getBossBombFallSeconds() {
     if (bossMode.challengeType === "wave") {
       return lerp(5.4, 3.8, getBlitzSpeedPercent() / 100);
     }
-    return lerp(5.4, 2.2, getBlitzRampProgress());
+    return getBlitzDropSeconds();
   }
   if (!bossMode?.parts) return 4.8;
   const wingsAlive = bossMode.parts.some((part) => part.id === "wings" && !part.destroyed);
@@ -1427,7 +1455,9 @@ function getBossBombIntervalMs() {
     if (bossMode.challengeType === "wave") {
       return Math.max(360, 1150 - (getBlitzDropLimit() - 1) * 90);
     }
-    return Math.round(lerp(2200, 700, getBlitzRampProgress()));
+    const overdriveUnits = Math.max(0, getBlitzElapsedRampUnits() - 1);
+    if (overdriveUnits <= 0) return Math.round(lerp(2200, 700, getBlitzRampProgress()));
+    return Math.max(320, Math.round(700 - Math.log1p(overdriveUnits * 1.8) * 190));
   }
   if (!bossMode?.parts) return 2200;
   const gunsAlive = bossMode.parts.some((part) => part.id === "guns" && !part.destroyed);
@@ -1482,13 +1512,25 @@ function spawnBossBomb() {
 function recordActiveChallengeAttempt(result = "survived") {
   if (!bossMode?.active) return;
   const type = bossMode.challengeType === "wave" ? "wave" : "blitz";
-  bossMode.blitzFinalScore = getBlitzScore();
+  const clearedCount = bossMode.blitzClearedCount || 0;
+  const survivalMs = getBlitzSurvivalMs();
+  const fastestDropSeconds = getBossBombFallSeconds();
+  const maxLoadCleared = Math.max(0, Math.round(bossMode.waveMaxLoadCleared || 0));
+  const maxLoadReached = Math.max(maxLoadCleared, Math.round(bossMode.waveMaxLoadReached || bossMode.challengeLoad || 0));
+  const primaryScore = type === "wave"
+    ? maxLoadCleared
+    : Math.max(0, Math.round(survivalMs / 1000));
+  bossMode.blitzFinalScore = primaryScore;
   bossMode.blitzFinalSpeed = getBlitzSpeedPercent();
   bossMode.blitzFinalDrops = getBlitzDropLimit();
+  bossMode.blitzFinalDurationMs = survivalMs;
+  bossMode.blitzFinalDropSeconds = fastestDropSeconds;
   bossMode.blitzFinalShields = Math.max(0, Math.round(bossMode.blitzShield || 0));
-  // Remember each wave's solved count for the end-of-run victory summary.
+  // Remember each challenge's natural metric for the end-of-run victory summary.
   bossMode.fullRunScores = bossMode.fullRunScores || {};
-  bossMode.fullRunScores[type] = bossMode.blitzFinalScore;
+  bossMode.fullRunScores[type] = type === "wave"
+    ? { maxLoadCleared, maxLoadReached, clearedCount }
+    : { durationMs: survivalMs, fastestDropSeconds, clearedCount };
   if (type === "blitz") {
     const progressPct = Math.round(getBlitzProgress() * 100);
     bossMode.waveTwoSpeedPercent = clamp(32, 58, Math.round(34 + progressPct * 0.24));
@@ -1497,9 +1539,12 @@ function recordActiveChallengeAttempt(result = "survived") {
     progressProfile = recordBlitzAttempt(progressProfile, bossMode.opKey, {
       level: bossMode.level,
       score: bossMode.blitzFinalScore,
+      durationMs: survivalMs,
       speedPercent: bossMode.blitzFinalSpeed,
       spawnRate: bossMode.blitzFinalDrops,
-      clearedCount: bossMode.blitzClearedCount || 0,
+      maxDropLimit: bossMode.blitzFinalDrops,
+      fastestDropSeconds,
+      clearedCount,
       cleared: false,
       result,
     });
@@ -1508,7 +1553,9 @@ function recordActiveChallengeAttempt(result = "survived") {
       type,
       level: bossMode.level,
       score: bossMode.blitzFinalScore,
-      clearedCount: bossMode.blitzClearedCount || 0,
+      maxLoadCleared,
+      maxLoadReached,
+      clearedCount,
       cleared: false,
       result,
     });
@@ -1544,8 +1591,8 @@ function completeChallengeFailure() {
     bossMode.transitionAction = "boss";
   } else {
     bossMode.message = type === "wave"
-      ? `Backup shields are down. Wave 2 solved: ${bossMode.blitzFinalScore}`
-      : `Shields are down. Blitz solved: ${bossMode.blitzFinalScore}`;
+      ? `Backup shields are down. Best load: ${bossMode.blitzFinalScore} at once`
+      : `Shields are down. Blitz lasted ${formatDuration(bossMode.blitzFinalDurationMs)}`;
     bossMode.transitionAction = "end";
   }
   updateBossHud();
@@ -1569,6 +1616,7 @@ function applyBossStun() {
 // so they are readable), wait until the whole batch is cleared, then step to N+1.
 function updateWaveTwoRound(activeBombs) {
   const load = bossMode.challengeLoad;
+  bossMode.waveMaxLoadReached = Math.max(bossMode.waveMaxLoadReached || 0, load);
   if (bossMode.waveRoundSpawned < load) {
     if (bossMode.bombTimerMs <= 0) {
       spawnBossBomb();
@@ -1576,7 +1624,9 @@ function updateWaveTwoRound(activeBombs) {
       bossMode.bombTimerMs = WAVE_TWO_SPAWN_STAGGER_MS;
     }
   } else if (activeBombs === 0 && bossMode.bombTimerMs <= 0) {
+    bossMode.waveMaxLoadCleared = Math.max(bossMode.waveMaxLoadCleared || 0, load);
     bossMode.challengeLoad = Math.min(WAVE_TWO_MAX_LOAD, load + 1);
+    bossMode.waveMaxLoadReached = Math.max(bossMode.waveMaxLoadReached || 0, bossMode.challengeLoad);
     bossMode.waveRoundSpawned = 0;
     bossMode.bombTimerMs = WAVE_TWO_ROUND_GAP_MS;
     bossMode.message = `Wave 2: ${bossMode.challengeLoad} at once`;
@@ -1796,9 +1846,9 @@ function updateBossHud() {
     const shield = Math.round(bossMode.blitzShield || 0);
     const shieldMax = bossMode.blitzShieldMax || BLITZ_SHIELD_MAX;
     if (bossMode.challengeType === "wave") {
-      bossHudMetaEl.textContent = `Shields ${shield}/${shieldMax} · Solved ${getBlitzScore()} · ${getBlitzDropLimit()} at once · fixed ${getBlitzSpeedPercent()}% speed`;
+      bossHudMetaEl.textContent = `Shields ${shield}/${shieldMax} · Solved ${getBlitzScore()} · best ${bossMode.waveMaxLoadCleared || 0} at once · trying ${getBlitzDropLimit()} · fixed ${getBlitzSpeedPercent()}% speed`;
     } else {
-      bossHudMetaEl.textContent = `Shields ${shield}/${shieldMax} · Solved ${getBlitzScore()} · ${getBlitzSpeedPercent()}% speed · ${getBlitzDropLimit()} at once`;
+      bossHudMetaEl.textContent = `Shields ${shield}/${shieldMax} · ${formatDuration(getBlitzSurvivalMs())} · ${formatDropSeconds(getBlitzDropSeconds())} · Solved ${getBlitzScore()}`;
     }
     return;
   }
@@ -2126,16 +2176,17 @@ function drawDrops() {
   drawBossStunOverlay();
 }
 
-// Compact shield + solved readout shown on the player ship during Wave 1/Wave 2.
+// Compact shield + challenge readout shown on the player ship during Wave 1/Wave 2.
 function drawChallengeStatus() {
   if (!bossMode?.active || bossMode.phase !== "challenge") return;
   const shield = Math.max(0, Math.round(bossMode.blitzShield || 0));
   const shieldMax = bossMode.blitzShieldMax || BLITZ_SHIELD_MAX;
-  const solved = getBlitzScore();
   const isWave = bossMode.challengeType === "wave";
   const lines = [
     `🛡 ${shield}/${shieldMax}`,
-    isWave ? `Solved ${solved} · ${bossMode.challengeLoad} at once` : `Solved ${solved}`,
+    isWave
+      ? `Best ${bossMode.waveMaxLoadCleared || 0} · Try ${bossMode.challengeLoad}`
+      : `Blitz ${formatDuration(getBlitzSurvivalMs())}`,
   ];
 
   ctx.save();
@@ -3020,8 +3071,8 @@ function isInputPossible(inputValue) {
 }
 
 // During boss/challenge play the header "Cleared" slot shows live stage progress
-// (Wave 1/2 solved count, Wave 2 current load, mothership nodes) instead of the
-// frozen session score.
+// (Blitz survival, Wave load, mothership nodes) instead of the frozen session
+// score.
 function getScoreReadout() {
   if (!bossMode?.active) return { label: "Cleared", value: String(score) };
   const phase = bossMode.phase;
@@ -3039,13 +3090,12 @@ function getScoreReadout() {
     return { label, value: `${cleared}/${problemsTotal} · ${formatDuration(time)}` };
   }
   if (phase === "challenge" || phase === "challengeComplete") {
-    const solved = getBlitzScore();
-    // Wave 1 ramps speed, so surface the live speed; Wave 2 ramps load.
+    // Wave 1 ramps drop time; Wave 2 ramps simultaneous load.
     return {
       label,
       value: bossMode.challengeType === "wave"
-        ? `${solved} solved · ${bossMode.challengeLoad} at once`
-        : `${solved} solved · ${getBlitzSpeedPercent()}% speed`,
+        ? `${bossMode.waveMaxLoadCleared || 0} best · trying ${bossMode.challengeLoad}`
+        : `${formatDuration(getBlitzSurvivalMs())} · ${formatDropSeconds(getBlitzDropSeconds())}`,
     };
   }
   return { label, value: "ready" };
@@ -3505,6 +3555,11 @@ function formatDuration(ms) {
     : `${seconds.toFixed(1)}s`;
 }
 
+function formatDropSeconds(seconds) {
+  if (!Number.isFinite(seconds)) return "--";
+  return `${Math.max(0, seconds).toFixed(1)}s drops`;
+}
+
 function formatReadyText(skill) {
   const suffix = skill?.bossAttemptedForLevel ? " ✓" : "";
   return `Mastered: ${formatReadinessPercent(skill)}${suffix}`;
@@ -3602,6 +3657,21 @@ function closeBossVictoryPopup() {
 
 // End-of-run celebration after a full boss clear: congratulations, the three
 // stage results (Wave 1 / Wave 2 / Worksheet), and a button to move on.
+function formatBlitzResult(result) {
+  if (!result) return "—";
+  const duration = Number.isFinite(result.durationMs) ? formatDuration(result.durationMs) : "—";
+  const dropTime = Number.isFinite(result.fastestDropSeconds) ? ` · ${formatDropSeconds(result.fastestDropSeconds)}` : "";
+  const solved = Number.isFinite(result.clearedCount) ? ` · ${result.clearedCount} solved` : "";
+  return `${duration}${dropTime}${solved}`;
+}
+
+function formatWaveResult(result) {
+  if (!result) return "—";
+  const load = Number.isFinite(result.maxLoadCleared) ? result.maxLoadCleared : 0;
+  const solved = Number.isFinite(result.clearedCount) ? ` · ${result.clearedCount} solved` : "";
+  return `${load} at once${solved}`;
+}
+
 function showBossVictoryPopup(info) {
   if (!info) return;
   closeBossVictoryPopup();
@@ -3628,8 +3698,8 @@ function showBossVictoryPopup(info) {
   const scores = document.createElement("div");
   scores.className = "boss-victory-scores";
   const rows = [
-    ["Wave 1", info.wave1 != null ? `${info.wave1} solved` : "—"],
-    ["Wave 2", info.wave2 != null ? `${info.wave2} solved` : "—"],
+    ["Blitz", formatBlitzResult(info.wave1)],
+    ["Wave", formatWaveResult(info.wave2)],
     ["Worksheet time", info.bossTimeMs != null ? formatDuration(info.bossTimeMs) : "—"],
   ];
   for (const [label, value] of rows) {
@@ -3686,6 +3756,7 @@ function formatBlitzText(opKey, skill) {
   if (!level) return "";
   const best = getBlitzBest(progressProfile.skills?.[opKey], level);
   if (!best) return `Blitz L${level}`;
+  if (Number.isFinite(best.durationMs)) return `Blitz L${level} best ${formatDuration(best.durationMs)}`;
   return `Blitz L${level} best ${best.score} solved`;
 }
 
@@ -3694,6 +3765,7 @@ function formatWaveText(opKey, skill) {
   if (!level) return "";
   const best = getChallengeBest(progressProfile.skills?.[opKey], "wave", level);
   if (!best) return `Wave L${level}`;
+  if (Number.isFinite(best.maxLoadCleared)) return `Wave L${level} best ${best.maxLoadCleared} at once`;
   return `Wave L${level} best ${best.score} solved`;
 }
 
@@ -4286,8 +4358,8 @@ function buildChallengeRow(skill) {
     chip.className = `results-pressure-chip${played ? " is-cleared" : ""}`;
     if (played) {
       const parts = [
-        entry.blitz ? `Blitz ${entry.blitz.score}` : "Blitz –",
-        entry.wave ? `Wave ${entry.wave.score}` : "Wave –",
+        entry.blitz ? `Blitz ${Number.isFinite(entry.blitz.durationMs) ? formatDuration(entry.blitz.durationMs) : entry.blitz.score}` : "Blitz –",
+        entry.wave ? `Wave ${Number.isFinite(entry.wave.maxLoadCleared) ? `${entry.wave.maxLoadCleared} at once` : entry.wave.score}` : "Wave –",
         entry.boss?.durationMs ? `Worksheet ${formatDuration(entry.boss.durationMs)}` : "Worksheet –",
       ];
       chip.textContent = `L${entry.level}: ${parts.join(" · ")}`;

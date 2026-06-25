@@ -496,14 +496,24 @@ function normalizeBlitzAttempts(attempts = []) {
   return attempts.map((attempt) => {
     const speedPercent = normalizeSpeedPercent(attempt.speedPercent ?? attempt.maxSpeedPercent ?? attempt.score);
     const load = normalizeLoad(attempt.load ?? attempt.spawnRate ?? attempt.maxDropLimit);
+    const durationMs = Number.isFinite(attempt.durationMs)
+      ? Math.max(0, Math.round(attempt.durationMs))
+      : null;
+    const fastestDropSeconds = Number.isFinite(attempt.fastestDropSeconds)
+      ? Math.max(0.1, Math.round(attempt.fastestDropSeconds * 10) / 10)
+      : null;
+    const scoreFallback = durationMs !== null ? Math.round(durationMs / 1000) : speedPercent;
     return {
       ...attempt,
       level: clamp(1, 10, Math.round(Number.isFinite(attempt.level) ? attempt.level : 1)),
-      score: clamp(0, 100, Math.round(Number.isFinite(attempt.score) ? attempt.score : speedPercent)),
+      score: clamp(0, 999999, Math.round(Number.isFinite(attempt.score) ? attempt.score : scoreFallback)),
+      durationMs,
       speedPercent,
       maxSpeedPercent: speedPercent,
+      fastestDropSeconds,
       spawnRate: load,
       maxDropLimit: load,
+      clearedCount: Math.max(0, Math.round(Number.isFinite(attempt.clearedCount) ? attempt.clearedCount : 0)),
       result: attempt.result || "survived",
     };
   });
@@ -515,20 +525,44 @@ function normalizeChallengeAttempts(attempts = []) {
     .filter((attempt) => attempt && typeof attempt === "object")
     .map((attempt) => {
       const type = ["blitz", "wave", "boss"].includes(attempt.type) ? attempt.type : "blitz";
-      const score = Number.isFinite(attempt.score)
-        ? clamp(0, 999, Math.round(attempt.score))
-        : 0;
       const durationMs = Number.isFinite(attempt.durationMs)
         ? Math.max(0, Math.round(attempt.durationMs))
         : null;
+      const fastestDropSeconds = Number.isFinite(attempt.fastestDropSeconds)
+        ? Math.max(0.1, Math.round(attempt.fastestDropSeconds * 10) / 10)
+        : null;
+      const maxLoadCleared = Number.isFinite(attempt.maxLoadCleared)
+        ? Math.max(0, Math.round(attempt.maxLoadCleared))
+        : null;
+      const maxLoadReached = Number.isFinite(attempt.maxLoadReached)
+        ? Math.max(0, Math.round(attempt.maxLoadReached))
+        : null;
+      const scoreFallback = type === "wave" && maxLoadCleared !== null
+        ? maxLoadCleared
+        : durationMs !== null
+          ? Math.round(durationMs / 1000)
+          : 0;
+      const score = Number.isFinite(attempt.score)
+        ? clamp(0, 999999, Math.round(attempt.score))
+        : scoreFallback;
       return {
         ...attempt,
         type,
         level: clamp(1, 10, Math.round(Number.isFinite(attempt.level) ? attempt.level : 1)),
         score,
         durationMs,
+        fastestDropSeconds,
+        maxSpeedPercent: Number.isFinite(attempt.maxSpeedPercent)
+          ? Math.max(0, Math.round(attempt.maxSpeedPercent))
+          : null,
+        maxDropLimit: Number.isFinite(attempt.maxDropLimit)
+          ? Math.max(0, Math.round(attempt.maxDropLimit))
+          : null,
+        maxLoadCleared,
+        maxLoadReached,
         cleared: Boolean(attempt.cleared),
         result: attempt.result || (attempt.cleared ? "cleared" : "survived"),
+        clearedCount: Math.max(0, Math.round(Number.isFinite(attempt.clearedCount) ? attempt.clearedCount : 0)),
       };
     });
 }
@@ -1069,11 +1103,46 @@ function getUnlockedLevel(skill) {
   return Math.max(getBlitzUnlockedLevel(skill), getLevelAdvanceUnlockedLevel(skill));
 }
 
-function isBetterScoreAttempt(candidate, best) {
+function hasModernChallengeMetric(attempt, type) {
+  if (!attempt) return false;
+  if (type === "blitz") return Number.isFinite(attempt.durationMs);
+  if (type === "wave") return Number.isFinite(attempt.maxLoadCleared);
+  return true;
+}
+
+function getChallengeScoreMetric(attempt, type) {
+  if (!attempt) return 0;
+  if (type === "blitz") {
+    return Number.isFinite(attempt.durationMs)
+      ? attempt.durationMs
+      : (attempt.score || 0) * 1000;
+  }
+  if (type === "wave") {
+    return Number.isFinite(attempt.maxLoadCleared)
+      ? attempt.maxLoadCleared
+      : attempt.score || 0;
+  }
+  return attempt.score || 0;
+}
+
+function isBetterScoreAttempt(candidate, best, type = "score") {
   if (!best) return true;
-  const candidateScore = candidate.score || 0;
-  const bestScore = best.score || 0;
+  const candidateScore = getChallengeScoreMetric(candidate, type);
+  const bestScore = getChallengeScoreMetric(best, type);
   if (candidateScore !== bestScore) return candidateScore > bestScore;
+  if (type === "blitz") {
+    const candidateDropSeconds = Number.isFinite(candidate.fastestDropSeconds) ? candidate.fastestDropSeconds : Infinity;
+    const bestDropSeconds = Number.isFinite(best.fastestDropSeconds) ? best.fastestDropSeconds : Infinity;
+    if (candidateDropSeconds !== bestDropSeconds) return candidateDropSeconds < bestDropSeconds;
+  }
+  if (type === "wave") {
+    const candidateReached = Number.isFinite(candidate.maxLoadReached) ? candidate.maxLoadReached : 0;
+    const bestReached = Number.isFinite(best.maxLoadReached) ? best.maxLoadReached : 0;
+    if (candidateReached !== bestReached) return candidateReached > bestReached;
+  }
+  const candidateCleared = candidate.clearedCount || 0;
+  const bestCleared = best.clearedCount || 0;
+  if (candidateCleared !== bestCleared) return candidateCleared > bestCleared;
   const candidateLevel = candidate.level || 0;
   const bestLevel = best.level || 0;
   if (candidateLevel !== bestLevel) return candidateLevel > bestLevel;
@@ -1099,9 +1168,11 @@ function getBlitzBest(skill, level = null) {
   const attempts = hasLevelFilter
     ? skill.blitzAttempts.filter((attempt) => (attempt.level || 0) >= level)
     : skill.blitzAttempts;
-  if (attempts.length === 0) return null;
-  return attempts.reduce((best, attempt) => {
-    if (isBetterScoreAttempt(attempt, best)) return attempt;
+  const modernAttempts = attempts.filter((attempt) => hasModernChallengeMetric(attempt, "blitz"));
+  const candidates = modernAttempts.length > 0 ? modernAttempts : attempts;
+  if (candidates.length === 0) return null;
+  return candidates.reduce((best, attempt) => {
+    if (isBetterScoreAttempt(attempt, best, "blitz")) return attempt;
     return best;
   }, null);
 }
@@ -1113,11 +1184,13 @@ function getChallengeBest(skill, type, level = null) {
     attempt.type === type
     && (!hasLevelFilter || attempt.level >= level)
   ));
-  if (attempts.length === 0) return null;
-  return attempts.reduce((best, attempt) => {
+  const modernAttempts = attempts.filter((attempt) => hasModernChallengeMetric(attempt, type));
+  const candidates = modernAttempts.length > 0 ? modernAttempts : attempts;
+  if (candidates.length === 0) return null;
+  return candidates.reduce((best, attempt) => {
     const better = type === "boss"
       ? isBetterTimeAttempt(attempt, best)
-      : isBetterScoreAttempt(attempt, best);
+      : isBetterScoreAttempt(attempt, best, type);
     return better ? attempt : best;
   }, null);
 }
@@ -1157,11 +1230,35 @@ function recordChallengeAttempt(profile, opKey, options = {}) {
   const at = nowIso(nowMs);
   const type = ["blitz", "wave", "boss"].includes(options.type) ? options.type : "blitz";
   const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : getBlitzUnlockedLevel(skill) || skill.currentLevel));
+  const durationMs = Number.isFinite(options.durationMs) ? Math.max(0, Math.round(options.durationMs)) : null;
+  const fastestDropSeconds = Number.isFinite(options.fastestDropSeconds)
+    ? Math.max(0.1, Math.round(options.fastestDropSeconds * 10) / 10)
+    : null;
+  const maxLoadCleared = Number.isFinite(options.maxLoadCleared)
+    ? Math.max(0, Math.round(options.maxLoadCleared))
+    : null;
+  const maxLoadReached = Number.isFinite(options.maxLoadReached)
+    ? Math.max(0, Math.round(options.maxLoadReached))
+    : null;
+  const scoreFallback = type === "wave" && maxLoadCleared !== null
+    ? maxLoadCleared
+    : durationMs !== null
+      ? Math.round(durationMs / 1000)
+      : 0;
   skill.challengeAttempts.push({
     type,
     level,
-    score: clamp(0, 999, Math.round(Number.isFinite(options.score) ? options.score : 0)),
-    durationMs: Number.isFinite(options.durationMs) ? Math.max(0, Math.round(options.durationMs)) : null,
+    score: clamp(0, 999999, Math.round(Number.isFinite(options.score) ? options.score : scoreFallback)),
+    durationMs,
+    fastestDropSeconds,
+    maxSpeedPercent: Number.isFinite(options.maxSpeedPercent)
+      ? Math.max(0, Math.round(options.maxSpeedPercent))
+      : null,
+    maxDropLimit: Number.isFinite(options.maxDropLimit ?? options.spawnRate)
+      ? Math.max(0, Math.round(options.maxDropLimit ?? options.spawnRate))
+      : null,
+    maxLoadCleared,
+    maxLoadReached,
     cleared: Boolean(options.cleared),
     result: options.result || (options.cleared ? "cleared" : "survived"),
     clearedCount: Math.max(0, Math.round(Number.isFinite(options.clearedCount) ? options.clearedCount : 0)),
@@ -1181,11 +1278,18 @@ function recordBlitzAttempt(profile, opKey, options = {}) {
   const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : getBlitzUnlockedLevel(skill) || skill.currentLevel));
   const speedPercent = normalizeSpeedPercent(options.speedPercent ?? options.maxSpeedPercent ?? profile.settings?.speed);
   const load = normalizeLoad(options.spawnRate ?? options.maxDropLimit ?? profile.settings?.rate);
+  const durationMs = Number.isFinite(options.durationMs) ? Math.max(0, Math.round(options.durationMs)) : null;
+  const fastestDropSeconds = Number.isFinite(options.fastestDropSeconds)
+    ? Math.max(0.1, Math.round(options.fastestDropSeconds * 10) / 10)
+    : null;
+  const scoreFallback = durationMs !== null ? Math.round(durationMs / 1000) : speedPercent;
   skill.blitzAttempts.push({
     level,
-    score: clamp(0, 100, Math.round(Number.isFinite(options.score) ? options.score : speedPercent)),
+    score: clamp(0, 999999, Math.round(Number.isFinite(options.score) ? options.score : scoreFallback)),
+    durationMs,
     speedPercent,
     maxSpeedPercent: speedPercent,
+    fastestDropSeconds,
     spawnRate: load,
     maxDropLimit: load,
     cleared: Boolean(options.cleared),
@@ -1199,7 +1303,11 @@ function recordBlitzAttempt(profile, opKey, options = {}) {
     ...options,
     type: "blitz",
     level,
-    score: clamp(0, 100, Math.round(Number.isFinite(options.score) ? options.score : speedPercent)),
+    score: clamp(0, 999999, Math.round(Number.isFinite(options.score) ? options.score : scoreFallback)),
+    durationMs,
+    fastestDropSeconds,
+    maxSpeedPercent: speedPercent,
+    maxDropLimit: load,
     result: options.result || (options.cleared ? "boss-cleared" : "survived"),
     nowMs,
   });

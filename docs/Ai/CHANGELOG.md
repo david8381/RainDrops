@@ -4,6 +4,8 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-24
+- Changed Blitz/Wave challenge bests to use their natural metrics: Blitz now records survival time plus fastest drop time reached, Wave records the highest simultaneous load fully cleared, and solved counts remain in attempt history for future progress views.
+- Removed the hard 85% Blitz pressure cap by making the Blitz drop-time ramp continue more gradually after the old ceiling.
 - Made boss optional after full mastery: the mastery prompt now offers Keep Practicing, Boss, or Next Level; Next Level records a mastery advance separately from boss clears so reloads still resume at the right level.
 - Renamed the standalone final-boss replay to Worksheet, removed the 50-problem cap so it covers the full current-level universe, added live cleared/total plus elapsed time, and made missiles drop from visible worksheet nodes that can be cleared before launch.
 - Let unlocked/revisited levels launch Blitz, Wave, or Worksheet independently without forcing the full three-stage boss sequence.

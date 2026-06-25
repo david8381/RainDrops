@@ -87,7 +87,7 @@ globalThis.RainMathText = {
         kicker: "Boss mode",
         title: "Mastery unlocks choices.",
         body: "When Mastered reaches 100%, you can keep practicing, move to the next level, or try boss mode. Blitz tests speed, Wave tests simultaneous load, and Worksheet tests every problem in the level.",
-        tip: "Challenge scores are problems solved; Worksheet records time until complete.",
+        tip: "Blitz records survival time, Wave records the most problems handled at once, and Worksheet records time until complete.",
       },
       {
         target: ".version",

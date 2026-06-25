@@ -224,17 +224,19 @@ describe("player progress profile", () => {
 
     recordBlitzAttempt(profile, "add", {
       level: 1,
-      score: 42,
+      durationMs: 42000,
       speedPercent: 58,
       spawnRate: 6,
+      fastestDropSeconds: 3.1,
       cleared: true,
       nowMs: Date.UTC(2026, 0, 2),
     });
     recordBlitzAttempt(profile, "add", {
       level: 1,
-      score: 65,
+      durationMs: 65000,
       speedPercent: 74,
       spawnRate: 8,
+      fastestDropSeconds: 2.5,
       cleared: true,
       nowMs: Date.UTC(2026, 0, 3),
     });
@@ -242,17 +244,19 @@ describe("player progress profile", () => {
     summary = summarizeProfile(profile).skills.add;
     assert.equal(profile.skills.add.blitzAttempts.length, 2);
     assert.equal(summary.blitzBest.score, 65);
+    assert.equal(summary.blitzBest.durationMs, 65000);
+    assert.equal(summary.blitzBest.fastestDropSeconds, 2.5);
     assert.equal(summary.blitzBest.maxSpeedPercent, 74);
     assert.equal(summary.blitzBest.maxDropLimit, 8);
   });
 
-  it("keeps blitz bests level-specific but reports the best score across levels", () => {
+  it("keeps blitz bests level-specific but reports the best survival time across levels", () => {
     const profile = createDefaultProfile();
 
     recordBossAttempt(profile, "add", { speedPercent: 30, spawnRate: 3, nowMs: Date.UTC(2026, 0, 1) });
     recordBlitzAttempt(profile, "add", {
       level: 1,
-      score: 65,
+      durationMs: 65000,
       speedPercent: 70,
       spawnRate: 7,
       cleared: true,
@@ -263,7 +267,7 @@ describe("player progress profile", () => {
     recordBossAttempt(profile, "add", { speedPercent: 30, spawnRate: 3, nowMs: Date.UTC(2026, 0, 3) });
     recordBlitzAttempt(profile, "add", {
       level: 2,
-      score: 55,
+      durationMs: 55000,
       speedPercent: 62,
       spawnRate: 6,
       cleared: true,
@@ -277,7 +281,7 @@ describe("player progress profile", () => {
 
     recordBlitzAttempt(profile, "add", {
       level: 2,
-      score: 65,
+      durationMs: 65000,
       speedPercent: 78,
       spawnRate: 8,
       cleared: true,
@@ -289,7 +293,7 @@ describe("player progress profile", () => {
 
     recordBlitzAttempt(profile, "add", {
       level: 2,
-      score: 82,
+      durationMs: 82000,
       speedPercent: 92,
       spawnRate: 10,
       cleared: true,
@@ -300,13 +304,13 @@ describe("player progress profile", () => {
     assert.equal(summary.blitzBest.score, 82);
   });
 
-  it("records challenge bests by score and boss time", () => {
+  it("records challenge bests by natural challenge metric and boss time", () => {
     const profile = createDefaultProfile();
     recordBossAttempt(profile, "add", { speedPercent: 30, spawnRate: 3, nowMs: Date.UTC(2026, 0, 1) });
 
     recordBlitzAttempt(profile, "add", {
       level: 1,
-      score: 44,
+      durationMs: 44000,
       speedPercent: 55,
       spawnRate: 5,
       nowMs: Date.UTC(2026, 0, 2),
@@ -314,7 +318,9 @@ describe("player progress profile", () => {
     recordChallengeAttempt(profile, "add", {
       type: "wave",
       level: 1,
-      score: 31,
+      maxLoadCleared: 6,
+      maxLoadReached: 7,
+      clearedCount: 31,
       nowMs: Date.UTC(2026, 0, 3),
     });
     recordChallengeAttempt(profile, "add", {
@@ -335,7 +341,10 @@ describe("player progress profile", () => {
     let summary = summarizeProfile(profile).skills.add;
     assert.equal(profile.skills.add.challengeAttempts.length, 4);
     assert.equal(summary.challengeBests.blitz.score, 44);
-    assert.equal(summary.challengeBests.wave.score, 31);
+    assert.equal(summary.challengeBests.blitz.durationMs, 44000);
+    assert.equal(summary.challengeBests.wave.score, 6);
+    assert.equal(summary.challengeBests.wave.maxLoadCleared, 6);
+    assert.equal(summary.challengeBests.wave.clearedCount, 31);
     assert.equal(summary.challengeBests.boss.durationMs, 72000);
 
     syncSettings(profile, { difficulties: { add: 2 } });
@@ -343,13 +352,14 @@ describe("player progress profile", () => {
     recordChallengeAttempt(profile, "add", {
       type: "wave",
       level: 2,
-      score: 31,
+      maxLoadCleared: 6,
+      maxLoadReached: 8,
       nowMs: Date.UTC(2026, 0, 7),
     });
     recordChallengeAttempt(profile, "add", {
       type: "blitz",
       level: 2,
-      score: 40,
+      durationMs: 40000,
       nowMs: Date.UTC(2026, 0, 8),
     });
 
@@ -357,6 +367,7 @@ describe("player progress profile", () => {
     assert.equal(summary.blitzUnlockedLevel, 2);
     assert.equal(summary.challengeBests.blitz.score, 40);
     assert.equal(summary.challengeBests.wave.level, 2);
+    assert.equal(summary.challengeBests.wave.maxLoadReached, 8);
     assert.equal(getChallengeBest(profile.skills.add, "wave", 1).level, 2);
     assert.equal(getChallengeBests(profile.skills.add, 1).boss.durationMs, 72000);
   });
@@ -365,11 +376,11 @@ describe("player progress profile", () => {
     const profile = createDefaultProfile();
     // Clear L1 boss, then a strong wave at L1.
     recordBossAttempt(profile, "add", { speedPercent: 30, spawnRate: 3, nowMs: Date.UTC(2026, 0, 1) });
-    recordChallengeAttempt(profile, "add", { type: "wave", level: 1, score: 14, nowMs: Date.UTC(2026, 0, 2) });
+    recordChallengeAttempt(profile, "add", { type: "wave", level: 1, maxLoadCleared: 7, clearedCount: 14, nowMs: Date.UTC(2026, 0, 2) });
     // Advance, clear L2 boss, then a weaker wave at L2.
     syncSettings(profile, { difficulties: { add: 2 } });
     recordBossAttempt(profile, "add", { speedPercent: 30, spawnRate: 3, nowMs: Date.UTC(2026, 0, 3) });
-    recordChallengeAttempt(profile, "add", { type: "wave", level: 2, score: 9, nowMs: Date.UTC(2026, 0, 4) });
+    recordChallengeAttempt(profile, "add", { type: "wave", level: 2, maxLoadCleared: 4, clearedCount: 9, nowMs: Date.UTC(2026, 0, 4) });
     // Now working toward L3 (never played).
     syncSettings(profile, { difficulties: { add: 3 } });
 
@@ -377,9 +388,9 @@ describe("player progress profile", () => {
     const byLevel = Object.fromEntries(rows.map((row) => [row.level, row]));
     assert.equal(rows.length, 3);
     // L1 keeps its strong score even though a weaker L2 run exists.
-    assert.equal(byLevel[1].wave.score, 14);
+    assert.equal(byLevel[1].wave.maxLoadCleared, 7);
     // L2 shows its own (weaker) score.
-    assert.equal(byLevel[2].wave.score, 9);
+    assert.equal(byLevel[2].wave.maxLoadCleared, 4);
     // L3 has never been played -> no scores.
     assert.equal(byLevel[3].wave, null);
     assert.equal(byLevel[3].blitz, null);

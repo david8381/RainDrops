@@ -530,9 +530,9 @@ test.describe("desktop gameplay", () => {
     expect(state.bossMode.phase).toBe("challenge");
     expect(state.bossMode.challengeType).toBe("blitz");
     await expect(page.locator("#bossHudMeta")).toContainText("Solved");
-    await expect(page.locator("#bossHudMeta")).toContainText("2 at once");
+    await expect(page.locator("#bossHudMeta")).toContainText("drops");
     await invoke(page, "advanceBossTime", 30000);
-    await expect(page.locator("#bossHudMeta")).toContainText("2 at once");
+    await expect(page.locator("#bossHudMeta")).toContainText("drops");
     state = await invoke(page, "triggerBossBombHit");
     expect(state.bossMode.phase).toBe("challenge");
     expect(state.bossMode.blitzShield).toBe(15);
@@ -655,12 +655,14 @@ test.describe("desktop gameplay", () => {
     }
     expect(state.bossMode.phase).toBe("challengeComplete");
     expect(state.bossMode.transitionAction).toBe("end");
-    await expect(page.locator("#bossHudStatus")).toContainText("Shields are down. Blitz solved:");
+    await expect(page.locator("#bossHudStatus")).toContainText("Shields are down. Blitz lasted");
 
     state = await invoke(page, "advanceBossTime", 1900);
     expect(state.opConfig.add.difficulty).toBe(1); // blitz does not change the level
     expect(state.progressProfile.skills.add.blitzAttempts.at(-1).level).toBe(1);
     expect(state.progressProfile.skills.add.blitzAttempts.at(-1).result).toBe("shields-down");
+    expect(state.progressProfile.skills.add.blitzAttempts.at(-1).durationMs).toBeGreaterThanOrEqual(0);
+    expect(state.progressProfile.skills.add.blitzAttempts.at(-1).fastestDropSeconds).toBeGreaterThan(0);
   });
 
   test("full boss mode runs Wave 1, Wave 2, then the mothership", async ({ page }) => {
@@ -697,7 +699,8 @@ test.describe("desktop gameplay", () => {
     await invoke(page, "submit", bomb.answerText);
     state = await invoke(page, "advanceBossTime", 400); // round cleared -> step to 2
     expect(state.bossMode.challengeLoad).toBe(2);
-    await expect(page.locator("#bossHudMeta")).toContainText("2 at once");
+    await expect(page.locator("#bossHudMeta")).toContainText("trying 2");
+    expect(state.bossMode.waveMaxLoadCleared).toBe(1);
     const waveMetaAfter = await page.locator("#bossHudMeta").textContent();
     expect(waveMetaAfter.match(/fixed \d+% speed/)?.[0]).toBe(waveMetaBefore.match(/fixed \d+% speed/)?.[0]);
 
@@ -745,7 +748,7 @@ test.describe("desktop gameplay", () => {
       state = await invoke(page, "triggerBossBombHit");
     }
     expect(state.bossMode.transitionAction).toBe("end");
-    await expect(page.locator("#bossHudStatus")).toContainText("Wave 2 solved:");
+    await expect(page.locator("#bossHudStatus")).toContainText("Best load:");
     state = await invoke(page, "advanceBossTime", 1900);
     expect(state.bossMode).toBe(null);
 
@@ -759,6 +762,7 @@ test.describe("desktop gameplay", () => {
     expect(state.opConfig.add.difficulty).toBe(1); // boss replay does not advance the level
     const bests = state.progressSummary.skills.add.challengeBests;
     expect(bests.wave.level).toBe(1);
+    expect(bests.wave.maxLoadCleared).toBeGreaterThanOrEqual(0);
     expect(bests.boss.level).toBe(1);
     expect(bests.boss.durationMs).toBeGreaterThan(0);
   });
@@ -807,7 +811,8 @@ test.describe("desktop gameplay", () => {
     await invoke(page, "advanceBossTime", 2500); // run out the victory timer
     await expect(page.locator("#bossVictoryOverlay")).toBeVisible();
     await expect(page.locator("#bossVictoryOverlay")).toContainText("Boss Defeated");
-    await expect(page.locator("#bossVictoryOverlay")).toContainText("Wave 1");
+    await expect(page.locator("#bossVictoryOverlay")).toContainText("Blitz");
+    await expect(page.locator("#bossVictoryOverlay")).toContainText("Wave");
     await expect(page.locator(".boss-victory-next")).toBeVisible();
 
     // The accuracy grid is still reachable from the summary.
