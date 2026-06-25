@@ -3926,7 +3926,7 @@ function getShareBadgeData(opKey, level) {
 
 function getShareBadgeText(data) {
   const lines = [
-    `${data.playerName} earned a Rain Math ${data.opName} Level ${data.level} badge.`,
+    `${data.playerName} — Rain Math ${data.opName} Level ${data.level} recap.`,
     `Blitz: ${data.blitzText}`,
     `Wave: ${data.waveText}`,
     `Worksheet: ${data.worksheetText}`,
@@ -3953,7 +3953,7 @@ async function copyShareBadge(data, statusEl) {
       document.execCommand("copy");
       temp.remove();
     }
-    if (statusEl) statusEl.textContent = "Copied badge text.";
+    if (statusEl) statusEl.textContent = "Copied recap text.";
   } catch {
     if (statusEl) statusEl.textContent = "Copy failed. Select the text and copy it manually.";
   }
@@ -3964,7 +3964,7 @@ async function shareBadge(data, statusEl) {
   if (navigator.share) {
     try {
       await navigator.share({
-        title: "Rain Math badge",
+        title: "Rain Math recap",
         text,
       });
       if (statusEl) statusEl.textContent = "Share sheet opened.";
@@ -3986,7 +3986,7 @@ function showShareBadge(opKey, level) {
   overlay.id = "shareBadgeOverlay";
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-modal", "true");
-  overlay.setAttribute("aria-label", "Rain Math badge");
+  overlay.setAttribute("aria-label", "Rain Math recap");
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) closeShareBadgePopup();
   });
@@ -4114,7 +4114,7 @@ function showBossVictoryPopup(info) {
   const badge = document.createElement("button");
   badge.type = "button";
   badge.className = "boss-victory-badge";
-  badge.textContent = "Share badge";
+  badge.textContent = "Recap";
   badge.addEventListener("click", () => showShareBadge(info.opKey, info.level));
   buttons.append(next, grid, badge);
 
@@ -4168,7 +4168,7 @@ function formatBossReplayText(opKey, skill) {
 
 function formatBadgeText(opKey, skill) {
   const level = getReplayChallengeLevel(opKey, skill);
-  return level ? `Badge L${level}` : "";
+  return level ? `Recap L${level}` : "";
 }
 
 function getCourseProgressPercent(level) {

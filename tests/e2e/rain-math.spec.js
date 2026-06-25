@@ -988,6 +988,7 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#bossVictoryOverlay")).toContainText("Wave");
     await expect(page.locator(".boss-victory-next")).toBeVisible();
     await expect(page.locator(".boss-victory-badge")).toBeVisible();
+    await expect(page.locator(".boss-victory-badge")).toHaveText("Recap");
 
     await page.locator(".boss-victory-badge").click();
     await expect(page.locator("#shareBadgeOverlay")).toBeVisible();
