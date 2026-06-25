@@ -147,6 +147,9 @@ test.describe("desktop gameplay", () => {
 
     await invoke(page, "startBoss", "add");
     expect((await invoke(page, "getState")).bossMode.active).toBe(true);
+    await expect(addCard.locator(".diff-btn").last()).toBeDisabled();
+    await invoke(page, "setOpDifficulty", "add", 2);
+    expect((await invoke(page, "getState")).opConfig.add.difficulty).toBe(1);
 
     await invoke(page, "forceBossVictory");
     await expect(addCard.locator(".diff-value")).toHaveText("2");
@@ -160,6 +163,7 @@ test.describe("desktop gameplay", () => {
     // Challenge replays are hidden on the new (undefeated) level; selecting the
     // cleared level reveals them.
     await expect(addCard.locator(".diff-blitz")).toBeHidden();
+    await invoke(page, "advanceBossTime", 2500);
     await invoke(page, "setOpDifficulty", "add", 1);
     await expect(addCard.locator(".diff-blitz")).toBeVisible();
     await expect(addCard.locator(".diff-blitz")).toHaveText("Blitz L1");
@@ -617,6 +621,8 @@ test.describe("desktop gameplay", () => {
     await invoke(page, "enableOps", ["add"]);
     await invoke(page, "startBoss", "add");
     await invoke(page, "forceBossVictory");
+    await invoke(page, "advanceBossTime", 2500);
+    await page.locator(".boss-victory-next").click();
 
     const addCard = page.locator('.diff-card[data-op="add"]');
     await expect(addCard.locator(".diff-value")).toHaveText("2");
@@ -729,6 +735,8 @@ test.describe("desktop gameplay", () => {
     await invoke(page, "enableOps", ["add"]);
     await invoke(page, "startBoss", "add");
     await invoke(page, "forceBossVictory");
+    await invoke(page, "advanceBossTime", 2500);
+    await page.locator(".boss-victory-next").click();
 
     const addCard = page.locator('.diff-card[data-op="add"]');
     // Replays live on the cleared level; select it to reach them.
@@ -850,6 +858,21 @@ test.describe("desktop gameplay", () => {
 
     const state = await invoke(page, "getState");
     expect(state.opConfig.add.difficulty).toBe(2);
+  });
+
+  test("normal game load resumes at the unlocked level", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await invoke(page, "startBoss", "add");
+    await invoke(page, "forceBossVictory");
+    await invoke(page, "setOpDifficulty", "add", 1);
+    await page.evaluate(() => localStorage.setItem("rainMath.welcomeSeen.v1", "1"));
+
+    await page.goto("/");
+    await page.waitForFunction(() => window.__RAIN_MATH_READY__);
+    await page.locator('.op-chit[data-op="add"]').click();
+
+    await expect(page.locator('.diff-card[data-op="add"] .diff-value')).toHaveText("2");
   });
 
   test("boss reveals nodes in capped batches and clears parts only when fully solved", async ({ page }) => {
@@ -1068,12 +1091,51 @@ test.describe("mobile gameplay", () => {
 
     await expect(page.locator("#touchKeypad")).toBeVisible();
     await expect(page.locator(".touch-score")).toContainText("Cleared:");
+    await expect(page.locator(".op-chit")).toHaveCount(8);
+    const opChitMetrics = await page.locator(".op-chits").evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      const visibleCount = [...el.children].filter((child) => {
+        const childRect = child.getBoundingClientRect();
+        return childRect.left >= rect.left - 1 && childRect.right <= rect.right + 1;
+      }).length;
+      return {
+        clientWidth: el.clientWidth,
+        scrollWidth: el.scrollWidth,
+        visibleCount,
+      };
+    });
+    expect(opChitMetrics.visibleCount).toBe(8);
+    expect(opChitMetrics.scrollWidth).toBeLessThanOrEqual(opChitMetrics.clientWidth + 2);
     await page.locator('.kp-key[data-key="1"]').click();
     await page.locator('.kp-key[data-key="2"]').click();
 
     await expect(page.locator("#touchScore")).toHaveText("1");
     const state = await invoke(page, "getState");
     expect(state.drops).toHaveLength(0);
+  });
+
+  test("landscape touch layout preserves playfield height", async ({ page }) => {
+    await page.setViewportSize({ width: 844, height: 390 });
+    await openApp(page);
+
+    const layout = await page.evaluate(() => {
+      const playCol = document.querySelector(".play-col");
+      const canvas = document.querySelector("#canvas");
+      const keypad = document.querySelector("#touchKeypad");
+      const canvasRect = canvas.getBoundingClientRect();
+      const keypadRect = keypad.getBoundingClientRect();
+      return {
+        flexDirection: getComputedStyle(playCol).flexDirection,
+        canvasHeight: Math.round(canvasRect.height),
+        canvasWidth: Math.round(canvasRect.width),
+        keypadLeft: Math.round(keypadRect.left),
+        canvasRight: Math.round(canvasRect.right),
+      };
+    });
+
+    expect(layout.flexDirection).toBe("row");
+    expect(layout.canvasHeight).toBeGreaterThan(230);
+    expect(layout.keypadLeft).toBeGreaterThanOrEqual(layout.canvasRight - 1);
   });
 
   test("updates mobile inline controls", async ({ page }) => {

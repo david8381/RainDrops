@@ -674,6 +674,7 @@ function markReadyForBoss(opKey) {
 
 function setDifficulty(opKey, level, { force = false } = {}) {
   if (!opConfig[opKey]) return;
+  if (isBossActive() && !force) return;
   const nextLevel = clamp(1, 10, level);
   if (!force && !canAdvanceDifficulty(opKey, nextLevel)) {
     showReadyRequired(opKey);
@@ -1095,6 +1096,7 @@ function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficul
   updateKpDisplay();
   updateBossHud();
   updateControlDisplay();
+  updateDifficultyDisplays();
   answerInput.focus();
   drawDrops();
   return true;
@@ -1609,6 +1611,7 @@ function updateBossMode(dt) {
         bossMode = null;
         updateBossHud();
         updateControlDisplay();
+        updateDifficultyDisplays();
       }
     } else {
       updateBossHud();
@@ -1637,6 +1640,7 @@ function updateBossMode(dt) {
       bossMode = null;
       updateBossHud();
       updateControlDisplay();
+      updateDifficultyDisplays();
       if (showVictory) showBossVictoryPopup(lastBossVictory);
     }
   }
@@ -2324,7 +2328,7 @@ function drawChallengeBurst() {
   const fadeIn = clamp(0, 1, rawProgress / 0.12);
   const fadeOut = clamp(0, 1, (1 - rawProgress) / 0.2);
   const alpha = Math.min(fadeIn, fadeOut);
-  const beamY = lerp(-70, canvasH + 90, progress);
+  const beamY = lerp(canvasH + 90, -70, progress);
   const beamHeight = clamp(42, 78, canvasH * 0.09);
   const beamCore = clamp(10, 18, canvasH * 0.02);
   const glowTop = beamY - beamHeight * 2.4;
@@ -3749,6 +3753,7 @@ function buildDiffCards() {
     downBtn.className = "diff-btn";
     downBtn.tabIndex = -1;
     downBtn.textContent = "\u2212";
+    downBtn.disabled = isBossActive();
     downBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       initAudio();
@@ -3763,6 +3768,7 @@ function buildDiffCards() {
     upBtn.className = "diff-btn";
     upBtn.tabIndex = -1;
     upBtn.textContent = "+";
+    upBtn.disabled = isBossActive();
     upBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       initAudio();
@@ -3802,7 +3808,7 @@ function buildDiffCards() {
     readyText.classList.toggle("is-qualified", Boolean(skill.bossAttemptedForLevel));
     readyText.classList.toggle("is-locked", !skill.bossReady);
     readyText.classList.toggle("is-ready-attention", shouldPromptBossAttempt(skill));
-    readyText.disabled = !skill.bossReady;
+    readyText.disabled = isBossActive() || !skill.bossReady;
     readyText.title = getBossButtonTitle(skill);
     readyText.setAttribute("aria-pressed", skill.bossAttemptedForLevel ? "true" : "false");
     readyText.addEventListener("click", (e) => {
@@ -3826,6 +3832,7 @@ function buildDiffCards() {
     blitzBtn.dataset.challenge = "blitz";
     blitzBtn.textContent = formatBlitzText(skill);
     blitzBtn.hidden = !canReplayChallenges(opKey, skill);
+    blitzBtn.disabled = isBossActive();
     blitzBtn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -3840,6 +3847,7 @@ function buildDiffCards() {
     waveBtn.dataset.challenge = "wave";
     waveBtn.textContent = formatWaveText(skill);
     waveBtn.hidden = !canReplayChallenges(opKey, skill);
+    waveBtn.disabled = isBossActive();
     waveBtn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -3854,6 +3862,7 @@ function buildDiffCards() {
     bossReplayBtn.dataset.challenge = "boss";
     bossReplayBtn.textContent = formatBossReplayText(skill);
     bossReplayBtn.hidden = !canReplayChallenges(opKey, skill);
+    bossReplayBtn.disabled = isBossActive();
     bossReplayBtn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -5912,6 +5921,7 @@ function buildKpDiffStrip() {
     const downBtn = document.createElement("button");
     downBtn.className = "kp-diff-btn";
     downBtn.textContent = "\u2212";
+    downBtn.disabled = isBossActive();
     wireKpButton(downBtn, () => setDifficulty(opKey, opConfig[opKey].difficulty - 1));
 
     const val = document.createElement("span");
@@ -5925,7 +5935,7 @@ function buildKpDiffStrip() {
     ready.textContent = formatReadyText(skill);
     ready.classList.toggle("is-qualified", Boolean(skill.bossAttemptedForLevel));
     ready.classList.toggle("is-locked", !skill.bossReady);
-    ready.disabled = !skill.bossReady;
+    ready.disabled = isBossActive() || !skill.bossReady;
     ready.title = getBossButtonTitle(skill);
     ready.setAttribute("aria-pressed", skill.bossAttemptedForLevel ? "true" : "false");
     wireKpButton(ready, () => startBossMode(opKey));
@@ -5936,6 +5946,7 @@ function buildKpDiffStrip() {
     blitz.dataset.op = opKey;
     blitz.textContent = formatBlitzText(skill);
     blitz.hidden = !canReplayChallenges(opKey, skill);
+    blitz.disabled = isBossActive();
     wireKpButton(blitz, () => startBlitzMode(opKey));
 
     const wave = document.createElement("button");
@@ -5944,6 +5955,7 @@ function buildKpDiffStrip() {
     wave.dataset.op = opKey;
     wave.textContent = formatWaveText(skill);
     wave.hidden = !canReplayChallenges(opKey, skill);
+    wave.disabled = isBossActive();
     wireKpButton(wave, () => startWaveMode(opKey));
 
     const bossReplay = document.createElement("button");
@@ -5952,11 +5964,13 @@ function buildKpDiffStrip() {
     bossReplay.dataset.op = opKey;
     bossReplay.textContent = formatBossReplayText(skill);
     bossReplay.hidden = !canReplayChallenges(opKey, skill);
+    bossReplay.disabled = isBossActive();
     wireKpButton(bossReplay, () => startBossReplayMode(opKey));
 
     const upBtn = document.createElement("button");
     upBtn.className = "kp-diff-btn";
     upBtn.textContent = "+";
+    upBtn.disabled = isBossActive();
     wireKpButton(upBtn, () => setDifficulty(opKey, opConfig[opKey].difficulty + 1));
 
     item.appendChild(label);
