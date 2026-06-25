@@ -59,7 +59,7 @@ globalThis.RainMathText = {
         kicker: "Typing rules",
         title: "Some answers use Enter.",
         body: "SI conversions use answers like *1000 or /100 and need Enter. Prime factorization accepts full answers like 2^2*3 plus Enter, or Tab to target a drop and factor it step by step. Tab and Shift+Tab switch factor targets.",
-        tip: "",
+        tip: "If you fire too many impossible answers quickly, the cannon briefly overloads. Editing and partial answers do not count.",
       },
       {
         target: ".play-controls-card",

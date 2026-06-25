@@ -231,6 +231,38 @@ test.describe("desktop gameplay", () => {
     expect(state.progressSummary.skills.add.attempts).toBe(0);
   });
 
+  test("rapid impossible submissions briefly overload the cannon", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await freezeAutoSpawns(page);
+    await invoke(page, "addDrop", {
+      opKey: "add",
+      text: "2 + 2",
+      answer: 4,
+      answerText: "4",
+      statsKey: "2,2",
+      y: 120,
+    });
+
+    for (let i = 0; i < 5; i += 1) {
+      await invoke(page, "submit", "9");
+    }
+
+    let state = await invoke(page, "getState");
+    expect(state.cannonOverloadMs).toBeGreaterThan(0);
+    await expect(page.locator("#inputHint")).toContainText("Cannon overloaded");
+
+    state = await invoke(page, "submit", "4");
+    expect(state.drops).toHaveLength(1);
+    expect(state.score).toBe(0);
+
+    state = await invoke(page, "advanceDrops", 2100);
+    expect(state.cannonOverloadMs).toBe(0);
+    state = await invoke(page, "submit", "4");
+    expect(state.drops).toHaveLength(0);
+    expect(state.score).toBe(1);
+  });
+
   test("NumLock does not break numpad answer entry", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
@@ -823,6 +855,7 @@ test.describe("desktop gameplay", () => {
   test("interrupts with mastery choices and can skip boss to the next level", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
+    const addCard = page.locator('.diff-card[data-op="add"]');
     await invoke(page, "masterCurrentLevel", "add");
     await freezeAutoSpawns(page);
     await invoke(page, "addDrop", {
@@ -840,8 +873,18 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator(".boss-offer-dismiss")).toHaveText("Keep Practicing");
     await expect(page.locator(".boss-offer-next")).toHaveText("Next Level");
 
+    await page.locator(".boss-offer-dismiss").click();
+    let state = await invoke(page, "getState");
+    expect(state.opConfig.add.difficulty).toBe(1);
+    expect(state.progressSummary.skills.add.unlockedLevel).toBe(0);
+    await expect(addCard.locator(".diff-blitz")).toBeVisible();
+    await expect(addCard.locator(".diff-wave")).toBeVisible();
+    await expect(addCard.locator(".diff-boss")).toBeVisible();
+
+    await addCard.locator(".diff-ready").click();
+    await expect(page.locator("#bossOfferOverlay")).toBeVisible();
     await page.locator(".boss-offer-next").click();
-    const state = await invoke(page, "getState");
+    state = await invoke(page, "getState");
     expect(state.bossMode).toBe(null);
     expect(state.opConfig.add.difficulty).toBe(2);
     expect(state.progressSummary.skills.add.unlockedLevel).toBe(1);

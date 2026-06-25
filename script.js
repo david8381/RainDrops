@@ -101,6 +101,12 @@ const BLITZ_SHIELD_HIT_MS = 360;
 const WAVE_TWO_SPAWN_STAGGER_MS = 340;
 const WAVE_TWO_ROUND_GAP_MS = 700;
 const WAVE_TWO_MAX_LOAD = 25;
+const CANNON_OVERLOAD_THRESHOLD = 5;
+const CANNON_OVERLOAD_WINDOW_MS = 2500;
+const CANNON_OVERLOAD_BASE_MS = 800;
+const CANNON_OVERLOAD_STEP_MS = 500;
+const CANNON_OVERLOAD_MAX_MS = 2000;
+const CANNON_OVERLOAD_REPEAT_WINDOW_MS = 10000;
 const MAX_VISIBLE_BOSS_NODES = 6;
 const FINISH_LEVEL_FOCUS_CHANCE = 0.85;
 const PLAYER_SHIP_IDLE_ANGLE = 0;
@@ -169,6 +175,10 @@ let canvasW = 0;
 let canvasH = 0;
 let groundFlash = 0;
 let currentInput = "";
+let wrongSubmissionTimes = [];
+let cannonOverloadMs = 0;
+let cannonOverloadLevel = 0;
+let cannonOverloadLastAtMs = 0;
 let gameTime = 0;
 let laser = null;
 const playerShip = {
@@ -288,6 +298,7 @@ function resetRunState({ resume = true, focus = true } = {}) {
   groundFlash = 0;
   currentInput = "";
   answerInput.value = "";
+  resetCannonOverload({ clearCooldown: true });
   updateScoreDisplay();
   updateKpDisplay();
   updateBossHud();
@@ -499,8 +510,68 @@ function getNumpadTextForLockedState(event) {
   return event.key && event.key.length === 1 ? "" : NUMPAD_INPUT_BY_CODE[event.code];
 }
 
+function isCannonOverloaded() {
+  return cannonOverloadMs > 0;
+}
+
+function getCannonOverloadText() {
+  return `Cannon overloaded - wait ${(Math.max(0, cannonOverloadMs) / 1000).toFixed(1)}s`;
+}
+
+function clearCurrentAnswerInput() {
+  clearAmbiguousTimer();
+  answerInput.value = "";
+  currentInput = "";
+  updateKpDisplay();
+}
+
+function resetCannonOverload({ clearCooldown = false, resetLevel = true } = {}) {
+  wrongSubmissionTimes = [];
+  if (clearCooldown || resetLevel) {
+    cannonOverloadLevel = 0;
+    cannonOverloadLastAtMs = 0;
+  }
+  if (clearCooldown) {
+    cannonOverloadMs = 0;
+  }
+}
+
+function triggerCannonOverload(nowMs = performance.now()) {
+  const repeated = cannonOverloadLastAtMs > 0 && nowMs - cannonOverloadLastAtMs <= CANNON_OVERLOAD_REPEAT_WINDOW_MS;
+  cannonOverloadLevel = repeated ? Math.min(cannonOverloadLevel + 1, 3) : 0;
+  cannonOverloadLastAtMs = nowMs;
+  cannonOverloadMs = Math.min(
+    CANNON_OVERLOAD_MAX_MS,
+    CANNON_OVERLOAD_BASE_MS + cannonOverloadLevel * CANNON_OVERLOAD_STEP_MS
+  );
+  wrongSubmissionTimes = [];
+  clearCurrentAnswerInput();
+  updateInputHint();
+}
+
+function registerWrongSubmission(nowMs = performance.now()) {
+  wrongSubmissionTimes = wrongSubmissionTimes
+    .filter((time) => nowMs - time <= CANNON_OVERLOAD_WINDOW_MS);
+  wrongSubmissionTimes.push(nowMs);
+  if (wrongSubmissionTimes.length >= CANNON_OVERLOAD_THRESHOLD) {
+    triggerCannonOverload(nowMs);
+  }
+}
+
+function updateCannonOverload(dt = 0) {
+  if (!isCannonOverloaded()) return;
+  cannonOverloadMs = Math.max(0, cannonOverloadMs - Math.max(0, dt));
+  updateInputHint();
+  updateKpDisplay();
+}
+
 function appendTypedText(text) {
   if (!text || isPaused || isBossStunned()) return;
+  if (isCannonOverloaded()) {
+    clearCurrentAnswerInput();
+    updateInputHint();
+    return;
+  }
   answerInput.focus();
   answerInput.value = currentInput + text;
   currentInput = answerInput.value;
@@ -1066,6 +1137,7 @@ function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficul
   factorTargetId = null;
   currentInput = "";
   answerInput.value = "";
+  resetCannonOverload({ clearCooldown: true });
   spawnTimer = 0;
   lastTime = 0;
   gameTime = 0;
@@ -3114,6 +3186,7 @@ function updateScoreDisplay() {
 function handleCorrectAnswer(match) {
   if (isBossStunned()) return;
   clearAmbiguousTimer();
+  resetCannonOverload();
   if (factorTargetId === match.id) factorTargetId = null;
   recordLearningResult(match, "correct");
   if (bossMode?.phase === "challenge" && match.bossKind === "bomb") {
@@ -3157,6 +3230,11 @@ function getWrongSubmissionTargets() {
 
 function handleWrongInput({ targets = null } = {}) {
   if (isPaused || isBossStunned()) return;
+  if (isCannonOverloaded()) {
+    clearCurrentAnswerInput();
+    updateInputHint();
+    return;
+  }
   clearAmbiguousTimer();
   const visibleTargets = getAnswerTargets().filter((drop) => isAnswerTargetVisible(drop));
   const targetsToRecord = Array.isArray(targets)
@@ -3170,9 +3248,11 @@ function handleWrongInput({ targets = null } = {}) {
   // A wrong typed answer does not drain shields — consistent with normal play,
   // where a wrong answer simply doesn't clear. Only landed bombs cost shields.
   playWrongInput();
+  registerWrongSubmission();
   answerInput.value = "";
   currentInput = "";
   updateKpDisplay();
+  updateInputHint();
 }
 
 function hasLongerMatch(value) {
@@ -3199,6 +3279,11 @@ function clearAmbiguousTimer() {
 function processInput(value) {
   if (isPaused || isBossStunned()) return;
   if (!value) return;
+  if (isCannonOverloaded()) {
+    clearCurrentAnswerInput();
+    updateInputHint();
+    return;
+  }
   clearAmbiguousTimer();
 
   // ── Factor targeting mode: primes go to the targeted drop only ──
@@ -3364,6 +3449,7 @@ function tick(timestamp) {
   if (!lastTime) lastTime = timestamp;
   const dt = timestamp - lastTime;
   lastTime = timestamp;
+  updateCannonOverload(dt);
 
   if (!isPaused && !isGameplayOverlayOpen()) {
     gameTime += dt;
@@ -3748,7 +3834,10 @@ function getBossButtonTitle(skill) {
 function getReplayChallengeLevel(opKey, skill) {
   const selectedLevel = opConfig[opKey]?.difficulty || 1;
   const unlockedLevel = skill?.unlockedLevel || skill?.blitzUnlockedLevel || 0;
-  return selectedLevel <= unlockedLevel ? selectedLevel : 0;
+  if (selectedLevel <= unlockedLevel) return selectedLevel;
+  const currentLevel = skill?.currentLevel || selectedLevel;
+  if (selectedLevel === currentLevel && skill?.bossReady) return selectedLevel;
+  return 0;
 }
 
 function formatBlitzText(opKey, skill) {
@@ -3828,6 +3917,12 @@ function updateOpChits() {
 function updateInputHint() {
   const el = document.getElementById("inputHint");
   if (!el) return;
+  if (isCannonOverloaded()) {
+    const text = getCannonOverloadText();
+    el.textContent = text;
+    if (kpHint) kpHint.textContent = text;
+    return;
+  }
   const enabled = getEnabledOps();
   if (enabled.length === 0) {
     const text = "Select a problem type to begin. Spacebar: pause drops until the board is clear.";
@@ -5611,6 +5706,11 @@ function restartGame() {
 // Answer input handler — single path for all input processing
 answerInput.addEventListener("input", (event) => {
   initAudio();
+  if (isCannonOverloaded()) {
+    clearCurrentAnswerInput();
+    updateInputHint();
+    return;
+  }
   const value = answerInput.value;
 
   // Prevent spaces
@@ -5637,6 +5737,13 @@ answerInput.addEventListener("keydown", (event) => {
   if (lockedNumpadText) {
     event.preventDefault();
     appendTypedText(lockedNumpadText);
+    return;
+  }
+
+  if (isCannonOverloaded()) {
+    event.preventDefault();
+    clearCurrentAnswerInput();
+    updateInputHint();
     return;
   }
 
@@ -6167,6 +6274,10 @@ function buildKpDiffStrip() {
 
 function updateKpDisplay() {
   if (!kpDisplay) return;
+  if (isCannonOverloaded()) {
+    kpDisplay.textContent = "OVERLOAD";
+    return;
+  }
   kpDisplay.textContent = currentInput || "\u00a0";
 }
 
@@ -6175,6 +6286,11 @@ function handleKeypadPress(key) {
     answerInput.value = "";
     currentInput = "";
     updateKpDisplay();
+    return;
+  }
+  if (isCannonOverloaded()) {
+    clearCurrentAnswerInput();
+    updateInputHint();
     return;
   }
 
@@ -6256,6 +6372,8 @@ function getTestState() {
     dropLimit,
     isPaused,
     isBreatherMode,
+    cannonOverloadMs,
+    wrongSubmissionCount: wrongSubmissionTimes.length,
     factorTargetId,
     currentInput,
     welcomeVisible: Boolean(document.getElementById("welcomeOverlay")),
@@ -6327,6 +6445,7 @@ function installTestHooks() {
       gameTime = 0;
       groundFlash = 0;
       currentInput = "";
+      resetCannonOverload({ clearCooldown: true });
       factorTargetId = null;
       answerInput.value = "";
       isPaused = false;
@@ -6410,6 +6529,7 @@ function installTestHooks() {
       return getTestState();
     },
     advanceBossTime(ms = 0) {
+      updateCannonOverload(Math.max(0, Number(ms) || 0));
       if (bossMode?.active) {
         updateBossMode(Math.max(0, Number(ms) || 0));
       }
@@ -6417,7 +6537,9 @@ function installTestHooks() {
       return getTestState();
     },
     advanceDrops(ms = 16) {
-      updateDrops(Math.max(0, Number(ms) || 0));
+      const dt = Math.max(0, Number(ms) || 0);
+      updateCannonOverload(dt);
+      updateDrops(dt);
       drawDrops();
       return getTestState();
     },
@@ -6483,6 +6605,11 @@ function installTestHooks() {
       return drop ? cloneForTest(getDropAccuracyVisual(drop)) : null;
     },
     submit(value, { enter = false } = {}) {
+      if (isCannonOverloaded()) {
+        clearCurrentAnswerInput();
+        drawDrops();
+        return getTestState();
+      }
       answerInput.value = String(value);
       currentInput = answerInput.value;
       if (enter) {
