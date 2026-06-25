@@ -13,9 +13,9 @@ globalThis.RainMathText = {
   support: {
     label: "Donate",
     shortLabel: "Donate",
-    welcomeTitle: "Donate to Rain Math",
+    welcomeTitle: "",
     welcomeBody: "",
-    welcomeLink: "Donate on Ko-fi",
+    welcomeLink: "Donate",
   },
   welcome: {
     menuLink: "Menu",
@@ -73,7 +73,7 @@ globalThis.RainMathText = {
         kicker: "Mastery",
         title: "Each operation has its own level and grid.",
         body: "The level card shows Mastered %. The Grid opens per-problem history: black means unseen, hue shows accuracy, and brightness shows how much evidence the game has.",
-        tip: "Practice is weighted toward unseen and weaker problems, and boss unlocks when enough current-level problems are mastered.",
+        tip: "Practice is weighted toward unseen and weaker problems, and level choices unlock when all current-level problems are mastered.",
       },
       {
         target: ".game",
@@ -85,16 +85,16 @@ globalThis.RainMathText = {
       {
         target: ".diff-cards",
         kicker: "Boss mode",
-        title: "Beat the boss to move up.",
-        body: "When Mastered reaches the unlock threshold, start a boss attempt. Wave 1 tests speed, Wave 2 tests simultaneous load, and the mothership tests all of the current level's problems.",
-        tip: "Wave and Blitz scores are simply problems solved. Mother ship is time until complete.",
+        title: "Mastery unlocks choices.",
+        body: "When Mastered reaches 100%, you can keep practicing, move to the next level, or try boss mode. Blitz tests speed, Wave tests simultaneous load, and Worksheet tests every problem in the level.",
+        tip: "Challenge scores are problems solved; Worksheet records time until complete.",
       },
       {
         target: ".version",
         kicker: "Profiles",
-        title: "Use local players, Results, and Log.",
-        body: "Profiles live in this browser's localStorage for now. Use Login to switch players, Results to inspect mastery, and Log to review recent sessions.",
-        tip: "Open a session's Report to show time, correct/missed counts, and mastery changes by problem type.",
+        title: "Use local players and Log.",
+        body: "Profiles live in this browser's localStorage for now. Use Login to switch players, Grid to inspect mastery, and Log to review recent sessions.",
+        tip: "Open a session's Report to show time, correct/missed counts, and mastery changes by problem type and level.",
       },
     ],
   },

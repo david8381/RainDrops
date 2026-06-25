@@ -252,6 +252,12 @@ body {
   filter: brightness(1.2);
 }
 
+.op-chit:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  filter: none;
+}
+
 .op-chit.active {
   background: linear-gradient(
     90deg,
@@ -662,6 +668,16 @@ body {
   font-weight: 700;
   background: linear-gradient(180deg, #fbbf24, #f59e0b);
   color: #1a1206;
+  cursor: pointer;
+}
+
+.boss-offer-next {
+  border: none;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-weight: 700;
+  background: rgba(64, 200, 144, 0.16);
+  color: #86efac;
   cursor: pointer;
 }
 
@@ -1666,13 +1682,13 @@ button.primary:hover {
 .session-report-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
   margin-bottom: 16px;
 }
 
 .session-report-row,
 .session-report-empty {
-  padding: 11px 12px;
+  padding: 14px 14px;
   border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.045);
 }
@@ -1704,8 +1720,23 @@ button.primary:hover {
 }
 
 .session-report-mastery {
-  margin-top: 4px;
+  margin-top: 10px;
   color: #cbd5e1;
+}
+
+.session-report-stat-line + .session-report-stat-line {
+  margin-top: 2px;
+}
+
+.session-report-mastery-title {
+  color: var(--text);
+  font-weight: 800;
+  margin-bottom: 5px;
+}
+
+.session-report-level-line {
+  padding: 5px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
 }
 
 .session-report-actions {

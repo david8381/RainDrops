@@ -290,6 +290,7 @@ function createEmptySkill(opKey, nowMs = Date.now()) {
     bossReady: false,
     bossThreshold: BOSS_READY_SCORE,
     bossAttempts: [],
+    levelAdvances: [],
     totals: {
       attempts: 0,
       correct: 0,
@@ -477,6 +478,19 @@ function normalizeBossAttempts(attempts = []) {
   });
 }
 
+function normalizeLevelAdvances(advances = []) {
+  if (!Array.isArray(advances)) return [];
+  return advances
+    .filter((advance) => advance && typeof advance === "object")
+    .map((advance) => ({
+      ...advance,
+      level: clamp(1, 10, Math.round(Number.isFinite(advance.level) ? advance.level : 1)),
+      readiness: clamp(0, 100, Math.round(Number.isFinite(advance.readiness) ? advance.readiness : 0)),
+      result: advance.result || "mastered",
+      inferred: Boolean(advance.inferred),
+    }));
+}
+
 function normalizeBlitzAttempts(attempts = []) {
   if (!Array.isArray(attempts)) return [];
   return attempts.map((attempt) => {
@@ -558,6 +572,7 @@ function ensureProfileShape(profile, nowMs = Date.now()) {
       problems: { ...(rawSkill.problems || {}) },
       recent: Array.isArray(rawSkill.recent) ? rawSkill.recent : [],
       bossAttempts: normalizeBossAttempts(rawSkill.bossAttempts),
+      levelAdvances: normalizeLevelAdvances(rawSkill.levelAdvances),
       blitzAttempts: normalizeBlitzAttempts(rawSkill.blitzAttempts),
       challengeAttempts: normalizeChallengeAttempts(
         Array.isArray(rawSkill.challengeAttempts) && rawSkill.challengeAttempts.length > 0
@@ -923,6 +938,11 @@ function hasBossAttemptForLevel(skill, level = skill?.currentLevel) {
   return skill.bossAttempts.some((attempt) => attempt.level === level);
 }
 
+function hasLevelAdvanceForLevel(skill, level = skill?.currentLevel) {
+  if (!skill || !Array.isArray(skill.levelAdvances)) return false;
+  return skill.levelAdvances.some((advance) => advance.level === level);
+}
+
 function hasBossAttemptForPressureTier(skill, level = skill?.currentLevel, pressureTierKey = "calm") {
   if (!skill || !Array.isArray(skill.bossAttempts)) return false;
   const key = getPressureTier(pressureTierKey).key;
@@ -1004,6 +1024,32 @@ function recordBossAttempt(profile, opKey, optionsOrNowMs = Date.now()) {
   return profile;
 }
 
+function recordLevelAdvance(profile, opKey, options = {}) {
+  const skill = profile.skills?.[opKey];
+  if (!skill) return profile;
+  if (!Array.isArray(skill.levelAdvances)) skill.levelAdvances = [];
+  const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
+  const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : skill.currentLevel));
+  const at = nowIso(nowMs);
+  for (let clearedLevel = 1; clearedLevel <= level; clearedLevel += 1) {
+    if (hasLevelAdvanceForLevel(skill, clearedLevel)) continue;
+    const summary = computeSkillReadinessForLevel(skill, clearedLevel);
+    skill.levelAdvances.push({
+      level: clearedLevel,
+      readiness: summary.readiness,
+      masteredCount: summary.masteredCount,
+      universeCount: summary.universeCount,
+      at,
+      result: options.result || "mastered",
+      inferred: clearedLevel !== level,
+      advancedByLevel: level,
+    });
+  }
+  skill.updatedAt = at;
+  profile.user.updatedAt = at;
+  return profile;
+}
+
 const hasBossAttemptForSpeedTier = hasBossAttemptForPressureTier;
 const getBossSpeedTierClears = getBossPressureTierClears;
 
@@ -1012,6 +1058,15 @@ function getBlitzUnlockedLevel(skill) {
   return Math.max(0, ...skill.bossAttempts
     .filter((attempt) => attempt.result === "cleared")
     .map((attempt) => attempt.level || 0));
+}
+
+function getLevelAdvanceUnlockedLevel(skill) {
+  if (!skill || !Array.isArray(skill.levelAdvances) || skill.levelAdvances.length === 0) return 0;
+  return Math.max(0, ...skill.levelAdvances.map((advance) => advance.level || 0));
+}
+
+function getUnlockedLevel(skill) {
+  return Math.max(getBlitzUnlockedLevel(skill), getLevelAdvanceUnlockedLevel(skill));
 }
 
 function isBetterScoreAttempt(candidate, best) {
@@ -1078,7 +1133,10 @@ function getChallengeBests(skill, level = getBlitzUnlockedLevel(skill)) {
 // Per-level challenge bests for levels 1..currentLevel. Each level shows its own
 // best (or a better equal-or-higher level's), and null when never played.
 function getChallengeBestsByLevel(skill) {
-  const maxLevel = clamp(1, 10, Math.round(skill?.currentLevel || 1));
+  const maxLevel = clamp(1, 10, Math.max(
+    Math.round(skill?.currentLevel || 1),
+    getUnlockedLevel(skill) + 1
+  ));
   const rows = [];
   for (let level = 1; level <= maxLevel; level += 1) {
     rows.push({
@@ -1375,13 +1433,15 @@ function computeSkillReadiness(skill) {
       weakProblems: [],
       practiceSuggestions: [],
       bossAttemptedForLevel: hasBossAttemptForLevel(skill, skill.currentLevel),
+      levelAdvancedForLevel: hasLevelAdvanceForLevel(skill, skill.currentLevel),
       bossPressureTiers: getBossPressureTierClears(skill, skill.currentLevel),
-    pressureTierStats: summarizePressureTierStats(skill.pressureTiers || skill.speedTiers),
-    blitzUnlockedLevel: getBlitzUnlockedLevel(skill),
-    blitzBest: getBlitzBest(skill),
-    challengeBests: getChallengeBests(skill),
-    challengeBestsByLevel: getChallengeBestsByLevel(skill),
-    averageResponseMs: null,
+      pressureTierStats: summarizePressureTierStats(skill.pressureTiers || skill.speedTiers),
+      unlockedLevel: getUnlockedLevel(skill),
+      blitzUnlockedLevel: getBlitzUnlockedLevel(skill),
+      blitzBest: getBlitzBest(skill),
+      challengeBests: getChallengeBests(skill),
+      challengeBestsByLevel: getChallengeBestsByLevel(skill),
+      averageResponseMs: null,
     };
   }
 
@@ -1427,8 +1487,10 @@ function computeSkillReadiness(skill) {
     weakProblems: getWeakProblems(skill, 4),
     practiceSuggestions: getPracticeSuggestions(skill, 4),
     bossAttemptedForLevel: hasBossAttemptForLevel(skill, skill.currentLevel),
+    levelAdvancedForLevel: hasLevelAdvanceForLevel(skill, skill.currentLevel),
     bossPressureTiers: getBossPressureTierClears(skill, skill.currentLevel),
     pressureTierStats: summarizePressureTierStats(skill.pressureTiers || skill.speedTiers),
+    unlockedLevel: getUnlockedLevel(skill),
     blitzUnlockedLevel: getBlitzUnlockedLevel(skill),
     blitzBest: getBlitzBest(skill),
     challengeBests: getChallengeBests(skill),
@@ -1734,6 +1796,7 @@ globalThis.RainMathProgress = {
   getChallengeBests,
   getBlitzBest,
   getBlitzUnlockedLevel,
+  getUnlockedLevel,
   getRequiredAttemptsForReady,
   getPressureTier,
   getPressureTierForSpeed,
@@ -1747,6 +1810,7 @@ globalThis.RainMathProgress = {
   hasBossAttemptForPressureTier,
   hasBossAttemptForSpeedTier,
   hasBossAttemptForLevel,
+  hasLevelAdvanceForLevel,
   mirrorLegacyProblemStats,
   problemCurrentAccuracy,
   problemMastery,
@@ -1754,6 +1818,7 @@ globalThis.RainMathProgress = {
   readProfile,
   readProfileStore,
   recordBossAttempt,
+  recordLevelAdvance,
   recordBlitzAttempt,
   recordChallengeAttempt,
   recordProgressEvent,

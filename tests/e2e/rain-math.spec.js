@@ -92,6 +92,7 @@ test("first visit menu creates a player, starts the tutorial, and enters play", 
   await expect(page.locator(".welcome-card h1")).toHaveText("Rain Math");
   await expect(page.locator("#welcomePlay")).toBeVisible();
   await expect(page.locator(".welcome-support a")).toHaveAttribute("href", "https://ko-fi.com/davidedaniels");
+  await expect(page.locator(".welcome-support a")).toHaveText("Donate");
   await expect(page.locator("#supportLink")).toHaveAttribute("href", "https://ko-fi.com/davidedaniels");
 
   await page.locator("#welcomeProfileName").fill("Grace Hopper");
@@ -135,7 +136,7 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#inputHint")).toContainText("p·q: type 2^2*3 + Enter");
   });
 
-  test("requires a boss victory before increasing a level", async ({ page }) => {
+  test("requires mastery before increasing a level and locks controls during boss", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
     const addCard = page.locator('.diff-card[data-op="add"]');
@@ -143,30 +144,25 @@ test.describe("desktop gameplay", () => {
     await expect(addCard.locator(".diff-value")).toHaveText("1");
     await addCard.locator(".diff-btn").last().click();
     await expect(addCard.locator(".diff-value")).toHaveText("1");
-    await expect(addCard.locator(".diff-ready")).toHaveText("Beat Boss first");
+    await expect(addCard.locator(".diff-ready")).toHaveText("Master first");
+
+    await invoke(page, "masterCurrentLevel", "add");
+    await addCard.locator(".diff-btn").last().click();
+    await expect(addCard.locator(".diff-value")).toHaveText("2");
+    let state = await invoke(page, "getState");
+    expect(state.progressSummary.skills.add.unlockedLevel).toBe(1);
+    expect(state.progressSummary.skills.add.bossAttemptedForLevel).toBe(false);
+
+    await invoke(page, "setOpDifficulty", "add", 1);
+    await expect(addCard.locator(".diff-blitz")).toBeVisible();
+    await expect(addCard.locator(".diff-blitz")).toHaveText("Blitz L1");
 
     await invoke(page, "startBoss", "add");
     expect((await invoke(page, "getState")).bossMode.active).toBe(true);
     await expect(addCard.locator(".diff-btn").last()).toBeDisabled();
+    await expect(page.locator('.op-chit[data-op="add"]')).toBeDisabled();
     await invoke(page, "setOpDifficulty", "add", 2);
     expect((await invoke(page, "getState")).opConfig.add.difficulty).toBe(1);
-
-    await invoke(page, "forceBossVictory");
-    await expect(addCard.locator(".diff-value")).toHaveText("2");
-    const state = await invoke(page, "getState");
-    expect(state.progressSummary.skills.add.currentLevel).toBe(2);
-    expect(state.progressSummary.skills.add.bossAttemptedForLevel).toBe(false);
-    expect(state.progressProfile.skills.add.bossAttempts.some((attempt) => (
-      attempt.level === 1 && attempt.pressureTier === "steady" && attempt.inferred === false
-    ))).toBe(true);
-
-    // Challenge replays are hidden on the new (undefeated) level; selecting the
-    // cleared level reveals them.
-    await expect(addCard.locator(".diff-blitz")).toBeHidden();
-    await invoke(page, "advanceBossTime", 2500);
-    await invoke(page, "setOpDifficulty", "add", 1);
-    await expect(addCard.locator(".diff-blitz")).toBeVisible();
-    await expect(addCard.locator(".diff-blitz")).toHaveText("Blitz L1");
   });
 
   test("updates speed and drops controls", async ({ page }) => {
@@ -374,7 +370,7 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#breatherHud")).toBeHidden();
   });
 
-  test("results popup shows local readiness progress", async ({ page }) => {
+  test("header omits the old results tab while level cards show progress", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
     await freezeAutoSpawns(page);
@@ -392,17 +388,8 @@ test.describe("desktop gameplay", () => {
     expect(state.progressSummary.skills.add.attempts).toBe(1);
     expect(state.progressSummary.skills.add.totals.correct).toBe(1);
     await expect(page.locator('.diff-card[data-op="add"] .diff-ready')).toHaveText("Mastered: 0%");
-
-    await page.locator("#resultsLink").click();
-    await expect(page.locator("#resultsOverlay")).toBeVisible();
-    await expect(page.locator("#resultsOverlay h2")).toHaveText("Learning Results");
-    await expect(page.locator("#resultsOverlay")).toContainText("Add");
-    await expect(page.locator("#resultsOverlay")).toContainText("1 attempts");
-    await expect(page.locator("#resultsOverlay")).toContainText("1/9 seen");
-    await expect(page.locator("#resultsOverlay")).toContainText("0 mastered");
-    await expect(page.locator("#resultsOverlay")).toContainText("Practice next: 2 + 3");
-    await expect(page.locator("#resultsOverlay")).toContainText("(new)");
-    await expect(page.locator("#resultsOverlay")).not.toContainText("Pressure clears:");
+    await expect(page.locator("#resultsLink")).toHaveCount(0);
+    await expect(page.locator('.diff-card[data-op="add"] .diff-grid-hint')).toHaveText("Grid");
   });
 
   test("session log report shows per-operation stats and mastery changes", async ({ page }) => {
@@ -443,7 +430,8 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#sessionReportOverlay h2")).toHaveText("Session Report");
     await expect(page.locator("#sessionReportOverlay")).toContainText("Add");
     await expect(page.locator("#sessionReportOverlay")).toContainText("Correct/missed: 3/0");
-    await expect(page.locator("#sessionReportOverlay")).toContainText("Mastery by level: L1 0% -> 11%");
+    await expect(page.locator("#sessionReportOverlay .session-report-mastery-title")).toContainText("Mastery by level");
+    await expect(page.locator("#sessionReportOverlay .session-report-level-line")).toContainText("L1 0% -> 11%");
     await expect(page.locator("#sessionReportOverlay")).toContainText("0/9 -> 1/9 mastered");
     await expect(page.locator("#sessionReportOverlay .session-report-donate-note")).toContainText("Enjoying and benefiting? Please consider donating.");
     await expect(page.locator("#sessionReportOverlay .session-report-donate")).toHaveText("donating");
@@ -528,6 +516,8 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator('.diff-card[data-op="add"] .diff-ready')).toBeEnabled();
     await expect(page.locator('.diff-card[data-op="add"] .diff-ready')).toHaveClass(/is-ready-attention/);
     await page.locator('.diff-card[data-op="add"] .diff-ready').click();
+    await expect(page.locator("#bossOfferOverlay")).toContainText("Level Mastered");
+    await page.locator(".boss-offer-start").click();
     expect((await invoke(page, "getState")).bossMode.active).toBe(true);
     await expect(page.locator("#bossHudTitle")).toContainText("Add Boss");
     await expect(page.locator("#bossHudStatus")).toHaveText("Wave 1: shields up");
@@ -679,6 +669,7 @@ test.describe("desktop gameplay", () => {
     await invoke(page, "masterCurrentLevel", "add");
 
     await page.locator('.diff-card[data-op="add"] .diff-ready').click();
+    await page.locator(".boss-offer-start").click();
     let state = await invoke(page, "advanceBossTime", 1400);
     expect(state.bossMode.mode).toBe("full");
     expect(state.bossMode.phase).toBe("challenge");
@@ -730,7 +721,7 @@ test.describe("desktop gameplay", () => {
     expect(state.sessionLog[0].challenges.completed).toBe(1);
   });
 
-  test("wave and boss replay buttons save challenge bests for the cleared level", async ({ page }) => {
+  test("wave and worksheet replay buttons save challenge bests for the cleared level", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
     await invoke(page, "startBoss", "add");
@@ -742,7 +733,7 @@ test.describe("desktop gameplay", () => {
     // Replays live on the cleared level; select it to reach them.
     await invoke(page, "setOpDifficulty", "add", 1);
     await expect(addCard.locator(".diff-wave")).toHaveText("Wave L1");
-    await expect(addCard.locator(".diff-boss")).toHaveText("Boss L1");
+    await expect(addCard.locator(".diff-boss")).toHaveText("Worksheet L1");
 
     await addCard.locator(".diff-wave").click();
     let state = await invoke(page, "advanceBossTime", 1400);
@@ -762,6 +753,7 @@ test.describe("desktop gameplay", () => {
     state = await invoke(page, "advanceBossTime", 1400);
     expect(state.bossMode.mode).toBe("boss");
     expect(state.bossMode.phase).toBe("boss");
+    await expect(page.locator("#bossHudTitle")).toContainText("Add Worksheet");
     await page.waitForTimeout(20);
     state = await invoke(page, "forceBossVictory");
     expect(state.opConfig.add.difficulty).toBe(1); // boss replay does not advance the level
@@ -823,7 +815,7 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#statsOverlay")).toBeVisible();
   });
 
-  test("interrupts with a boss choice when an operation reaches mastery", async ({ page }) => {
+  test("interrupts with mastery choices and can skip boss to the next level", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
     await invoke(page, "masterCurrentLevel", "add");
@@ -839,10 +831,21 @@ test.describe("desktop gameplay", () => {
 
     await page.locator("#answer").fill("2"); // a correct answer re-checks readiness
     await expect(page.locator("#bossOfferOverlay")).toBeVisible();
-    await expect(page.locator("#bossOfferOverlay")).toContainText("Boss Unlocked");
+    await expect(page.locator("#bossOfferOverlay")).toContainText("Level Mastered");
+    await expect(page.locator(".boss-offer-dismiss")).toHaveText("Keep Practicing");
+    await expect(page.locator(".boss-offer-next")).toHaveText("Next Level");
 
-    await page.locator(".boss-offer-start").click();
-    expect((await invoke(page, "getState")).bossMode.active).toBe(true);
+    await page.locator(".boss-offer-next").click();
+    const state = await invoke(page, "getState");
+    expect(state.bossMode).toBe(null);
+    expect(state.opConfig.add.difficulty).toBe(2);
+    expect(state.progressSummary.skills.add.unlockedLevel).toBe(1);
+    expect(state.progressSummary.skills.add.bossAttemptedForLevel).toBe(false);
+
+    await page.goto("/?test=1");
+    await page.waitForFunction(() => window.__RAIN_MATH_READY__ && window.__RAIN_MATH_TEST__);
+    const reloaded = await invoke(page, "getState");
+    expect(reloaded.opConfig.add.difficulty).toBe(2);
   });
 
   test("resumes at the unlocked level on reload even if the selector was lowered", async ({ page }) => {
@@ -885,12 +888,12 @@ test.describe("desktop gameplay", () => {
       .flatMap((part) => part.problems)
       .filter((problem) => problem.revealed && !problem.destroyed).length;
 
-    // The fact-sheet boss holds the whole level universe (capped at 50).
+    // The worksheet ship holds the whole level universe.
     const universeSize = await page.evaluate(
       () => window.RainMathProgress.getSkillUniverseProblems("add", 1).length
     );
     const totalNodes = state.bossMode.parts.reduce((sum, part) => sum + part.problems.length, 0);
-    expect(totalNodes).toBe(Math.min(50, universeSize));
+    expect(totalNodes).toBe(universeSize);
 
     let shield = state.bossMode.parts.find((part) => part.id === "shield");
     expect(shield.problems.length).toBeGreaterThan(0);
@@ -942,6 +945,7 @@ test.describe("desktop gameplay", () => {
       .find((part) => part.id === bomb.bossSourcePartId)
       .problems.find((problem) => problem.id === bomb.bossSourceNodeId);
     expect(sourceBefore.destroyed).toBe(false);
+    expect(sourceBefore.revealed).toBe(true);
 
     state = await invoke(page, "submit", bomb.answerText);
     const sourceAfter = state.bossMode.parts
@@ -1038,10 +1042,11 @@ test.describe("desktop gameplay", () => {
     await page.locator("#pauseBtn").click();
     await expect(page.locator("#pauseBtn")).toHaveText("Resume");
     await expect(page.locator("#canvas")).toBeVisible();
-    await page.locator("#resultsLink").click();
-    await expect(page.locator("#resultsOverlay")).toBeVisible();
+    await expect(page.locator("#resultsLink")).toHaveCount(0);
+    await page.locator("#sessionLogLink").click();
+    await expect(page.locator("#sessionLogOverlay")).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(page.locator("#resultsOverlay")).toHaveCount(0);
+    await expect(page.locator("#sessionLogOverlay")).toHaveCount(0);
     await page.locator("#pauseBtn").click();
     await expect(page.locator("#pauseBtn")).toHaveText("Pause");
 
@@ -1150,16 +1155,13 @@ test.describe("mobile gameplay", () => {
     await expect(page.locator(".kp-grid-hint").first()).toHaveText("Grid");
   });
 
-  test("opens results from the touch header", async ({ page }) => {
+  test("touch header exposes donate and log without the old results tab", async ({ page }) => {
     await openApp(page);
 
     await expect(page.locator("#touchSupportLink")).toBeVisible();
     await expect(page.locator("#touchSupportLink")).toHaveAttribute("href", "https://ko-fi.com/davidedaniels");
-    await expect(page.locator("#touchResultsLink")).toBeVisible();
-    await page.locator("#touchResultsLink").click();
-
-    await expect(page.locator("#resultsOverlay")).toBeVisible();
-    await expect(page.locator("#resultsOverlay h2")).toHaveText("Learning Results");
+    await expect(page.locator("#touchResultsLink")).toHaveCount(0);
+    await expect(page.locator("#touchSessionLogLink")).toBeVisible();
   });
 
   test("opens session log from the touch header", async ({ page }) => {

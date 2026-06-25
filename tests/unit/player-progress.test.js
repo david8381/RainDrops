@@ -23,6 +23,7 @@ const {
   readProfile,
   readProfileStore,
   recordBossAttempt,
+  recordLevelAdvance,
   recordBlitzAttempt,
   recordChallengeAttempt,
   getChallengeBest,
@@ -193,6 +194,24 @@ describe("player progress profile", () => {
     syncSettings(profile, { difficulties: { add: 3 } });
     assert.equal(profile.skills.add.currentLevel, 3);
     assert.equal(summarizeProfile(profile).skills.add.bossAttemptedForLevel, false);
+  });
+
+  it("records mastered level advances separately from boss clears", () => {
+    const profile = createDefaultProfile();
+
+    recordLevelAdvance(profile, "add", { level: 1, nowMs: Date.UTC(2026, 0, 1) });
+    let summary = summarizeProfile(profile).skills.add;
+    assert.equal(summary.unlockedLevel, 1);
+    assert.equal(summary.blitzUnlockedLevel, 0);
+    assert.equal(summary.bossAttemptedForLevel, false);
+    assert.equal(profile.skills.add.bossAttempts.length, 0);
+    assert.equal(profile.skills.add.levelAdvances.length, 1);
+    assert.equal(profile.skills.add.levelAdvances[0].result, "mastered");
+
+    syncSettings(profile, { difficulties: { add: 2 } });
+    summary = summarizeProfile(profile).skills.add;
+    assert.equal(summary.currentLevel, 2);
+    assert.equal(summary.unlockedLevel, 1);
   });
 
   it("records blitz attempts for boss-cleared levels", () => {

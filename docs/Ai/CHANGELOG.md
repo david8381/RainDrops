@@ -4,6 +4,10 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-24
+- Made boss optional after full mastery: the mastery prompt now offers Keep Practicing, Boss, or Next Level; Next Level records a mastery advance separately from boss clears so reloads still resume at the right level.
+- Renamed the standalone final-boss replay to Worksheet, removed the 50-problem cap so it covers the full current-level universe, added live cleared/total plus elapsed time, and made missiles drop from visible worksheet nodes that can be cleared before launch.
+- Let unlocked/revisited levels launch Blitz, Wave, or Worksheet independently without forcing the full three-stage boss sequence.
+- Removed the visible Results tab, simplified welcome-menu Donate copy, locked operation toggles during boss/challenge play, and made session reports roomier with one mastery line per level.
 - Changed the post-wave super-weapon sweep to travel bottom-to-top, locked level/challenge controls during boss play, and improved touch layouts so operation chits are visible as a grid while short landscape screens put the keypad beside the playfield.
 - Raised boss unlocks to 100% current-level mastery and added finish-level focus practice once an operation reaches 80%, so remaining unmastered facts appear much more often near the end of a level.
 - Added current level text and a subtle course-progress fill to operation chits so the top-level problem selector communicates where each operation sits in the 10-level course.
@@ -11,7 +15,7 @@ This file records meaningful project changes so future collaborators (including 
 - Made the session report Donate prompt less prominent by moving it from a primary-looking action button into small footer text.
 - Smoothed boss Wave 1 pressure by removing double-applied bomb speed and easing the speed ramp before it reaches the unreadable zone.
 - Changed final-boss missiles into slower moving copies of remaining mothership nodes; solving a missile clears that node, so the final boss still measures the current-level fact sheet rather than adding extra generated problems.
-- Made boss-ready prompts modal with Boss / No boss choices, and paused gameplay under modal overlays so boss victory summaries and reports cannot cause background misses.
+- Made mastery prompts modal with Keep Practicing / Boss / Next Level choices, and paused gameplay under modal overlays so boss victory summaries and reports cannot cause background misses.
 - Changed full boss session logging so a full boss run counts as one session challenge started/completed while still saving Blitz/Wave/Boss stage bests.
 - Renamed Support links to Donate and added a Donate link to each session report.
 - Updated session reports to show mastery changes level by level within each operation.
@@ -42,18 +46,18 @@ This file records meaningful project changes so future collaborators (including 
 
 ## 2026-06-14
 - Added a parallax starfield behind boss mode so the lead-up reads as flying forward toward the mothership between waves.
-- Replaced the post-victory accuracy grid with a victory summary popup: a "Boss Defeated" congratulations, the three stage results (Wave 1 / Wave 2 solved counts and Boss time), and a Next Level button (the accuracy grid is still reachable from it).
+- Replaced the post-victory accuracy grid with a victory summary popup: a "Boss Defeated" congratulations, the three stage results (Wave 1 / Wave 2 solved counts and Worksheet time), and a Next Level button (the accuracy grid is still reachable from it).
 - Added a looming mothership during the full boss lead-up: it peeks just onto the screen during Wave 1 and descends noticeably closer in Wave 2 before dropping into full position for the fight, reinforcing that the boss is launching the waves. It is purely cosmetic and non-interactive.
 - Wrong typed answers no longer drain the shield during Wave 1/2/Blitz challenges (only landed bombs do), matching normal play where a wrong answer simply doesn't clear.
 - On reload, each operation resumes at the level after its highest cleared boss, so temporarily lowering the level selector (e.g. to replay a cleared level) no longer strands you at the lower level next session.
 - When an operation reaches mastery, a one-time non-modal toast offers to start the boss (with a Start Boss button), so you don't have to hunt for the pulsing Mastered control.
-- Dropped the bottom-left boss HUD from view; stage progress now lives only in the header readout. During Wave 1 the header shows the live speed (Wave 1 ramps speed), Wave 2 shows the current load, and the mothership shows nodes cleared.
+- Dropped the bottom-left boss HUD from view; stage progress now lives only in the header readout. During Wave 1 the header shows the live speed (Wave 1 ramps speed), Wave 2 shows the current load, and the Worksheet shows problems cleared.
 - Show the operation's accuracy grid automatically after a full boss victory, so a clear ends on a recap of what was mastered.
 - Auto-target factor problems during boss mode too (ship nodes and falling bombs), with the targeted node highlighted and showing what is left to factor; stepwise and full `2^2*3`+Enter both work.
 - Shifted prime-factoring difficulty up by one (level 1 of just {6} was too easy): a level now holds every composite of difficulty ≤ level + 1, so level 1 is {4, 6, 10, 15}.
 - Switching to an operation from another set now also clears any on-screen drops of the now-disabled operations, since operations from different sets are not mixed.
-- Challenge replay buttons (Blitz/Wave/Boss) on an operation card now appear only when the selected level is the cleared level they replay, so advancing to a new level no longer plasters its card with the previous level's challenge stats. Per-level bests still live in the Results popup; drop the level selector to a cleared level to replay it.
-- The header "Cleared" readout now shows live stage progress during boss play — Wave 1 / Wave 2 solved count (plus Wave 2's current load) and the mothership's nodes cleared — then reverts to the session Cleared count when the boss ends.
+- Challenge replay buttons (Blitz/Wave/Worksheet) on an operation card now appear when the selected level has been unlocked, so advancing to a new level no longer plasters its card with previous-level challenge stats.
+- The header "Cleared" readout now shows live stage progress during boss play — Wave 1 / Wave 2 solved count (plus Wave 2's current load) and Worksheet cleared/total plus elapsed time — then reverts to the session Cleared count when the boss ends.
 - Fixed version stamping: `scripts/stamp-version.sh` now bumps the visible version, the `index.html` cache-busters, and `package.json` together (instead of editing a `const VERSION` line that no longer exists), and the `.githooks/pre-commit` hook now stages `index.html` + `package.json` so each commit auto-bumps the patch and cache-busters. `npm run stamp 0.4.0` sets an explicit version.
 - Redesigned prime-factoring difficulty to come from a number's structure: difficulty(n) = primeIndex(largest prime factor) + max exponent + (# primes with exponent > 1) + Ω(n) − 4, with each level holding every composite of difficulty ≤ level (cumulative; L1 = {6}). Mastery and the universe now follow that ladder instead of a raw number range.
 - Auto-target the most urgent factor drop when factoring is the only operation in play, so you can step through factors or type the full 2^2*3 + Enter without pressing Tab first.
@@ -63,7 +67,7 @@ This file records meaningful project changes so future collaborators (including 
 - Grouped operations into compatible sets (arithmetic +−×÷ and ×10 together; Shapes; SI; Factoring), so turning on an op from another set turns off the incompatible ones — reducing answer collisions and mixed-input confusion.
 - Results now shows challenge bests per cleared level instead of only the highest cleared level: each level shows its own best (or a stronger equal-or-higher level's), never-played levels show nothing, and a worse higher-level run no longer hides a better earlier-level score.
 - Raised the Wave 2 maximum simultaneous load from 10 to 25 now that the round only steps up after each batch is fully cleared.
-- Redesigned the final mothership as a "fact sheet": it now draws from the whole current-level problem universe (randomly sampled, capped at 50) split across the four ship parts, so clearing the boss means working through every problem type like a math worksheet.
+- Redesigned the final mothership as a Worksheet/fact sheet: it now draws from the whole current-level problem universe split across the four ship parts, so clearing it means working through every problem type like a math worksheet.
 - Boss nodes now reveal in small capped batches (at most 6 visible at once) and never reveal two answers that collide, so a typed answer can no longer clear the wrong node (no false positives).
 - Empty trailing ship parts (when a level's universe is smaller than the part count, e.g. low-level SI/factor) now auto-collapse so the boss can always be completed.
 - Scored Wave 1 (and standalone Blitz) on the number of problems solved, matching Wave 2; relabeled HUD, Results, and end-of-run summaries to "solved".

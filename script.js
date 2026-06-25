@@ -27,6 +27,8 @@ const {
   BOSS_READY_SCORE,
   createStoredProfile,
   getFinishLevelPracticeProblems,
+  getBlitzBest,
+  getChallengeBest,
   getPressureTier,
   getProfileList,
   getSkillUniverseProblems,
@@ -38,6 +40,7 @@ const {
   recordBlitzAttempt,
   recordBossAttempt,
   recordChallengeAttempt,
+  recordLevelAdvance,
   recordProgressEvent,
   recordSessionChallenge,
   recordSessionEvent,
@@ -96,7 +99,6 @@ const BLITZ_SHIELD_HIT_MS = 360;
 const WAVE_TWO_SPAWN_STAGGER_MS = 340;
 const WAVE_TWO_ROUND_GAP_MS = 700;
 const WAVE_TWO_MAX_LOAD = 25;
-const FACT_SHEET_CAP = 50;
 const MAX_VISIBLE_BOSS_NODES = 6;
 const FINISH_LEVEL_FOCUS_CHANCE = 0.85;
 const PLAYER_SHIP_IDLE_ANGLE = 0;
@@ -249,7 +251,7 @@ function applyProfileSettingsToControls() {
     // Resume at least at the level after the highest cleared boss, so a
     // temporarily lowered selector (e.g. to replay a cleared level) does not
     // strand the player below their actual progress on reload.
-    const clearedNext = (summary.skills[opKey]?.blitzUnlockedLevel || 0) + 1;
+    const clearedNext = (summary.skills[opKey]?.unlockedLevel || 0) + 1;
     const resume = Math.max(Number.isFinite(savedLevel) ? savedLevel : 1, clearedNext);
     opConfig[opKey].difficulty = clamp(1, 10, Math.round(resume));
   }
@@ -609,6 +611,7 @@ function getOpSet(opKey) {
 }
 
 function toggleOp(opKey) {
+  if (isBossActive()) return;
   if (!opConfig[opKey]) return;
   const turningOn = !opConfig[opKey].enabled;
   opConfig[opKey].enabled = turningOn;
@@ -640,7 +643,7 @@ function showReadyRequired(opKey) {
   const labels = document.querySelectorAll(`.diff-ready[data-op="${opKey}"], .kp-diff-ready[data-op="${opKey}"]`);
   labels.forEach((label) => {
     label.classList.add("needs-ready");
-    label.textContent = "Beat Boss first";
+    label.textContent = "Master first";
   });
   window.setTimeout(updateReadinessDisplays, 1200);
 }
@@ -657,7 +660,9 @@ function showBossLocked(opKey) {
 function canAdvanceDifficulty(opKey, nextLevel) {
   const currentLevel = opConfig[opKey].difficulty;
   if (nextLevel <= currentLevel) return true;
-  return Boolean(getProgressSkill(opKey)?.bossAttemptedForLevel);
+  if (nextLevel > currentLevel + 1) return false;
+  const skill = getProgressSkill(opKey);
+  return Boolean(skill?.bossReady || skill?.bossAttemptedForLevel || skill?.levelAdvancedForLevel);
 }
 
 function markReadyForBoss(opKey) {
@@ -672,6 +677,27 @@ function markReadyForBoss(opKey) {
   updateReadinessDisplays();
 }
 
+function recordMasteryAdvance(opKey, level = opConfig[opKey]?.difficulty) {
+  progressProfile = recordLevelAdvance(progressProfile, opKey, {
+    level,
+    result: "mastered",
+  });
+  saveProfile(progressProfile);
+}
+
+function advanceMasteredLevel(opKey) {
+  if (!opConfig[opKey] || isBossActive()) return false;
+  const currentLevel = opConfig[opKey].difficulty;
+  if (currentLevel >= 10) return false;
+  const skill = getProgressSkill(opKey);
+  if (!skill?.bossReady && !skill?.levelAdvancedForLevel && !skill?.bossAttemptedForLevel) {
+    showReadyRequired(opKey);
+    return false;
+  }
+  setDifficulty(opKey, currentLevel + 1);
+  return opConfig[opKey].difficulty === currentLevel + 1;
+}
+
 function setDifficulty(opKey, level, { force = false } = {}) {
   if (!opConfig[opKey]) return;
   if (isBossActive() && !force) return;
@@ -679,6 +705,10 @@ function setDifficulty(opKey, level, { force = false } = {}) {
   if (!force && !canAdvanceDifficulty(opKey, nextLevel)) {
     showReadyRequired(opKey);
     return;
+  }
+  const currentLevel = opConfig[opKey].difficulty;
+  if (!force && nextLevel > currentLevel) {
+    recordMasteryAdvance(opKey, currentLevel);
   }
   opConfig[opKey].difficulty = nextLevel;
   syncProgressSettings();
@@ -912,15 +942,15 @@ function splitIntoGroups(items, groupCount) {
 }
 
 // The final mothership is a "fact sheet": it holds the whole current-level
-// problem universe (capped at FACT_SHEET_CAP, randomly sampled) split across the
-// ship parts. Nodes start hidden and are revealed in small capped batches so the
-// player never faces an ambiguous wall of answers. Operations without an
-// enumerable universe (e.g. f10) fall back to generated per-part problems.
+// problem universe, shuffled and split across the ship parts. Nodes start hidden
+// and are revealed in small capped batches so the player never faces an
+// ambiguous wall of answers. Operations without an enumerable universe fall
+// back to generated per-part problems.
 function buildBossParts(opKey, level = opConfig[opKey]?.difficulty) {
   const universe = getSkillUniverseProblems(opKey, level);
   let groups = null;
   if (universe.length > 0) {
-    const selected = shuffleArray(universe).slice(0, FACT_SHEET_CAP);
+    const selected = shuffleArray(universe);
     const problems = selected
       .map((entry) => makeProblemFromUniverseEntry(opKey, entry, level))
       .filter(Boolean);
@@ -1052,7 +1082,7 @@ function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficul
     message: mode === "wave"
       ? "Wave 2: load ladder"
       : mode === "boss"
-        ? "Mothership incoming"
+        ? "Worksheet run incoming"
         : mode === "blitz"
           ? "Blitz: shield endurance"
           : "Wave 1: shields up",
@@ -1106,22 +1136,27 @@ function getBlitzUnlockedLevel(opKey) {
   return summarizeProfile(progressProfile).skills[opKey]?.blitzUnlockedLevel || 0;
 }
 
+function getSelectedReplayLevel(opKey) {
+  const skill = summarizeProfile(progressProfile).skills[opKey];
+  return canReplayChallenges(opKey, skill) ? opConfig[opKey].difficulty : 0;
+}
+
 function startBlitzMode(opKey) {
-  const level = getBlitzUnlockedLevel(opKey);
+  const level = getSelectedReplayLevel(opKey);
   if (level <= 0) return false;
   startBossMode(opKey, { mode: "blitz", level });
   return true;
 }
 
 function startWaveMode(opKey) {
-  const level = getBlitzUnlockedLevel(opKey);
+  const level = getSelectedReplayLevel(opKey);
   if (level <= 0) return false;
   startBossMode(opKey, { mode: "wave", level });
   return true;
 }
 
 function startBossReplayMode(opKey) {
-  const level = getBlitzUnlockedLevel(opKey);
+  const level = getSelectedReplayLevel(opKey);
   if (level <= 0) return false;
   startBossMode(opKey, { mode: "boss", level, force: true });
   return true;
@@ -1165,7 +1200,9 @@ function startChallenge(type = "blitz") {
 function startBossFight() {
   drops = [];
   bossMode.phase = "boss";
-  bossMode.message = "Take down the mothership";
+  bossMode.message = bossMode.mode === "boss"
+    ? "Clear the worksheet ship"
+    : "Take down the mothership";
   bossMode.bombTimerMs = 900;
   bossMode.bossStartedAtMs = performance.now();
   updateBossPartLocks();
@@ -1325,6 +1362,11 @@ function getBossPartCount() {
   return { remaining, total, problemsRemaining, problemsTotal };
 }
 
+function getBossWorksheetElapsedMs() {
+  if (!bossMode?.bossStartedAtMs) return 0;
+  return Math.max(0, performance.now() - bossMode.bossStartedAtMs);
+}
+
 function createBossDebris(part) {
   if (!bossMode?.debris) return;
   bossMode.debris.push({
@@ -1390,9 +1432,8 @@ function getBossBombIntervalMs() {
   if (!bossMode?.parts) return 2200;
   const gunsAlive = bossMode.parts.some((part) => part.id === "guns" && !part.destroyed);
   const wingsAlive = bossMode.parts.some((part) => part.id === "wings" && !part.destroyed);
-  if (!gunsAlive) return Infinity;
-  const base = Math.max(2200, 3600 - (wingsAlive ? 450 : 0));
-  return Math.max(1800, Math.round(base * getActivePressure().bombIntervalMultiplier));
+  const base = gunsAlive ? 3800 : 5200;
+  return Math.max(2200, Math.round((base - (wingsAlive ? 450 : 0)) * getActivePressure().bombIntervalMultiplier));
 }
 
 function findBossProblemById(partId, problemId) {
@@ -1404,29 +1445,22 @@ function findBossProblemById(partId, problemId) {
 function getBossMissileSourceNode(usedAnswers = new Set()) {
   if (!bossMode?.parts || bossMode.phase !== "boss") return null;
   const activePart = bossMode.parts.find((part) => !part.destroyed && !part.locked);
-  const allCandidates = bossMode.parts.flatMap((part) => part.problems).filter((problem) => (
-    !problem.destroyed
+  if (!activePart) return null;
+  const candidates = activePart.problems.filter((problem) => (
+    problem.revealed
+    && !problem.destroyed
+    && !problem.locked
     && !usedAnswers.has(getProblemAnswerKey(problem))
   ));
-  const activeCandidates = activePart
-    ? allCandidates.filter((problem) => problem.partId === activePart.id)
-    : [];
-  const pools = [
-    activeCandidates.filter((problem) => !problem.revealed),
-    allCandidates.filter((problem) => !problem.revealed),
-    activeCandidates,
-    allCandidates,
-  ];
-  const pool = pools.find((candidates) => candidates.length > 0) || [];
-  if (pool.length === 0) return null;
-  return pool[randInt(0, pool.length - 1)];
+  if (candidates.length === 0) return null;
+  return candidates[randInt(0, candidates.length - 1)];
 }
 
 function spawnBossBomb() {
   if (!bossMode?.active || !["boss", "challenge"].includes(bossMode.phase)) return false;
   const interval = getBossBombIntervalMs();
   if (!Number.isFinite(interval)) return false;
-  const usedAnswers = new Set([...drops, ...getActiveBossParts()].map((target) => getProblemAnswerKey(target)));
+  const usedAnswers = new Set(drops.map((target) => getProblemAnswerKey(target)));
   const sourceNode = bossMode.phase === "boss" ? getBossMissileSourceNode(usedAnswers) : null;
   if (bossMode.phase === "boss" && !sourceNode) return false;
   const problem = sourceNode || makeBossProblem(bossMode.opKey, usedAnswers, getProblemAnswerKey, bossMode.level);
@@ -1436,13 +1470,10 @@ function spawnBossBomb() {
     bomb.bossSourcePartId = sourceNode.partId;
     bomb.bossSourceNodeId = sourceNode.id;
   }
-  const source = bossMode.phase === "boss"
-    ? bossMode.parts.find((part) => part.id === "guns" && !part.destroyed)
-    : null;
-  bomb.x = source ? source.x + randInt(-80, 80) : randInt(54, Math.max(54, canvasW - 54));
+  bomb.x = sourceNode ? sourceNode.x : randInt(54, Math.max(54, canvasW - 54));
   // Challenge bombs appear just inside the top so they are readable/answerable
-  // immediately; boss missiles launch from the firing gun.
-  bomb.y = source ? source.y + 28 : 8;
+  // immediately; worksheet missiles drop off visible ship nodes.
+  bomb.y = sourceNode ? sourceNode.y + 18 : 8;
   bomb.baseSpeed = canvasH / getBossBombFallSeconds();
   drops.push(bomb);
   return true;
@@ -1679,6 +1710,7 @@ function completeBossVictory() {
   const durationMs = bossMode.bossStartedAtMs
     ? Math.max(0, performance.now() - bossMode.bossStartedAtMs)
     : null;
+  bossMode.bossFinalDurationMs = durationMs;
   progressProfile = recordChallengeAttempt(progressProfile, opKey, {
     type: "boss",
     level,
@@ -1725,7 +1757,7 @@ function completeBossVictory() {
   bossMode.phase = "victory";
   bossMode.message = mode === "full"
     ? level < 10 ? `Boss cleared: Level ${level + 1} unlocked` : "Boss cleared"
-    : `Boss time: ${formatDuration(durationMs)}`;
+    : `Worksheet time: ${formatDuration(durationMs)}`;
   bossMode.victoryMs = BOSS_VICTORY_MS;
   updateBossHud();
   updateReadinessDisplays();
@@ -1751,7 +1783,9 @@ function updateBossHud() {
     ? "Wave 2"
     : bossMode.mode === "blitz"
       ? "Blitz"
-      : "Boss";
+      : bossMode.mode === "boss"
+        ? "Worksheet"
+        : "Boss";
   bossHudTitleEl.textContent = `${opName} ${titleMode} · Level ${bossMode.level}`;
   bossHudStatusEl.textContent = bossMode.message;
   if (isBossStunned()) {
@@ -1777,7 +1811,9 @@ function updateBossHud() {
   if (bossMode.phase === "boss" || bossMode.phase === "victory") {
     const { remaining, total, problemsRemaining, problemsTotal } = getBossPartCount();
     const bombs = drops.filter((drop) => drop.bossKind === "bomb").length;
-    bossHudMetaEl.textContent = `${Math.max(0, remaining)}/${total} parts · ${problemsRemaining}/${problemsTotal} nodes · ${bombs} bombs`;
+    const cleared = Math.max(0, problemsTotal - problemsRemaining);
+    const time = bossMode.phase === "boss" ? formatDuration(getBossWorksheetElapsedMs()) : formatDuration(bossMode.bossFinalDurationMs);
+    bossHudMetaEl.textContent = `${cleared}/${problemsTotal} cleared · ${time} · ${Math.max(0, remaining)}/${total} parts · ${bombs} missiles`;
     return;
   }
   bossHudMetaEl.textContent = "Get ready";
@@ -2545,17 +2581,32 @@ function drawBossProblemNode(problem) {
   const x = problem.x - problem.w / 2;
   const y = problem.y - problem.h / 2;
   const isTargeted = factorTargetId === problem.id;
-  ctx.fillStyle = problem.partKind === "core"
+  const fill = problem.partKind === "core"
     ? "rgba(248, 113, 113, 0.92)"
     : "rgba(15, 23, 42, 0.9)";
-  ctx.strokeStyle = isTargeted
+  const stroke = isTargeted
     ? "rgba(251, 191, 36, 0.95)"
     : problem.partKind === "shield"
       ? "rgba(186, 230, 253, 0.86)"
       : "rgba(255, 255, 255, 0.42)";
+  ctx.fillStyle = fill;
+  ctx.strokeStyle = stroke;
   ctx.lineWidth = isTargeted ? 3 : 1.8;
-  fillRoundRect(x, y, problem.w, problem.h, 8);
-  strokeRoundRect(x, y, problem.w, problem.h, 8);
+
+  ctx.beginPath();
+  ctx.moveTo(problem.x, y - 1);
+  ctx.bezierCurveTo(x, y + problem.h * 0.28, x + problem.w * 0.08, y + problem.h * 0.78, problem.x, y + problem.h + 1);
+  ctx.bezierCurveTo(x + problem.w * 0.92, y + problem.h * 0.78, x + problem.w, y + problem.h * 0.28, problem.x, y - 1);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.globalAlpha = 0.32;
+  ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+  ctx.beginPath();
+  ctx.ellipse(problem.x - problem.w * 0.18, problem.y - problem.h * 0.16, problem.w * 0.1, problem.h * 0.16, -0.45, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
 
   // While factoring a targeted node, show what is left to factor.
   let label = problem.text;
@@ -2979,11 +3030,13 @@ function getScoreReadout() {
   // Wave 1 (shield endurance), Wave 2 (load ladder), then Boss (mothership).
   const label = bossMode.mode === "blitz" ? "Blitz"
     : bossMode.mode === "wave" ? "Wave"
-      : isMothership ? "Boss"
+      : isMothership ? (bossMode.mode === "boss" ? "Worksheet" : "Boss")
         : bossMode.challengeType === "wave" ? "Wave 2" : "Wave 1";
   if (isMothership) {
     const { problemsTotal, problemsRemaining } = getBossPartCount();
-    return { label, value: `${Math.max(0, problemsTotal - problemsRemaining)}/${problemsTotal} nodes` };
+    const cleared = Math.max(0, problemsTotal - problemsRemaining);
+    const time = phase === "boss" ? getBossWorksheetElapsedMs() : bossMode.bossFinalDurationMs;
+    return { label, value: `${cleared}/${problemsTotal} · ${formatDuration(time)}` };
   }
   if (phase === "challenge" || phase === "challengeComplete") {
     const solved = getBlitzScore();
@@ -3458,11 +3511,11 @@ function formatReadyText(skill) {
 }
 
 function shouldPromptBossAttempt(skill) {
-  return Boolean(skill?.bossReady && !skill?.bossAttemptedForLevel);
+  return Boolean(skill?.bossReady && !skill?.bossAttemptedForLevel && !skill?.levelAdvancedForLevel);
 }
 
-// When an operation first reaches boss-readiness, interrupt briefly with a
-// choice. The game loop pauses under modal overlays, so this does not cost drops.
+// When an operation first reaches mastery, interrupt briefly with a choice. The
+// game loop pauses under modal overlays, so this does not cost drops.
 function maybeOfferBoss(opKey) {
   if (isBossActive()) return;
   const skill = getProgressSkill(opKey);
@@ -3481,22 +3534,25 @@ function closeBossOffer() {
 function showBossOffer(opKey) {
   closeBossOffer();
   const level = opConfig[opKey]?.difficulty;
+  const canAdvance = level < 10;
   const overlay = document.createElement("div");
   overlay.className = "overlay boss-offer-overlay";
   overlay.id = "bossOfferOverlay";
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-modal", "true");
-  overlay.setAttribute("aria-label", "Boss unlocked");
+  overlay.setAttribute("aria-label", "Level mastered");
 
   const card = document.createElement("div");
   card.className = "card boss-offer";
 
   const title = document.createElement("h2");
-  title.textContent = "Boss Unlocked";
+  title.textContent = "Level Mastered";
 
   const msg = document.createElement("span");
   msg.className = "boss-offer-msg";
-  msg.textContent = `${opDisplayNames[opKey]} Level ${level} is mastered. Try the boss now?`;
+  msg.textContent = canAdvance
+    ? `${opDisplayNames[opKey]} Level ${level} is mastered. Keep practicing, try the boss, or move to Level ${level + 1}.`
+    : `${opDisplayNames[opKey]} Level ${level} is mastered. Keep practicing or try the boss.`;
 
   const actions = document.createElement("div");
   actions.className = "boss-offer-actions";
@@ -3514,17 +3570,29 @@ function showBossOffer(opKey) {
   const dismiss = document.createElement("button");
   dismiss.type = "button";
   dismiss.className = "boss-offer-dismiss";
-  dismiss.textContent = "No boss";
+  dismiss.textContent = "Keep Practicing";
   dismiss.addEventListener("click", closeBossOffer);
+
+  const next = document.createElement("button");
+  next.type = "button";
+  next.className = "boss-offer-next";
+  next.textContent = "Next Level";
+  next.hidden = !canAdvance;
+  next.addEventListener("click", () => {
+    initAudio();
+    closeBossOffer();
+    advanceMasteredLevel(opKey);
+  });
 
   actions.appendChild(dismiss);
   actions.appendChild(start);
+  actions.appendChild(next);
   card.appendChild(title);
   card.appendChild(msg);
   card.appendChild(actions);
   overlay.appendChild(card);
   document.body.appendChild(overlay);
-  start.focus();
+  (canAdvance ? next : start).focus();
 }
 
 function closeBossVictoryPopup() {
@@ -3533,7 +3601,7 @@ function closeBossVictoryPopup() {
 }
 
 // End-of-run celebration after a full boss clear: congratulations, the three
-// stage results (Wave 1 / Wave 2 / Boss), and a button to move on.
+// stage results (Wave 1 / Wave 2 / Worksheet), and a button to move on.
 function showBossVictoryPopup(info) {
   if (!info) return;
   closeBossVictoryPopup();
@@ -3562,7 +3630,7 @@ function showBossVictoryPopup(info) {
   const rows = [
     ["Wave 1", info.wave1 != null ? `${info.wave1} solved` : "—"],
     ["Wave 2", info.wave2 != null ? `${info.wave2} solved` : "—"],
-    ["Boss time", info.bossTimeMs != null ? formatDuration(info.bossTimeMs) : "—"],
+    ["Worksheet time", info.bossTimeMs != null ? formatDuration(info.bossTimeMs) : "—"],
   ];
   for (const [label, value] of rows) {
     const row = document.createElement("div");
@@ -3603,29 +3671,38 @@ function showBossVictoryPopup(info) {
 }
 
 function getBossButtonTitle(skill) {
-  if (skill?.bossReady) return "Start boss mode";
-  return `Boss unlocks when ${BOSS_READY_SCORE}% of current-level problems have at least 3 attempts and 90% current accuracy.`;
+  if (skill?.bossReady) return "Choose boss, next level, or more practice";
+  return `Choices unlock when ${BOSS_READY_SCORE}% of current-level problems have at least 3 attempts and 90% current accuracy.`;
 }
 
-function formatBlitzText(skill) {
-  if (!skill?.blitzUnlockedLevel) return "";
-  const best = skill.challengeBests?.blitz || skill.blitzBest;
-  if (!best) return `Blitz L${skill.blitzUnlockedLevel}`;
-  return `Blitz L${skill.blitzUnlockedLevel} best ${best.score} solved`;
+function getReplayChallengeLevel(opKey, skill) {
+  const selectedLevel = opConfig[opKey]?.difficulty || 1;
+  const unlockedLevel = skill?.unlockedLevel || skill?.blitzUnlockedLevel || 0;
+  return selectedLevel <= unlockedLevel ? selectedLevel : 0;
 }
 
-function formatWaveText(skill) {
-  if (!skill?.blitzUnlockedLevel) return "";
-  const best = skill.challengeBests?.wave;
-  if (!best) return `Wave L${skill.blitzUnlockedLevel}`;
-  return `Wave L${skill.blitzUnlockedLevel} best ${best.score} solved`;
+function formatBlitzText(opKey, skill) {
+  const level = getReplayChallengeLevel(opKey, skill);
+  if (!level) return "";
+  const best = getBlitzBest(progressProfile.skills?.[opKey], level);
+  if (!best) return `Blitz L${level}`;
+  return `Blitz L${level} best ${best.score} solved`;
 }
 
-function formatBossReplayText(skill) {
-  if (!skill?.blitzUnlockedLevel) return "";
-  const best = skill.challengeBests?.boss;
-  if (!best?.durationMs) return `Boss L${skill.blitzUnlockedLevel}`;
-  return `Boss L${skill.blitzUnlockedLevel} ${formatDuration(best.durationMs)}`;
+function formatWaveText(opKey, skill) {
+  const level = getReplayChallengeLevel(opKey, skill);
+  if (!level) return "";
+  const best = getChallengeBest(progressProfile.skills?.[opKey], "wave", level);
+  if (!best) return `Wave L${level}`;
+  return `Wave L${level} best ${best.score} solved`;
+}
+
+function formatBossReplayText(opKey, skill) {
+  const level = getReplayChallengeLevel(opKey, skill);
+  if (!level) return "";
+  const best = getChallengeBest(progressProfile.skills?.[opKey], "boss", level);
+  if (!best?.durationMs) return `Worksheet L${level}`;
+  return `Worksheet L${level} ${formatDuration(best.durationMs)}`;
 }
 
 function getCourseProgressPercent(level) {
@@ -3668,6 +3745,7 @@ function updateOpChits() {
     const opKey = btn.dataset.op;
     if (!opKey || !opConfig[opKey]) return;
     btn.classList.toggle("active", opConfig[opKey].enabled);
+    btn.disabled = isBossActive();
   });
   updateOpChitProgress();
   buildDiffCards();
@@ -3704,7 +3782,7 @@ function updateInputHint() {
 // when that cleared level is the one currently selected. This keeps the card for
 // the level you are working on free of older-level challenge stats.
 function canReplayChallenges(opKey, skill) {
-  return Boolean(skill?.blitzUnlockedLevel) && opConfig[opKey]?.difficulty === skill.blitzUnlockedLevel;
+  return getReplayChallengeLevel(opKey, skill) > 0;
 }
 
 function buildDiffCards() {
@@ -3814,7 +3892,7 @@ function buildDiffCards() {
     readyText.addEventListener("click", (e) => {
       e.stopPropagation();
       initAudio();
-      startBossMode(opKey);
+      showBossOffer(opKey);
     });
 
     const readyMeter = document.createElement("div");
@@ -3830,7 +3908,7 @@ function buildDiffCards() {
     blitzBtn.className = "diff-challenge diff-blitz";
     blitzBtn.dataset.op = opKey;
     blitzBtn.dataset.challenge = "blitz";
-    blitzBtn.textContent = formatBlitzText(skill);
+    blitzBtn.textContent = formatBlitzText(opKey, skill);
     blitzBtn.hidden = !canReplayChallenges(opKey, skill);
     blitzBtn.disabled = isBossActive();
     blitzBtn.addEventListener("click", (e) => {
@@ -3845,7 +3923,7 @@ function buildDiffCards() {
     waveBtn.className = "diff-challenge diff-wave";
     waveBtn.dataset.op = opKey;
     waveBtn.dataset.challenge = "wave";
-    waveBtn.textContent = formatWaveText(skill);
+    waveBtn.textContent = formatWaveText(opKey, skill);
     waveBtn.hidden = !canReplayChallenges(opKey, skill);
     waveBtn.disabled = isBossActive();
     waveBtn.addEventListener("click", (e) => {
@@ -3860,7 +3938,7 @@ function buildDiffCards() {
     bossReplayBtn.className = "diff-challenge diff-boss";
     bossReplayBtn.dataset.op = opKey;
     bossReplayBtn.dataset.challenge = "boss";
-    bossReplayBtn.textContent = formatBossReplayText(skill);
+    bossReplayBtn.textContent = formatBossReplayText(opKey, skill);
     bossReplayBtn.hidden = !canReplayChallenges(opKey, skill);
     bossReplayBtn.disabled = isBossActive();
     bossReplayBtn.addEventListener("click", (e) => {
@@ -3902,7 +3980,7 @@ function updateReadinessDisplays() {
     el.classList.toggle("is-locked", !skill?.bossReady);
     el.classList.toggle("is-ready-attention", shouldPromptBossAttempt(skill));
     el.classList.remove("needs-ready");
-    el.disabled = !skill?.bossReady;
+    el.disabled = isBossActive() || !skill?.bossReady;
     el.title = getBossButtonTitle(skill);
     el.setAttribute("aria-pressed", skill?.bossAttemptedForLevel ? "true" : "false");
   });
@@ -3914,20 +3992,23 @@ function updateReadinessDisplays() {
 
   document.querySelectorAll(".diff-blitz[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
-    el.textContent = formatBlitzText(skill);
+    el.textContent = formatBlitzText(el.dataset.op, skill);
     el.hidden = !canReplayChallenges(el.dataset.op, skill);
+    el.disabled = isBossActive();
   });
 
   document.querySelectorAll(".diff-wave[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
-    el.textContent = formatWaveText(skill);
+    el.textContent = formatWaveText(el.dataset.op, skill);
     el.hidden = !canReplayChallenges(el.dataset.op, skill);
+    el.disabled = isBossActive();
   });
 
   document.querySelectorAll(".diff-boss[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
-    el.textContent = formatBossReplayText(skill);
+    el.textContent = formatBossReplayText(el.dataset.op, skill);
     el.hidden = !canReplayChallenges(el.dataset.op, skill);
+    el.disabled = isBossActive();
   });
 
   document.querySelectorAll(".kp-diff-ready[data-op]").forEach((el) => {
@@ -3937,27 +4018,30 @@ function updateReadinessDisplays() {
     el.classList.toggle("is-locked", !skill?.bossReady);
     el.classList.toggle("is-ready-attention", shouldPromptBossAttempt(skill));
     el.classList.remove("needs-ready");
-    el.disabled = !skill?.bossReady;
+    el.disabled = isBossActive() || !skill?.bossReady;
     el.title = getBossButtonTitle(skill);
     el.setAttribute("aria-pressed", skill?.bossAttemptedForLevel ? "true" : "false");
   });
 
   document.querySelectorAll(".kp-diff-blitz[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
-    el.textContent = formatBlitzText(skill);
+    el.textContent = formatBlitzText(el.dataset.op, skill);
     el.hidden = !canReplayChallenges(el.dataset.op, skill);
+    el.disabled = isBossActive();
   });
 
   document.querySelectorAll(".kp-diff-wave[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
-    el.textContent = formatWaveText(skill);
+    el.textContent = formatWaveText(el.dataset.op, skill);
     el.hidden = !canReplayChallenges(el.dataset.op, skill);
+    el.disabled = isBossActive();
   });
 
   document.querySelectorAll(".kp-diff-boss[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
-    el.textContent = formatBossReplayText(skill);
+    el.textContent = formatBossReplayText(el.dataset.op, skill);
     el.hidden = !canReplayChallenges(el.dataset.op, skill);
+    el.disabled = isBossActive();
   });
 }
 
@@ -4204,7 +4288,7 @@ function buildChallengeRow(skill) {
       const parts = [
         entry.blitz ? `Blitz ${entry.blitz.score}` : "Blitz –",
         entry.wave ? `Wave ${entry.wave.score}` : "Wave –",
-        entry.boss?.durationMs ? `Boss ${formatDuration(entry.boss.durationMs)}` : "Boss –",
+        entry.boss?.durationMs ? `Worksheet ${formatDuration(entry.boss.durationMs)}` : "Worksheet –",
       ];
       chip.textContent = `L${entry.level}: ${parts.join(" · ")}`;
     } else {
@@ -4554,7 +4638,12 @@ function buildSessionReportPopup(sessionId) {
       if (operation.challenges.started || operation.challenges.completed) {
         pieces.push(`Challenges: ${operation.challenges.started} started, ${operation.challenges.completed} completed`);
       }
-      stats.textContent = pieces.join(" · ");
+      pieces.forEach((piece) => {
+        const line = document.createElement("div");
+        line.className = "session-report-stat-line";
+        line.textContent = piece;
+        stats.appendChild(line);
+      });
 
       const mastery = document.createElement("div");
       mastery.className = "session-report-mastery";
@@ -4566,7 +4655,16 @@ function buildSessionReportPopup(sessionId) {
           ended: operation.ended,
           masteryDelta: operation.masteryDelta,
         }];
-      mastery.textContent = `Mastery by level: ${levels.map(formatSessionLevelProgress).join(" · ")}`;
+      const masteryTitle = document.createElement("div");
+      masteryTitle.className = "session-report-mastery-title";
+      masteryTitle.textContent = "Mastery by level";
+      mastery.appendChild(masteryTitle);
+      levels.forEach((level) => {
+        const line = document.createElement("div");
+        line.className = "session-report-level-line";
+        line.textContent = formatSessionLevelProgress(level);
+        mastery.appendChild(line);
+      });
 
       row.appendChild(rowTop);
       row.appendChild(stats);
@@ -4809,18 +4907,24 @@ function buildWelcomeMenu({ firstVisit = false } = {}) {
 
   const supportBox = document.createElement("div");
   supportBox.className = "welcome-support";
-  const supportTitle = document.createElement("div");
-  supportTitle.className = "welcome-support-title";
-  supportTitle.textContent = getText("support.welcomeTitle");
-  const supportBody = document.createElement("p");
-  supportBody.textContent = getText("support.welcomeBody");
+  const supportTitleText = getText("support.welcomeTitle", "").trim();
+  const supportBodyText = getText("support.welcomeBody", "").trim();
+  if (supportTitleText) {
+    const supportTitle = document.createElement("div");
+    supportTitle.className = "welcome-support-title";
+    supportTitle.textContent = supportTitleText;
+    supportBox.appendChild(supportTitle);
+  }
+  if (supportBodyText) {
+    const supportBody = document.createElement("p");
+    supportBody.textContent = supportBodyText;
+    supportBox.appendChild(supportBody);
+  }
   const supportAnchor = document.createElement("a");
   supportAnchor.href = SUPPORT_URL;
   supportAnchor.target = "_blank";
   supportAnchor.rel = "noopener noreferrer";
   supportAnchor.textContent = getText("support.welcomeLink");
-  supportBox.appendChild(supportTitle);
-  supportBox.appendChild(supportBody);
   supportBox.appendChild(supportAnchor);
 
   actionPanel.appendChild(actionTitle);
@@ -5411,6 +5515,9 @@ function updateControlDisplay() {
   document.querySelectorAll(".kp-sbtn").forEach((btn) => {
     btn.disabled = isBossActive();
   });
+  document.querySelectorAll(".op-chit").forEach((btn) => {
+    btn.disabled = isBossActive();
+  });
 }
 
 function togglePause() {
@@ -5813,7 +5920,7 @@ function setupTouchKeypad() {
   if (controlsBar && opChits) {
     const touchBrand = document.createElement("div");
     touchBrand.className = "touch-brand";
-    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score"><span id="touchScoreLabel">Cleared</span>: <span id="touchScore">0</span></div><a href="#" class="touch-menu" id="touchMenuLink">${getText("welcome.menuLink")}</a><a href="#" class="touch-login" id="touchLoginLink">Login</a><a href="#" class="touch-results" id="touchResultsLink">R</a><a href="#" class="touch-log" id="touchSessionLogLink">Log</a><a href="${SUPPORT_URL}" class="touch-support" id="touchSupportLink" target="_blank" rel="noopener noreferrer">${getText("support.shortLabel")}</a><a href="#" class="touch-fb" id="touchFbLink">?</a>`;
+    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score"><span id="touchScoreLabel">Cleared</span>: <span id="touchScore">0</span></div><a href="#" class="touch-menu" id="touchMenuLink">${getText("welcome.menuLink")}</a><a href="#" class="touch-login" id="touchLoginLink">Login</a><a href="#" class="touch-log" id="touchSessionLogLink">Log</a><a href="${SUPPORT_URL}" class="touch-support" id="touchSupportLink" target="_blank" rel="noopener noreferrer">${getText("support.shortLabel")}</a><a href="#" class="touch-fb" id="touchFbLink">?</a>`;
     controlsBar.insertBefore(touchBrand, opChits);
     const touchMenuLink = document.getElementById("touchMenuLink");
     if (touchMenuLink) {
@@ -5827,13 +5934,6 @@ function setupTouchKeypad() {
       touchLoginLink.addEventListener("click", (e) => {
         e.preventDefault();
         buildLoginPopup();
-      });
-    }
-    const touchResultsLink = document.getElementById("touchResultsLink");
-    if (touchResultsLink) {
-      touchResultsLink.addEventListener("click", (e) => {
-        e.preventDefault();
-        buildResultsPopup();
       });
     }
     const touchSessionLogLink = document.getElementById("touchSessionLogLink");
@@ -5938,13 +6038,13 @@ function buildKpDiffStrip() {
     ready.disabled = isBossActive() || !skill.bossReady;
     ready.title = getBossButtonTitle(skill);
     ready.setAttribute("aria-pressed", skill.bossAttemptedForLevel ? "true" : "false");
-    wireKpButton(ready, () => startBossMode(opKey));
+    wireKpButton(ready, () => showBossOffer(opKey));
 
     const blitz = document.createElement("button");
     blitz.type = "button";
     blitz.className = "kp-diff-challenge kp-diff-blitz";
     blitz.dataset.op = opKey;
-    blitz.textContent = formatBlitzText(skill);
+    blitz.textContent = formatBlitzText(opKey, skill);
     blitz.hidden = !canReplayChallenges(opKey, skill);
     blitz.disabled = isBossActive();
     wireKpButton(blitz, () => startBlitzMode(opKey));
@@ -5953,7 +6053,7 @@ function buildKpDiffStrip() {
     wave.type = "button";
     wave.className = "kp-diff-challenge kp-diff-wave";
     wave.dataset.op = opKey;
-    wave.textContent = formatWaveText(skill);
+    wave.textContent = formatWaveText(opKey, skill);
     wave.hidden = !canReplayChallenges(opKey, skill);
     wave.disabled = isBossActive();
     wireKpButton(wave, () => startWaveMode(opKey));
@@ -5962,7 +6062,7 @@ function buildKpDiffStrip() {
     bossReplay.type = "button";
     bossReplay.className = "kp-diff-challenge kp-diff-boss";
     bossReplay.dataset.op = opKey;
-    bossReplay.textContent = formatBossReplayText(skill);
+    bossReplay.textContent = formatBossReplayText(opKey, skill);
     bossReplay.hidden = !canReplayChallenges(opKey, skill);
     bossReplay.disabled = isBossActive();
     wireKpButton(bossReplay, () => startBossReplayMode(opKey));
