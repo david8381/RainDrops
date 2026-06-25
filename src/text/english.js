@@ -32,8 +32,15 @@ globalThis.RainMathText = {
     playAs: "Play as {playerName}",
     actionSubtitle: "Start immediately, or take the guided tour first.",
     tutorial: "Tutorial",
+    testMe: "Test Me",
     fullLoginMenu: "Full Login Menu",
     ariaLabel: "Rain Math menu",
+  },
+  placement: {
+    ariaLabel: "Rain Math placement test",
+    title: "Test Me",
+    subtitle: "Try a few problems by level to find a reasonable starting point. This does not change mastery stats.",
+    note: "Placement starts easy and climbs after 2 out of 3 correct at a level. You can stop whenever a level feels right.",
   },
   tutorial: {
     ariaLabel: "Rain Math tutorial",
@@ -64,8 +71,8 @@ globalThis.RainMathText = {
       {
         target: ".play-controls-card",
         kicker: "Pressure",
-        title: "Tune speed and crowding separately.",
-        body: "Speed changes how fast drops fall. Drops changes how many can be active at once. Lower either one if the board feels stressful; raise them when practice feels too easy.",
+        title: "Tune speed, crowding, and text size.",
+        body: "Speed changes how fast drops fall. Drops changes how many can be active at once. Text changes the size of problems on drops and worksheet nodes. Lower pressure if the board feels stressful; raise it when practice feels too easy.",
         tip: "",
       },
       {
@@ -92,8 +99,8 @@ globalThis.RainMathText = {
       {
         target: ".version",
         kicker: "Profiles",
-        title: "Use local players and Log.",
-        body: "Profiles live in this browser's localStorage for now. Use Login to switch players, Grid to inspect mastery, and Log to review recent sessions.",
+        title: "Use local players, Test Me, and Log.",
+        body: "Profiles live in this browser's localStorage for now. Use Login to switch players, Test Me to choose a starting level without changing mastery stats, Grid to inspect mastery, and Log to review recent sessions.",
         tip: "Open a session's Report to show time, correct/missed counts, and mastery changes by problem type and level.",
       },
     ],

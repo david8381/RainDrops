@@ -4,6 +4,9 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-24
+- Added a persisted Text Size control for problem drops and worksheet nodes, with crisper heavier canvas text and matching desktop/touch controls.
+- Added a Test Me diagnostic placement flow from the header and welcome menu. It climbs by operation level after 2/3 correct, can set a starting level, and does not write mastery stats.
+- Added a Share Badge popup from boss victory and unlocked level cards, summarizing best Blitz, Wave, and Worksheet results with copy/share actions.
 - Added a short cannon-overload cooldown after repeated impossible submissions, so keyboard spamming is throttled without counting as ordinary mastery accuracy.
 - Let fully mastered current levels show Blitz, Wave, and Worksheet buttons immediately after choosing Keep Practicing, without requiring a temporary jump to the next level and back.
 - Changed Blitz/Wave challenge bests to use their natural metrics: Blitz now records survival time plus fastest drop time reached, Wave records the highest simultaneous load fully cleared, and solved counts remain in attempt history for future progress views.

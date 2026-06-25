@@ -91,6 +91,7 @@ test("first visit menu creates a player, starts the tutorial, and enters play", 
   await expect(page.locator("#welcomeOverlay")).toBeVisible();
   await expect(page.locator(".welcome-card h1")).toHaveText("Rain Math");
   await expect(page.locator("#welcomePlay")).toBeVisible();
+  await expect(page.locator("#welcomeTestMe")).toHaveText("Test Me");
   await expect(page.locator(".welcome-support a")).toHaveAttribute("href", "https://ko-fi.com/davidedaniels");
   await expect(page.locator(".welcome-support a")).toHaveText("Donate");
   await expect(page.locator("#supportLink")).toHaveAttribute("href", "https://ko-fi.com/davidedaniels");
@@ -165,15 +166,55 @@ test.describe("desktop gameplay", () => {
     expect((await invoke(page, "getState")).opConfig.add.difficulty).toBe(1);
   });
 
-  test("updates speed and drops controls", async ({ page }) => {
+  test("updates speed, drops, and text size controls", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
 
-    await invoke(page, "setControls", { speed: 80, drops: 9 });
+    await invoke(page, "setControls", { speed: 80, drops: 9, textSize: "huge" });
 
     await expect(page.locator("#speedValue")).toHaveText("80%");
     await expect(page.locator("#dropLimitValue")).toHaveText("9");
+    await expect(page.locator("#textSizeSelect")).toHaveValue("huge");
+    await expect(page.locator("#textSizeValue")).toHaveText("Huge");
     await expect(page.locator('.diff-card[data-op="add"] .diff-ready')).toHaveText("Mastered: 0%");
+
+    const state = await invoke(page, "getState");
+    expect(state.textSize).toBe("huge");
+    expect(state.progressProfile.settings.textSize).toBe("huge");
+  });
+
+  test("test me recommends and applies a starting level without mastery stats", async ({ page }) => {
+    await openApp(page);
+
+    await page.locator("#testMeLink").click();
+    await expect(page.locator("#placementOverlay")).toBeVisible();
+    await expect(page.locator(".placement-card h2")).toHaveText("Test Me");
+
+    await page.locator('.placement-op[data-op="add"]').click();
+    for (let i = 0; i < 3; i += 1) {
+      const state = await invoke(page, "getState");
+      await page.locator(".placement-answer").fill(state.placementState.problem.answerText);
+      await page.locator(".placement-answer-form button").click();
+      if (i < 2) await page.locator(".placement-next").click();
+    }
+
+    await expect(page.locator("#placementOverlay")).toContainText("Level 1 looked comfortable");
+    await page.getByRole("button", { name: "Try Level 2" }).click();
+
+    for (let i = 0; i < 3; i += 1) {
+      await page.locator(".placement-answer").fill("999");
+      await page.locator(".placement-answer-form button").click();
+      if (i < 2) await page.locator(".placement-next").click();
+    }
+
+    await expect(page.locator("#placementOverlay")).toContainText("Recommended: Add Level 1");
+    await page.getByRole("button", { name: "Use Level 1" }).click();
+    const state = await invoke(page, "getState");
+    expect(state.placementVisible).toBe(false);
+    expect(state.opConfig.add.enabled).toBe(true);
+    expect(state.opConfig.add.difficulty).toBe(1);
+    expect(state.progressSummary.skills.add.attempts).toBe(0);
+    expect(state.problemStats.add).toEqual({});
   });
 
   test("clears a numeric drop immediately when the answer is typed", async ({ page }) => {
@@ -846,6 +887,13 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#bossVictoryOverlay")).toContainText("Blitz");
     await expect(page.locator("#bossVictoryOverlay")).toContainText("Wave");
     await expect(page.locator(".boss-victory-next")).toBeVisible();
+    await expect(page.locator(".boss-victory-badge")).toBeVisible();
+
+    await page.locator(".boss-victory-badge").click();
+    await expect(page.locator("#shareBadgeOverlay")).toBeVisible();
+    await expect(page.locator("#shareBadgeOverlay")).toContainText("Add Level 1");
+    await expect(page.locator("#shareBadgeOverlay .share-badge-text")).toContainText("Worksheet");
+    await page.locator('#shareBadgeOverlay button:has-text("Close")').click();
 
     // The accuracy grid is still reachable from the summary.
     await page.locator(".boss-victory-grid").click();

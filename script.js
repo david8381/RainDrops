@@ -7,6 +7,7 @@ const {
   makeShapeProblemFromKey,
   makeF10ProblemFromKey,
   formatF10StatsKey,
+  generateProblem,
   generateWeightedProblem: generateCoreWeightedProblem,
   getDifficultyRange,
   getFactorRemainingText,
@@ -71,6 +72,8 @@ const speedSlider = document.getElementById("speedSlider");
 const speedValueEl = document.getElementById("speedValue");
 const dropLimitSlider = document.getElementById("dropLimitSlider");
 const dropLimitValueEl = document.getElementById("dropLimitValue");
+const textSizeSelect = document.getElementById("textSizeSelect");
+const textSizeValueEl = document.getElementById("textSizeValue");
 const bossHudEl = document.getElementById("bossHud");
 const bossHudTitleEl = document.getElementById("bossHudTitle");
 const bossHudStatusEl = document.getElementById("bossHudStatus");
@@ -117,6 +120,19 @@ const PLAYER_SHIP_TURN_MS = 90;
 const PLAYER_SHIP_RETURN_MS = 280;
 const WELCOME_SEEN_KEY = "rainMath.welcomeSeen.v1";
 const SUPPORT_URL = "https://ko-fi.com/davidedaniels";
+const TEXT_SIZE_ORDER = ["normal", "large", "huge"];
+const TEXT_SIZE_LABELS = {
+  normal: "Normal",
+  large: "Large",
+  huge: "Huge",
+};
+const TEXT_SIZE_SCALE = {
+  normal: 1,
+  large: 1.24,
+  huge: 1.48,
+};
+const PLACEMENT_QUESTIONS_PER_LEVEL = 3;
+const PLACEMENT_PASS_CORRECT = 2;
 const NUMPAD_INPUT_BY_CODE = {
   Numpad0: "0",
   Numpad1: "1",
@@ -165,6 +181,7 @@ let splashes = [];
 let score = 0;
 let gameSpeed = 30;
 let dropLimit = 3;
+let textSize = "normal";
 let spawnTimer = 0;
 let lastTime = 0;
 let isPaused = false;
@@ -202,6 +219,7 @@ let factorTargetId = null; // id of the targeted factor drop, or null
 let bossMode = null;
 let tutorialStepIndex = 0;
 let tutorialFromWelcome = false;
+let placementState = null;
 let activeSessionId = null;
 
 const TUTORIAL_STEPS = Array.isArray(TEXT.tutorial?.steps) ? TEXT.tutorial.steps : [];
@@ -224,6 +242,7 @@ function startVisitSession({ persist = true } = {}) {
     id: activeSessionId,
     speed: gameSpeed,
     rate: dropLimit,
+    textSize,
     userAgent: navigator.userAgent || "",
   });
   if (persist) saveProfile(progressProfile);
@@ -269,6 +288,7 @@ function applyProfileSettingsToControls() {
   }
   gameSpeed = clamp(0, 100, Math.round(Number.isFinite(settings.speed) ? settings.speed : 30));
   dropLimit = clamp(0, 10, Math.round(Number.isFinite(settings.rate) ? settings.rate : 3));
+  textSize = normalizeTextSizeSetting(settings.textSize);
 }
 
 applyProfileSettingsToControls();
@@ -414,6 +434,7 @@ function syncProgressSettings({ persist = true } = {}) {
     pressureTier: getPressureTier(gameSpeed).key,
     speed: gameSpeed,
     rate: dropLimit,
+    textSize,
     difficulties,
   });
   if (persist) saveProfile(progressProfile);
@@ -466,6 +487,22 @@ function formatText(template, values = {}) {
   return String(template || "").replace(/\{([a-zA-Z0-9_]+)\}/g, (match, key) => (
     Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : match
   ));
+}
+
+function normalizeTextSizeSetting(value) {
+  return TEXT_SIZE_ORDER.includes(value) ? value : "normal";
+}
+
+function getTextSizeLabel(value = textSize) {
+  return TEXT_SIZE_LABELS[normalizeTextSizeSetting(value)] || TEXT_SIZE_LABELS.normal;
+}
+
+function getTextScale() {
+  return TEXT_SIZE_SCALE[normalizeTextSizeSetting(textSize)] || 1;
+}
+
+function getScaledFontSize(baseSize, maxSize = 32) {
+  return Math.round(Math.min(maxSize, baseSize * getTextScale()));
 }
 
 function shouldShowWelcomeOnLoad() {
@@ -611,6 +648,19 @@ function setPracticeControls({ speed = gameSpeed, drops = dropLimit } = {}, { pe
   if (persist) syncProgressSettings();
   updateControlDisplay();
   updateReadinessDisplays();
+}
+
+function setTextSize(value, { persist = true } = {}) {
+  textSize = normalizeTextSizeSetting(value);
+  if (persist) syncProgressSettings();
+  updateControlDisplay();
+  drawDrops();
+}
+
+function cycleTextSize() {
+  const currentIndex = TEXT_SIZE_ORDER.indexOf(normalizeTextSizeSetting(textSize));
+  const next = TEXT_SIZE_ORDER[(currentIndex + 1) % TEXT_SIZE_ORDER.length];
+  setTextSize(next);
 }
 
 // Drop fall time model:
@@ -1335,8 +1385,9 @@ function positionBossProblems(part) {
   if (count === 0) return;
 
   const wide = ["si", "shapes"].includes(bossMode?.opKey);
-  const nodeW = wide ? 86 : 56;
-  const nodeH = 26;
+  const nodeScale = Math.min(getTextScale(), 1.34);
+  const nodeW = Math.round((wide ? 86 : 56) * nodeScale);
+  const nodeH = Math.round(26 * Math.min(getTextScale(), 1.28));
   const gapX = 8;
   const gapY = 6;
   const cols = Math.min(wide ? 2 : 3, count);
@@ -2133,12 +2184,13 @@ function drawDrops() {
 
   const inputNum = currentInput !== "" ? Number(currentInput) : NaN;
   const hasNumMatch = !Number.isNaN(inputNum);
+  const dropTextScale = Math.min(getTextScale(), 1.28);
 
   for (const drop of drops) {
     ctx.save();
-    const dropTop = drop.y - 26;
-    const dropBottom = drop.y + 22;
-    const dropRadius = 22;
+    const dropTop = drop.y - 26 * dropTextScale;
+    const dropBottom = drop.y + 22 * dropTextScale;
+    const dropRadius = 22 * dropTextScale;
     const isFactor = drop.opKey === "factor";
     const factorComplete = isFactor && drop.factorComplete;
     const isTargeted = isFactor && factorTargetId === drop.id;
@@ -2208,10 +2260,12 @@ function drawDrops() {
     } else {
       displayText = drop.text;
     }
-    const fontSize = (drop.revealed || isFactor) ? 14 : 17;
-    ctx.font = `700 ${fontSize}px Space Grotesk`;
+    const fontSize = getScaledFontSize((drop.revealed || isFactor) ? 14 : 17, 28);
+    const textX = Math.round(drop.x);
+    const textY = Math.round(drop.y + 2);
+    ctx.font = `800 ${fontSize}px Space Grotesk, Trebuchet MS, sans-serif`;
     ctx.textBaseline = "middle";
-    ctx.lineWidth = 4;
+    ctx.lineWidth = Math.max(4, Math.round(fontSize * 0.24));
     ctx.strokeStyle = "rgba(2, 6, 23, 0.85)";
 
     // Factor drops in progress: draw main text + remaining in accent color
@@ -2221,23 +2275,23 @@ function drawDrops() {
       const mainWidth = ctx.measureText(displayText).width;
       const remWidth = ctx.measureText(remainingText).width;
       const totalWidth = mainWidth + remWidth;
-      const startX = drop.x - totalWidth / 2;
+      const startX = Math.round(drop.x - totalWidth / 2);
 
       // Main part (white)
       ctx.textAlign = "left";
       ctx.fillStyle = "#f8fafc";
-      ctx.strokeText(displayText, startX, drop.y + 2);
-      ctx.fillText(displayText, startX, drop.y + 2);
+      ctx.strokeText(displayText, startX, textY);
+      ctx.fillText(displayText, startX, textY);
 
       // Remaining part (bright accent — the thing to factor)
       ctx.fillStyle = "#fbbf24";
-      ctx.strokeText(remainingText, startX + mainWidth, drop.y + 2);
-      ctx.fillText(remainingText, startX + mainWidth, drop.y + 2);
+      ctx.strokeText(remainingText, Math.round(startX + mainWidth), textY);
+      ctx.fillText(remainingText, Math.round(startX + mainWidth), textY);
     } else {
       ctx.textAlign = "center";
       ctx.fillStyle = drop.revealed ? "#94a3b8" : "#f8fafc";
-      ctx.strokeText(displayText, drop.x, drop.y + 2);
-      ctx.fillText(displayText, drop.x, drop.y + 2);
+      ctx.strokeText(displayText, textX, textY);
+      ctx.fillText(displayText, textX, textY);
     }
     ctx.restore();
   }
@@ -2739,12 +2793,15 @@ function drawBossProblemNode(problem) {
   }
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = "700 11px Space Grotesk";
-  ctx.lineWidth = 3.5;
+  const nodeFontSize = getScaledFontSize(11, 18);
+  const nodeTextX = Math.round(problem.x);
+  const nodeTextY = Math.round(problem.y + 1);
+  ctx.font = `800 ${nodeFontSize}px Space Grotesk, Trebuchet MS, sans-serif`;
+  ctx.lineWidth = Math.max(3.5, nodeFontSize * 0.24);
   ctx.strokeStyle = "rgba(2, 6, 23, 0.85)";
   ctx.fillStyle = "#f8fafc";
-  ctx.strokeText(label, problem.x, problem.y + 1);
-  ctx.fillText(label, problem.x, problem.y + 1);
+  ctx.strokeText(label, nodeTextX, nodeTextY);
+  ctx.fillText(label, nodeTextX, nodeTextY);
 }
 
 function drawBossStunOverlay() {
@@ -3082,7 +3139,8 @@ function hitTestDrop(drop, x, y) {
   // Simple distance check against the drop center
   const dx = x - drop.x;
   const dy = y - (drop.y - 2); // center offset
-  return dx * dx + dy * dy <= 26 * 26;
+  const radius = 26 * Math.min(getTextScale(), 1.28);
+  return dx * dx + dy * dy <= radius * radius;
 }
 
 function revealDrop(drop) {
@@ -3508,6 +3566,8 @@ function isGameplayOverlayOpen() {
     || document.getElementById("sessionReportOverlay")
     || document.getElementById("bossVictoryOverlay")
     || document.getElementById("bossOfferOverlay")
+    || document.getElementById("shareBadgeOverlay")
+    || document.getElementById("placementOverlay")
     || (feedback && !feedback.classList.contains("hidden"))
   );
 }
@@ -3758,6 +3818,157 @@ function formatWaveResult(result) {
   return `${load} at once${solved}`;
 }
 
+function closeShareBadgePopup() {
+  const existing = document.getElementById("shareBadgeOverlay");
+  if (existing) existing.remove();
+}
+
+function getShareBadgeData(opKey, level) {
+  const skill = progressProfile.skills?.[opKey];
+  if (!skill) return null;
+  const blitz = getBlitzBest(skill, level);
+  const wave = getChallengeBest(skill, "wave", level);
+  const worksheet = getChallengeBest(skill, "boss", level);
+  const playerName = progressProfile.user?.name && progressProfile.user.name !== "Local Player"
+    ? progressProfile.user.name
+    : "A Rain Math player";
+  return {
+    opKey,
+    opName: opDisplayNames[opKey] || opKey,
+    level,
+    playerName,
+    blitzText: blitz ? formatBlitzResult(blitz) : "not tried yet",
+    waveText: wave ? formatWaveResult(wave) : "not tried yet",
+    worksheetText: worksheet?.durationMs ? formatDuration(worksheet.durationMs) : "not tried yet",
+  };
+}
+
+function getShareBadgeText(data) {
+  const lines = [
+    `${data.playerName} earned a Rain Math ${data.opName} Level ${data.level} badge.`,
+    `Blitz: ${data.blitzText}`,
+    `Wave: ${data.waveText}`,
+    `Worksheet: ${data.worksheetText}`,
+  ];
+  if (window.location.protocol.startsWith("http")) {
+    lines.push(window.location.origin);
+  }
+  return lines.join("\n");
+}
+
+async function copyShareBadge(data, statusEl) {
+  const text = getShareBadgeText(data);
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const temp = document.createElement("textarea");
+      temp.value = text;
+      temp.setAttribute("readonly", "readonly");
+      temp.style.position = "fixed";
+      temp.style.left = "-9999px";
+      document.body.appendChild(temp);
+      temp.select();
+      document.execCommand("copy");
+      temp.remove();
+    }
+    if (statusEl) statusEl.textContent = "Copied badge text.";
+  } catch {
+    if (statusEl) statusEl.textContent = "Copy failed. Select the text and copy it manually.";
+  }
+}
+
+async function shareBadge(data, statusEl) {
+  const text = getShareBadgeText(data);
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: "Rain Math badge",
+        text,
+      });
+      if (statusEl) statusEl.textContent = "Share sheet opened.";
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+    }
+  }
+  await copyShareBadge(data, statusEl);
+}
+
+function showShareBadge(opKey, level) {
+  const data = getShareBadgeData(opKey, level);
+  if (!data) return;
+  closeShareBadgePopup();
+
+  const overlay = document.createElement("div");
+  overlay.className = "overlay share-badge-overlay";
+  overlay.id = "shareBadgeOverlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Rain Math badge");
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) closeShareBadgePopup();
+  });
+
+  const card = document.createElement("div");
+  card.className = "card share-badge-card";
+  const badge = document.createElement("div");
+  badge.className = "share-badge-art";
+  const title = document.createElement("div");
+  title.className = "share-badge-title";
+  title.textContent = `${data.opName} Level ${data.level}`;
+  const name = document.createElement("div");
+  name.className = "share-badge-name";
+  name.textContent = data.playerName;
+  const rows = document.createElement("div");
+  rows.className = "share-badge-rows";
+  [
+    ["Blitz", data.blitzText],
+    ["Wave", data.waveText],
+    ["Worksheet", data.worksheetText],
+  ].forEach(([label, value]) => {
+    const row = document.createElement("div");
+    row.className = "share-badge-row";
+    const l = document.createElement("span");
+    l.textContent = label;
+    const v = document.createElement("strong");
+    v.textContent = value;
+    row.append(l, v);
+    rows.appendChild(row);
+  });
+  badge.append(title, name, rows);
+
+  const shareText = document.createElement("pre");
+  shareText.className = "share-badge-text";
+  shareText.textContent = getShareBadgeText(data);
+
+  const status = document.createElement("div");
+  status.className = "share-badge-status";
+  status.setAttribute("aria-live", "polite");
+
+  const buttons = document.createElement("div");
+  buttons.className = "share-badge-buttons";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.textContent = "Close";
+  close.addEventListener("click", closeShareBadgePopup);
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.textContent = "Copy";
+  copy.addEventListener("click", () => copyShareBadge(data, status));
+  const share = document.createElement("button");
+  share.type = "button";
+  share.className = "primary";
+  share.textContent = navigator.share ? "Share" : "Copy to Share";
+  share.addEventListener("click", () => shareBadge(data, status));
+  buttons.append(close, copy, share);
+
+  card.append(badge, shareText, status, buttons);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  share.focus();
+}
+
 function showBossVictoryPopup(info) {
   if (!info) return;
   closeBossVictoryPopup();
@@ -3819,7 +4030,12 @@ function showBossVictoryPopup(info) {
     closeBossVictoryPopup();
     showStatsPopup(info.opKey);
   });
-  buttons.append(next, grid);
+  const badge = document.createElement("button");
+  badge.type = "button";
+  badge.className = "boss-victory-badge";
+  badge.textContent = "Share badge";
+  badge.addEventListener("click", () => showShareBadge(info.opKey, info.level));
+  buttons.append(next, grid, badge);
 
   card.append(heading, sub, scores, buttons);
   overlay.appendChild(card);
@@ -3864,6 +4080,11 @@ function formatBossReplayText(opKey, skill) {
   const best = getChallengeBest(progressProfile.skills?.[opKey], "boss", level);
   if (!best?.durationMs) return `Worksheet L${level}`;
   return `Worksheet L${level} ${formatDuration(best.durationMs)}`;
+}
+
+function formatBadgeText(opKey, skill) {
+  const level = getReplayChallengeLevel(opKey, skill);
+  return level ? `Badge L${level}` : "";
 }
 
 function getCourseProgressPercent(level) {
@@ -4115,11 +4336,28 @@ function buildDiffCards() {
       startBossReplayMode(opKey);
     });
 
+    const badgeBtn = document.createElement("button");
+    badgeBtn.type = "button";
+    badgeBtn.className = "diff-challenge diff-badge";
+    badgeBtn.dataset.op = opKey;
+    badgeBtn.dataset.challenge = "badge";
+    badgeBtn.textContent = formatBadgeText(opKey, skill);
+    badgeBtn.hidden = !canReplayChallenges(opKey, skill);
+    badgeBtn.disabled = isBossActive();
+    badgeBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      initAudio();
+      const level = getReplayChallengeLevel(opKey, summarizeProfile(progressProfile).skills[opKey]);
+      if (level) showShareBadge(opKey, level);
+    });
+
     const challengeRow = document.createElement("div");
     challengeRow.className = "diff-challenge-row";
     challengeRow.appendChild(blitzBtn);
     challengeRow.appendChild(waveBtn);
     challengeRow.appendChild(bossReplayBtn);
+    challengeRow.appendChild(badgeBtn);
 
     card.addEventListener("click", () => {
       showStatsPopup(opKey);
@@ -4178,6 +4416,13 @@ function updateReadinessDisplays() {
     el.disabled = isBossActive();
   });
 
+  document.querySelectorAll(".diff-badge[data-op]").forEach((el) => {
+    const skill = progressSummary.skills[el.dataset.op];
+    el.textContent = formatBadgeText(el.dataset.op, skill);
+    el.hidden = !canReplayChallenges(el.dataset.op, skill);
+    el.disabled = isBossActive();
+  });
+
   document.querySelectorAll(".kp-diff-ready[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatReadyText(skill);
@@ -4207,6 +4452,13 @@ function updateReadinessDisplays() {
   document.querySelectorAll(".kp-diff-boss[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatBossReplayText(el.dataset.op, skill);
+    el.hidden = !canReplayChallenges(el.dataset.op, skill);
+    el.disabled = isBossActive();
+  });
+
+  document.querySelectorAll(".kp-diff-badge[data-op]").forEach((el) => {
+    const skill = progressSummary.skills[el.dataset.op];
+    el.textContent = formatBadgeText(el.dataset.op, skill);
     el.hidden = !canReplayChallenges(el.dataset.op, skill);
     el.disabled = isBossActive();
   });
@@ -4974,6 +5226,10 @@ function buildWelcomeCreateForm() {
 function buildWelcomeMenu({ firstVisit = false } = {}) {
   closeWelcomeMenu({ focus: false });
   closeTutorialOverlay({ focus: false });
+  closePlacementOverlay({ focus: false });
+  closeShareBadgePopup();
+  closeBossVictoryPopup();
+  closeBossOffer();
   closeLoginPopup();
   closeStatsPopup();
   closeResultsPopup();
@@ -5059,6 +5315,16 @@ function buildWelcomeMenu({ firstVisit = false } = {}) {
     startTutorial({ fromWelcome: true });
   });
 
+  const testBtn = document.createElement("button");
+  testBtn.type = "button";
+  testBtn.className = "welcome-test";
+  testBtn.id = "welcomeTestMe";
+  testBtn.textContent = getText("welcome.testMe");
+  testBtn.addEventListener("click", () => {
+    closeWelcomeMenu({ focus: false });
+    showPlacementOverlay();
+  });
+
   const loginBtn = document.createElement("button");
   loginBtn.type = "button";
   loginBtn.className = "welcome-login";
@@ -5070,6 +5336,7 @@ function buildWelcomeMenu({ firstVisit = false } = {}) {
 
   actions.appendChild(playBtn);
   actions.appendChild(tutorialBtn);
+  actions.appendChild(testBtn);
   actions.appendChild(loginBtn);
 
   const supportBox = document.createElement("div");
@@ -5106,6 +5373,336 @@ function buildWelcomeMenu({ firstVisit = false } = {}) {
   overlay.appendChild(card);
   document.body.appendChild(overlay);
   playBtn.focus();
+}
+
+function removePlacementOverlay() {
+  const existing = document.getElementById("placementOverlay");
+  if (existing) existing.remove();
+}
+
+function closePlacementOverlay({ focus = true } = {}) {
+  removePlacementOverlay();
+  placementState = null;
+  if (focus) answerInput.focus();
+}
+
+function makePlacementProblem(opKey, level) {
+  const config = createDefaultOpConfig();
+  if (config[opKey]) config[opKey].difficulty = clamp(1, 10, Math.round(level || 1));
+  const problem = generateProblem(opKey, config);
+  if (problem.opKey === "factor") {
+    problem.answerText = getFullFactorization(problem.factorOriginal);
+  }
+  return problem;
+}
+
+function getPlacementCorrectAnswer(problem) {
+  if (!problem) return "";
+  if (problem.opKey === "factor") return getFullFactorization(problem.factorOriginal);
+  return String(problem.answerText ?? problem.answer ?? "");
+}
+
+function isPlacementAnswerCorrect(problem, value) {
+  const typed = String(value || "").trim();
+  if (!typed || !problem) return false;
+  if (problem.opKey === "factor") return matchesFactorDrop(typed, problem);
+  if (problem.opKey === "si") return typed === problem.answerText;
+  const normalizedTyped = normalizeTypedValue(typed, { allowIncomplete: false });
+  const normalizedAnswer = normalizeTypedValue(getPlacementCorrectAnswer(problem), { allowIncomplete: false });
+  return normalizedTyped === normalizedAnswer;
+}
+
+function startPlacementQuestion() {
+  if (!placementState?.opKey) return;
+  placementState.stage = "question";
+  placementState.problem = makePlacementProblem(placementState.opKey, placementState.level);
+  placementState.feedback = null;
+  renderPlacementOverlay();
+}
+
+function startPlacementForOp(opKey, level = 1) {
+  if (!opConfig[opKey]) return;
+  placementState = {
+    stage: "question",
+    opKey,
+    level: clamp(1, 10, Math.round(level || 1)),
+    passedLevel: 0,
+    totalAsked: 0,
+    totalCorrect: 0,
+    roundAsked: 0,
+    roundCorrect: 0,
+    history: [],
+    problem: null,
+    recommendedLevel: null,
+    feedback: null,
+  };
+  startPlacementQuestion();
+}
+
+function continuePlacementToNextLevel() {
+  if (!placementState) return;
+  placementState.level = clamp(1, 10, placementState.level + 1);
+  placementState.roundAsked = 0;
+  placementState.roundCorrect = 0;
+  startPlacementQuestion();
+}
+
+function acceptPlacementLevel(level = placementState?.recommendedLevel || placementState?.passedLevel || placementState?.level || 1) {
+  if (!placementState?.opKey) return;
+  const opKey = placementState.opKey;
+  const nextLevel = clamp(1, 10, Math.round(level || 1));
+  const set = getOpSet(opKey);
+  for (const key of Object.keys(opConfig)) {
+    if (key === opKey) {
+      opConfig[key].enabled = true;
+    } else if (opConfig[key].enabled && getOpSet(key) !== set) {
+      opConfig[key].enabled = false;
+    }
+  }
+  drops = drops.filter((drop) => opConfig[drop.opKey]?.enabled);
+  setDifficulty(opKey, nextLevel, { force: true });
+  syncProgressSettings();
+  markWelcomeSeen();
+  closePlacementOverlay();
+  updateOpChits();
+  updateControlDisplay();
+  drawDrops();
+}
+
+function submitPlacementAnswer(value) {
+  if (!placementState?.problem || placementState.stage !== "question") return;
+  const correct = isPlacementAnswerCorrect(placementState.problem, value);
+  const answer = getPlacementCorrectAnswer(placementState.problem);
+  placementState.totalAsked += 1;
+  placementState.roundAsked += 1;
+  if (correct) {
+    placementState.totalCorrect += 1;
+    placementState.roundCorrect += 1;
+  }
+  placementState.history.push({
+    level: placementState.level,
+    text: placementState.problem.text,
+    answer,
+    correct,
+  });
+  placementState.feedback = { correct, answer };
+
+  if (placementState.roundAsked >= PLACEMENT_QUESTIONS_PER_LEVEL) {
+    if (placementState.roundCorrect >= PLACEMENT_PASS_CORRECT) {
+      placementState.passedLevel = Math.max(placementState.passedLevel, placementState.level);
+      if (placementState.level >= 10) {
+        placementState.recommendedLevel = 10;
+        placementState.stage = "result";
+      } else {
+        placementState.stage = "levelPassed";
+      }
+    } else {
+      placementState.recommendedLevel = Math.max(1, placementState.passedLevel || placementState.level - 1);
+      placementState.stage = "result";
+    }
+  } else {
+    placementState.stage = "feedback";
+  }
+  renderPlacementOverlay();
+}
+
+function renderPlacementHeader(card) {
+  const title = document.createElement("h2");
+  title.textContent = getText("placement.title");
+  const sub = document.createElement("p");
+  sub.className = "placement-sub";
+  sub.textContent = getText("placement.subtitle");
+  card.append(title, sub);
+}
+
+function renderPlacementSelect(card) {
+  renderPlacementHeader(card);
+  const grid = document.createElement("div");
+  grid.className = "placement-op-grid";
+  Object.keys(opConfig).forEach((opKey) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "placement-op";
+    btn.dataset.op = opKey;
+    const symbol = document.createElement("strong");
+    symbol.textContent = opDisplayLabels[opKey] || opKey;
+    const name = document.createElement("span");
+    name.textContent = opDisplayNames[opKey] || opKey;
+    btn.append(symbol, name);
+    btn.addEventListener("click", () => startPlacementForOp(opKey));
+    grid.appendChild(btn);
+  });
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "placement-close";
+  close.textContent = getText("common.close");
+  close.addEventListener("click", () => closePlacementOverlay());
+  card.append(grid, close);
+}
+
+function renderPlacementQuestion(card) {
+  const opName = opDisplayNames[placementState.opKey] || placementState.opKey;
+  const number = Math.min(PLACEMENT_QUESTIONS_PER_LEVEL, placementState.roundAsked + 1);
+  const meta = document.createElement("div");
+  meta.className = "placement-meta";
+  meta.textContent = `${opName} · Level ${placementState.level} · ${number}/${PLACEMENT_QUESTIONS_PER_LEVEL}`;
+  const question = document.createElement("div");
+  question.className = "placement-question";
+  question.textContent = placementState.problem.text;
+  const form = document.createElement("form");
+  form.className = "placement-answer-form";
+  const input = document.createElement("input");
+  input.className = "placement-answer";
+  input.type = "text";
+  input.autocomplete = "off";
+  input.placeholder = placementState.problem.opKey === "factor" ? "2^2*3" : "Answer";
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "primary";
+  submit.textContent = "Check";
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submitPlacementAnswer(input.value);
+  });
+  form.append(input, submit);
+  const actions = document.createElement("div");
+  actions.className = "placement-actions";
+  const selectDifferent = document.createElement("button");
+  selectDifferent.type = "button";
+  selectDifferent.textContent = "Choose another type";
+  selectDifferent.addEventListener("click", () => {
+    placementState = { stage: "select" };
+    renderPlacementOverlay();
+  });
+  const accept = document.createElement("button");
+  accept.type = "button";
+  accept.textContent = `Use Level ${placementState.level}`;
+  accept.addEventListener("click", () => acceptPlacementLevel(placementState.level));
+  actions.append(selectDifferent, accept);
+  const note = document.createElement("div");
+  note.className = "placement-note";
+  note.textContent = getText("placement.note");
+  card.append(meta, question, form, actions, note);
+  setTimeout(() => input.focus(), 0);
+}
+
+function renderPlacementFeedback(card) {
+  const feedback = placementState.feedback || {};
+  const msg = document.createElement("div");
+  msg.className = `placement-feedback ${feedback.correct ? "correct" : "wrong"}`;
+  msg.textContent = feedback.correct ? "Correct." : `Not this time. Answer: ${feedback.answer}`;
+  const progress = document.createElement("p");
+  progress.className = "placement-sub";
+  progress.textContent = `Level ${placementState.level}: ${placementState.roundCorrect}/${placementState.roundAsked} correct so far.`;
+  const next = document.createElement("button");
+  next.type = "button";
+  next.className = "primary placement-next";
+  next.textContent = "Next problem";
+  next.addEventListener("click", startPlacementQuestion);
+  card.append(msg, progress, next);
+  setTimeout(() => next.focus(), 0);
+}
+
+function renderPlacementLevelPassed(card) {
+  const msg = document.createElement("h2");
+  msg.textContent = `Level ${placementState.level} looked comfortable.`;
+  const body = document.createElement("p");
+  body.className = "placement-sub";
+  body.textContent = `${placementState.roundCorrect}/${PLACEMENT_QUESTIONS_PER_LEVEL} correct. You can start here or keep testing higher levels.`;
+  const actions = document.createElement("div");
+  actions.className = "placement-actions";
+  const accept = document.createElement("button");
+  accept.type = "button";
+  accept.textContent = `Use Level ${placementState.level}`;
+  accept.addEventListener("click", () => acceptPlacementLevel(placementState.level));
+  const next = document.createElement("button");
+  next.type = "button";
+  next.className = "primary";
+  next.textContent = `Try Level ${placementState.level + 1}`;
+  next.addEventListener("click", continuePlacementToNextLevel);
+  actions.append(accept, next);
+  card.append(msg, body, actions);
+  setTimeout(() => next.focus(), 0);
+}
+
+function renderPlacementResult(card) {
+  const level = placementState.recommendedLevel || 1;
+  const opName = opDisplayNames[placementState.opKey] || placementState.opKey;
+  const title = document.createElement("h2");
+  title.textContent = `Recommended: ${opName} Level ${level}`;
+  const body = document.createElement("p");
+  body.className = "placement-sub";
+  body.textContent = `${placementState.totalCorrect}/${placementState.totalAsked} correct across the diagnostic. This sets a starting level only; it does not change mastery stats.`;
+  const actions = document.createElement("div");
+  actions.className = "placement-actions";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.textContent = "Close";
+  close.addEventListener("click", () => closePlacementOverlay());
+  const use = document.createElement("button");
+  use.type = "button";
+  use.className = "primary";
+  use.textContent = `Use Level ${level}`;
+  use.addEventListener("click", () => acceptPlacementLevel(level));
+  actions.append(close, use);
+  if (level < 10) {
+    const tryNext = document.createElement("button");
+    tryNext.type = "button";
+    tryNext.textContent = `Try Level ${level + 1}`;
+    tryNext.addEventListener("click", () => {
+      placementState.level = level + 1;
+      placementState.roundAsked = 0;
+      placementState.roundCorrect = 0;
+      startPlacementQuestion();
+    });
+    actions.append(tryNext);
+  }
+  card.append(title, body, actions);
+  setTimeout(() => use.focus(), 0);
+}
+
+function renderPlacementOverlay() {
+  if (!placementState) placementState = { stage: "select" };
+  removePlacementOverlay();
+  const overlay = document.createElement("div");
+  overlay.className = "overlay placement-overlay";
+  overlay.id = "placementOverlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", getText("placement.ariaLabel"));
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) closePlacementOverlay();
+  });
+  const card = document.createElement("div");
+  card.className = "card placement-card";
+  if (placementState.stage === "question") {
+    renderPlacementQuestion(card);
+  } else if (placementState.stage === "feedback") {
+    renderPlacementFeedback(card);
+  } else if (placementState.stage === "levelPassed") {
+    renderPlacementLevelPassed(card);
+  } else if (placementState.stage === "result") {
+    renderPlacementResult(card);
+  } else {
+    renderPlacementSelect(card);
+  }
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+}
+
+function showPlacementOverlay() {
+  closeWelcomeMenu({ focus: false });
+  closeTutorialOverlay({ focus: false });
+  closeLoginPopup();
+  closeStatsPopup();
+  closeResultsPopup();
+  closeSessionLogPopup();
+  closeSessionReportPopup();
+  closeShareBadgePopup();
+  closeBossVictoryPopup();
+  closeBossOffer();
+  placementState = { stage: "select" };
+  renderPlacementOverlay();
 }
 
 function closeTutorialOverlay({ markSeen = false, focus = true } = {}) {
@@ -5286,6 +5883,11 @@ function updateStaticText() {
     const el = document.getElementById(id);
     if (el) el.textContent = menuText;
   });
+  const testMeText = getText("welcome.testMe");
+  ["testMeLink", "touchTestMeLink"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = testMeText;
+  });
   const supportText = getText("support.label");
   const supportShortText = getText("support.shortLabel");
   const supportLink = document.getElementById("supportLink");
@@ -5304,6 +5906,8 @@ function formatProfileUpdatedAt(value) {
 function buildLoginPopup() {
   closeWelcomeMenu({ focus: false });
   closeTutorialOverlay({ focus: false });
+  closePlacementOverlay({ focus: false });
+  closeShareBadgePopup();
   closeLoginPopup();
   closeStatsPopup();
   closeResultsPopup();
@@ -5675,10 +6279,19 @@ function updateControlDisplay() {
   if (dropLimitValueEl) {
     dropLimitValueEl.textContent = String(dropLimit);
   }
+  if (textSizeSelect) {
+    textSizeSelect.value = normalizeTextSizeSetting(textSize);
+    textSizeSelect.disabled = isBossActive();
+  }
+  if (textSizeValueEl) {
+    textSizeValueEl.textContent = getTextSizeLabel();
+  }
   const kpSpeedVal = document.getElementById("kpSpeedVal");
   if (kpSpeedVal) kpSpeedVal.textContent = `${gameSpeed}%`;
   const kpDropsVal = document.getElementById("kpDropsVal");
   if (kpDropsVal) kpDropsVal.textContent = String(dropLimit);
+  const kpTextSizeBtn = document.getElementById("kpTextSizeBtn");
+  if (kpTextSizeBtn) kpTextSizeBtn.textContent = getTextSizeLabel();
   document.querySelectorAll(".kp-sbtn").forEach((btn) => {
     btn.disabled = isBossActive();
   });
@@ -5834,6 +6447,20 @@ document.addEventListener("keydown", (event) => {
     }
     return;
   }
+  if (document.getElementById("shareBadgeOverlay")) {
+    if (event.key === "Escape") {
+      closeShareBadgePopup();
+      event.preventDefault();
+    }
+    return;
+  }
+  if (document.getElementById("placementOverlay")) {
+    if (event.key === "Escape") {
+      closePlacementOverlay();
+      event.preventDefault();
+    }
+    return;
+  }
   if (document.getElementById("welcomeOverlay")) {
     if (event.key === "Escape") {
       closeWelcomeMenu({ markSeen: true });
@@ -5959,6 +6586,14 @@ if (dropLimitSlider) {
   });
 }
 
+if (textSizeSelect) {
+  textSizeSelect.addEventListener("change", () => {
+    if (isBossActive()) return;
+    initAudio();
+    setTextSize(textSizeSelect.value);
+  });
+}
+
 // Operation toggle chits — remove from tab order (tab is for sliders + diff cards)
 document.querySelectorAll(".op-chit").forEach((btn) => {
   btn.tabIndex = -1;
@@ -5996,6 +6631,7 @@ canvas.addEventListener("click", (event) => {
 // Feedback popup
 const feedbackOverlay = document.getElementById("feedbackOverlay");
 const menuLink = document.getElementById("menuLink");
+const testMeLink = document.getElementById("testMeLink");
 const loginLink = document.getElementById("loginLink");
 const resultsLink = document.getElementById("resultsLink");
 const sessionLogLink = document.getElementById("sessionLogLink");
@@ -6006,6 +6642,12 @@ if (menuLink) {
   menuLink.addEventListener("click", (e) => {
     e.preventDefault();
     buildWelcomeMenu({ firstVisit: false });
+  });
+}
+if (testMeLink) {
+  testMeLink.addEventListener("click", (e) => {
+    e.preventDefault();
+    showPlacementOverlay();
   });
 }
 if (loginLink) {
@@ -6099,7 +6741,7 @@ function setupTouchKeypad() {
   if (controlsBar && opChits) {
     const touchBrand = document.createElement("div");
     touchBrand.className = "touch-brand";
-    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score"><span id="touchScoreLabel">Cleared</span>: <span id="touchScore">0</span></div><a href="#" class="touch-menu" id="touchMenuLink">${getText("welcome.menuLink")}</a><a href="#" class="touch-login" id="touchLoginLink">Login</a><a href="#" class="touch-log" id="touchSessionLogLink">Log</a><a href="${SUPPORT_URL}" class="touch-support" id="touchSupportLink" target="_blank" rel="noopener noreferrer">${getText("support.shortLabel")}</a><a href="#" class="touch-fb" id="touchFbLink">?</a>`;
+    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score"><span id="touchScoreLabel">Cleared</span>: <span id="touchScore">0</span></div><a href="#" class="touch-menu" id="touchMenuLink">${getText("welcome.menuLink")}</a><a href="#" class="touch-test" id="touchTestMeLink">${getText("welcome.testMe")}</a><a href="#" class="touch-login" id="touchLoginLink">Login</a><a href="#" class="touch-log" id="touchSessionLogLink">Log</a><a href="${SUPPORT_URL}" class="touch-support" id="touchSupportLink" target="_blank" rel="noopener noreferrer">${getText("support.shortLabel")}</a><a href="#" class="touch-fb" id="touchFbLink">?</a>`;
     controlsBar.insertBefore(touchBrand, opChits);
     const touchMenuLink = document.getElementById("touchMenuLink");
     if (touchMenuLink) {
@@ -6109,6 +6751,13 @@ function setupTouchKeypad() {
       });
     }
     const touchLoginLink = document.getElementById("touchLoginLink");
+    const touchTestMeLink = document.getElementById("touchTestMeLink");
+    if (touchTestMeLink) {
+      touchTestMeLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        showPlacementOverlay();
+      });
+    }
     if (touchLoginLink) {
       touchLoginLink.addEventListener("click", (e) => {
         e.preventDefault();
@@ -6171,6 +6820,9 @@ function setupTouchKeypad() {
   });
   wireKpButton(document.getElementById("kpDropsUp"), () => {
     if (!isBossActive()) setPracticeControls({ drops: dropLimit + 1 });
+  });
+  wireKpButton(document.getElementById("kpTextSizeBtn"), () => {
+    if (!isBossActive()) cycleTextSize();
   });
 
   updateControlDisplay();
@@ -6246,6 +6898,18 @@ function buildKpDiffStrip() {
     bossReplay.disabled = isBossActive();
     wireKpButton(bossReplay, () => startBossReplayMode(opKey));
 
+    const badge = document.createElement("button");
+    badge.type = "button";
+    badge.className = "kp-diff-challenge kp-diff-badge";
+    badge.dataset.op = opKey;
+    badge.textContent = formatBadgeText(opKey, skill);
+    badge.hidden = !canReplayChallenges(opKey, skill);
+    badge.disabled = isBossActive();
+    wireKpButton(badge, () => {
+      const level = getReplayChallengeLevel(opKey, summarizeProfile(progressProfile).skills[opKey]);
+      if (level) showShareBadge(opKey, level);
+    });
+
     const upBtn = document.createElement("button");
     upBtn.className = "kp-diff-btn";
     upBtn.textContent = "+";
@@ -6261,10 +6925,11 @@ function buildKpDiffStrip() {
     item.appendChild(blitz);
     item.appendChild(wave);
     item.appendChild(bossReplay);
+    item.appendChild(badge);
 
     // Click the item (not buttons) to show stats
     item.addEventListener("click", (e) => {
-      if ([downBtn, upBtn, ready, blitz, wave, bossReplay].includes(e.target)) return;
+      if ([downBtn, upBtn, ready, blitz, wave, bossReplay, badge].includes(e.target)) return;
       showStatsPopup(opKey);
     });
 
@@ -6370,6 +7035,7 @@ function getTestState() {
     currentPressure: cloneForTest(getCurrentPressure()),
     gameSpeed,
     dropLimit,
+    textSize,
     isPaused,
     isBreatherMode,
     cannonOverloadMs,
@@ -6378,6 +7044,8 @@ function getTestState() {
     currentInput,
     welcomeVisible: Boolean(document.getElementById("welcomeOverlay")),
     tutorialVisible: Boolean(document.getElementById("tutorialOverlay")),
+    placementVisible: Boolean(document.getElementById("placementOverlay")),
+    placementState: cloneForTest(placementState),
     tutorialStepIndex,
   };
 }
@@ -6451,7 +7119,10 @@ function installTestHooks() {
       isPaused = false;
       closeWelcomeMenu({ focus: false });
       closeTutorialOverlay({ focus: false });
+      closePlacementOverlay({ focus: false });
+      closeShareBadgePopup();
       setPracticeControls({ speed: 30, drops: 3 }, { persist: false });
+      setTextSize("normal", { persist: false });
       updateOpChits();
       updateDifficultyDisplays();
       updateControlDisplay();
@@ -6474,6 +7145,22 @@ function installTestHooks() {
     },
     startTutorial() {
       startTutorial();
+      return getTestState();
+    },
+    showPlacement() {
+      showPlacementOverlay();
+      return getTestState();
+    },
+    startPlacement(opKey, level = 1) {
+      startPlacementForOp(opKey, level);
+      return getTestState();
+    },
+    answerPlacement(value) {
+      submitPlacementAnswer(value);
+      return getTestState();
+    },
+    acceptPlacement(level) {
+      acceptPlacementLevel(level);
       return getTestState();
     },
     enableOps(opKeys) {
@@ -6574,13 +7261,14 @@ function installTestHooks() {
       drawDrops();
       return getTestState();
     },
-    setControls({ speed, drops, pressure, pressureTier } = {}) {
+    setControls({ speed, drops, pressure, pressureTier, textSize: nextTextSize } = {}) {
       if (pressure !== undefined || pressureTier !== undefined) {
         const tier = getPressureTier(pressure ?? pressureTier);
         setPracticeControls({ speed: tier.speed, drops: tier.rate });
       } else {
         setPracticeControls({ speed, drops });
       }
+      if (nextTextSize !== undefined) setTextSize(nextTextSize);
       updateControlDisplay();
       return getTestState();
     },

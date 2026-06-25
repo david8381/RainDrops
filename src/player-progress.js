@@ -12,6 +12,7 @@ const DEFAULT_START_LEVEL = 1;
 const LEGACY_START_LEVEL = 3;
 const MIGRATED_USER_ID = "david";
 const MIGRATED_USER_NAME = "david";
+const TEXT_SIZE_OPTIONS = ["normal", "large", "huge"];
 const MIN_ATTEMPTS_FOR_READY = 25;
 const MIN_COVERAGE_FOR_READY = 0.75;
 const MIN_MASTERED_FOR_READY = 0.65;
@@ -109,6 +110,10 @@ function normalizeSpeedPercent(value) {
 
 function normalizeLoad(value) {
   return clamp(0, 10, Math.round(Number.isFinite(value) ? value : 3));
+}
+
+function normalizeTextSize(value) {
+  return TEXT_SIZE_OPTIONS.includes(value) ? value : "normal";
 }
 
 function getPressureTierForSpeed(speedPercent = 30) {
@@ -248,6 +253,7 @@ function normalizeSessionEntry(raw = {}, nowMs = Date.now()) {
       speed: normalizeSpeedPercent(raw.settings?.speed),
       rate: normalizeLoad(raw.settings?.rate),
       pressureTier: getPressureTier(raw.settings?.pressureTier || raw.settings?.speed).key,
+      textSize: normalizeTextSize(raw.settings?.textSize),
     },
     practice: createSessionStats(raw.practice),
     assessment: createSessionStats(raw.assessment),
@@ -417,6 +423,7 @@ function createDefaultProfile(nowMs = Date.now()) {
       speed: 30,
       rate: 3,
       pressureTier: getPressureTierForSpeed(30).key,
+      textSize: "normal",
       difficulties: Object.fromEntries(
         Object.entries(operationDefaults).map(([key, value]) => [key, value.difficulty])
       ),
@@ -573,6 +580,7 @@ function ensureProfileShape(profile, nowMs = Date.now()) {
   const rawSettings = profile.settings || {};
   const speed = normalizeSpeedPercent(rawSettings.speed ?? getPressureTier(rawSettings.pressureTier ?? rawSettings.pressureKey).speed);
   const load = normalizeLoad(rawSettings.rate ?? rawSettings.maxActiveDrops ?? rawSettings.dropLimit);
+  const textSize = normalizeTextSize(rawSettings.textSize);
   const pressure = getPressureTier(speed);
   const sourceVersion = Number(profile.version || 0);
   const next = {
@@ -585,6 +593,7 @@ function ensureProfileShape(profile, nowMs = Date.now()) {
       pressureTier: pressure.key,
       speed,
       rate: load,
+      textSize,
     },
     sessionLog: normalizeSessionLog(profile.sessionLog, nowMs),
     // Only canonical operations are kept; skills for removed ops (e.g. legacy
@@ -877,6 +886,7 @@ function recordSessionStart(profile, options = {}, nowMs = Date.now()) {
   }
   const speed = normalizeSpeedPercent(options.speed ?? profile.settings?.speed);
   const rate = normalizeLoad(options.rate ?? options.spawnRate ?? profile.settings?.rate);
+  const textSize = normalizeTextSize(options.textSize ?? profile.settings?.textSize);
   const pressure = getPressureTier(options.pressureTier || speed);
   const session = normalizeSessionEntry({
     id,
@@ -885,6 +895,7 @@ function recordSessionStart(profile, options = {}, nowMs = Date.now()) {
       speed,
       rate,
       pressureTier: pressure.key,
+      textSize,
     },
   }, nowMs);
   session.operations = createSessionOperations(profile);
@@ -1835,6 +1846,7 @@ function summarizeProfile(profile) {
 function syncSettings(profile, settings = {}, nowMs = Date.now()) {
   const speed = normalizeSpeedPercent(settings.speed ?? profile.settings?.speed);
   const load = normalizeLoad(settings.rate ?? settings.maxActiveDrops ?? profile.settings?.rate);
+  const textSize = normalizeTextSize(settings.textSize ?? profile.settings?.textSize);
   const pressure = getPressureTier(settings.pressureTier ?? settings.pressureKey ?? speed);
   profile.settings = {
     ...profile.settings,
@@ -1842,6 +1854,7 @@ function syncSettings(profile, settings = {}, nowMs = Date.now()) {
     pressureTier: pressure.key,
     speed,
     rate: load,
+    textSize,
     difficulties: {
       ...(profile.settings?.difficulties || {}),
       ...(settings.difficulties || {}),

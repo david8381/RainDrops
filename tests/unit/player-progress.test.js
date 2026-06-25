@@ -76,6 +76,7 @@ describe("player progress profile", () => {
     ]);
     assert.equal(profile.skills.add.currentLevel, 1);
     assert.equal(profile.skills.add.readiness, 0);
+    assert.equal(profile.settings.textSize, "normal");
   });
 
   it("records and summarizes local session logs", () => {
@@ -127,6 +128,7 @@ describe("player progress profile", () => {
     assert.equal(session.id, "visit-1");
     assert.equal(session.durationMs, 60000);
     assert.equal(session.settings.speed, 40);
+    assert.equal(session.settings.textSize, "normal");
     assert.equal(session.practice.attempts, 3);
     assert.equal(session.practice.correct, 3);
     assert.equal(session.practice.accuracy, 1);
@@ -194,6 +196,23 @@ describe("player progress profile", () => {
     syncSettings(profile, { difficulties: { add: 3 } });
     assert.equal(profile.skills.add.currentLevel, 3);
     assert.equal(summarizeProfile(profile).skills.add.bossAttemptedForLevel, false);
+  });
+
+  it("stores problem text size as a profile setting", () => {
+    const profile = createDefaultProfile();
+
+    syncSettings(profile, { textSize: "huge" });
+    assert.equal(profile.settings.textSize, "huge");
+
+    syncSettings(profile, { textSize: "not-a-size" });
+    assert.equal(profile.settings.textSize, "normal");
+
+    recordSessionStart(profile, {
+      id: "visit-text",
+      textSize: "large",
+    });
+    const [session] = summarizeSessionLog(profile);
+    assert.equal(session.settings.textSize, "large");
   });
 
   it("records mastered level advances separately from boss clears", () => {

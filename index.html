@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=0356" />
+    <link rel="stylesheet" href="styles.css?v=0357" />
   </head>
   <body>
     <main class="app">
@@ -22,7 +22,7 @@
         <div class="stats">
           <div><span class="label">Cleared</span> <span id="score">0</span></div>
         </div>
-        <div class="version">v0.3.56 · <a href="#" id="menuLink">Menu</a> · <a href="#" id="loginLink">Login</a> · <a href="#" id="sessionLogLink">Log</a> · <a href="https://ko-fi.com/davidedaniels" id="supportLink" target="_blank" rel="noopener noreferrer">Donate</a> · <a href="#" id="feedbackLink">Feedback</a></div>
+        <div class="version">v0.3.57 · <a href="#" id="menuLink">Menu</a> · <a href="#" id="testMeLink">Test Me</a> · <a href="#" id="loginLink">Login</a> · <a href="#" id="sessionLogLink">Log</a> · <a href="https://ko-fi.com/davidedaniels" id="supportLink" target="_blank" rel="noopener noreferrer">Donate</a> · <a href="#" id="feedbackLink">Feedback</a></div>
       </header>
 
       <nav class="controls-bar">
@@ -77,6 +77,15 @@
               <input type="range" id="dropLimitSlider" min="0" max="10" value="3" />
               <div id="dropLimitValue" class="control-value">3</div>
             </div>
+            <div class="control-row">
+              <label for="textSizeSelect">Text</label>
+              <select id="textSizeSelect" class="control-select" aria-label="Problem text size">
+                <option value="normal">Normal</option>
+                <option value="large">Large</option>
+                <option value="huge">Huge</option>
+              </select>
+              <div id="textSizeValue" class="control-value">Normal</div>
+            </div>
           </div>
 
           <div id="diffCards" class="diff-cards"></div>
@@ -103,6 +112,10 @@
           <button class="kp-sbtn" id="kpDropsDn" type="button">&minus;</button>
           <span id="kpDropsVal" class="kp-sval">3</span>
           <button class="kp-sbtn" id="kpDropsUp" type="button">+</button>
+        </div>
+        <div class="kp-slider">
+          <span>Text</span>
+          <button class="kp-sbtn" id="kpTextSizeBtn" type="button">Normal</button>
         </div>
       </div>
       <div class="kp-diff-scroll" id="kpDiffScroll">
@@ -181,10 +194,10 @@
       </div>
     </div>
 
-    <script src="src/game-core.js?v=0356"></script>
-    <script src="src/player-progress.js?v=0356"></script>
-    <script src="src/text/english.js?v=0356"></script>
-    <script src="script.js?v=0356"></script>
+    <script src="src/game-core.js?v=0357"></script>
+    <script src="src/player-progress.js?v=0357"></script>
+    <script src="src/text/english.js?v=0357"></script>
+    <script src="script.js?v=0357"></script>
     <script data-goatcounter="https://mathrain.goatcounter.com/count"
             async src="https://gc.zgo.at/count.js"></script>
   </body>
