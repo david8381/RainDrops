@@ -232,6 +232,33 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#statsHoverTooltip")).toContainText("Boss mastered: yes (placement credit)");
   });
 
+  test("test me climbs a level when the shield fills from correct answers", async ({ page }) => {
+    await openApp(page);
+
+    await page.locator("#testMeLink").click();
+    await page.locator('.placement-op[data-op="add"]').click();
+
+    let state = await invoke(page, "getState");
+    expect(state.placementState.level).toBe(1);
+    const startShield = state.placementState.shield;
+    expect(startShield).toBeGreaterThan(0);
+    expect(state.scoreReadout.label).toBe("Test Me");
+    expect(state.scoreReadout.value).toContain("🛡");
+
+    // Answer correctly until the shield fills and the run climbs to level 2.
+    let guard = 0;
+    while (state.placementState.active && state.placementState.level === 1 && guard < 20) {
+      guard += 1;
+      state = await invoke(page, "advanceDrops", 250);
+      const drop = state.drops.find((candidate) => candidate.placementRunId);
+      if (!drop) continue;
+      state = await invoke(page, "submit", drop.answerText);
+    }
+
+    expect(state.placementState.level).toBe(2);
+    expect(state.placementState.passedLevel).toBe(1);
+  });
+
   test("placement-advanced levels can reopen choices after real attempts supersede placement credit", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);

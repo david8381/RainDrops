@@ -135,12 +135,24 @@ const TEXT_SIZE_SCALE = {
   huge: 1.48,
 };
 const PLACEMENT_DROP_SECONDS = 4.2;
+// Shapes/SI/factor problems take longer to read and compute, so they fall slower
+// in Test Me than plain arithmetic.
+const PLACEMENT_DROP_SECONDS_BY_OP = { shapes: 6.4, si: 6.0, factor: 6.0 };
 const PLACEMENT_NEXT_DROP_MS = 180;
-const PLACEMENT_MIN_EARLY_ASKED = 5;
-const PLACEMENT_EARLY_MISTAKES = 3;
-const PLACEMENT_EARLY_ACCURACY = 0.6;
-const PLACEMENT_PASS_ACCURACY = 0.78;
 const PLACEMENT_RETRY_COUNT = 2;
+// Test Me decides when to move up with a per-level shield: each correct answer
+// adds a pip, each miss removes several. Fill the shield to climb to the next
+// level; empty it (or hit the attempt cap while behind) to recommend the level
+// you stalled on.
+const PLACEMENT_SHIELD_START = 3;
+const PLACEMENT_SHIELD_MAX = 6;
+const PLACEMENT_SHIELD_GAIN = 1;
+const PLACEMENT_SHIELD_LOSS = 2;
+const PLACEMENT_LEVEL_ATTEMPT_CAP = 10;
+
+function placementDropSeconds(opKey) {
+  return PLACEMENT_DROP_SECONDS_BY_OP[opKey] || PLACEMENT_DROP_SECONDS;
+}
 const NUMPAD_INPUT_BY_CODE = {
   Numpad0: "0",
   Numpad1: "1",
@@ -3240,9 +3252,10 @@ function isInputPossible(inputValue) {
 // score.
 function getScoreReadout() {
   if (isPlacementActive()) {
+    const shield = Math.max(0, Math.round(placementState.shield ?? PLACEMENT_SHIELD_START));
     return {
       label: "Test Me",
-      value: `L${placementState.level} ${placementState.levelCorrect}/${placementState.levelAsked}`,
+      value: `L${placementState.level} · 🛡 ${shield}/${PLACEMENT_SHIELD_MAX}`,
     };
   }
   if (!bossMode?.active) return { label: "Cleared", value: String(score) };
@@ -5530,7 +5543,7 @@ function makePlacementDrop(entry) {
     id: nextDropId++,
     x: randInt(left, right),
     y: -24,
-    baseSpeed: Math.max(46, (canvasH + 60) / PLACEMENT_DROP_SECONDS),
+    baseSpeed: Math.max(46, (canvasH + 60) / placementDropSeconds(placementState.opKey)),
     placementRunId: placementState.runId,
     placementLevel: placementState.level,
     placementEntry: { statsKey: entry.statsKey, text: entry.text, retry: Boolean(entry.retry) },
@@ -5556,6 +5569,7 @@ function preparePlacementLevel(level) {
   placementState.levelAsked = 0;
   placementState.levelCorrect = 0;
   placementState.levelMistakes = 0;
+  placementState.shield = PLACEMENT_SHIELD_START;
   placementState.pendingDropMs = 0;
   placementState.currentDropId = null;
   updateScoreDisplay();
@@ -5592,6 +5606,7 @@ function startPlacementRun(opKey, level = 1) {
     levelAsked: 0,
     levelCorrect: 0,
     levelMistakes: 0,
+    shield: PLACEMENT_SHIELD_START,
     pendingDropMs: 0,
     currentDropId: null,
   };
@@ -5624,14 +5639,6 @@ function queuePlacementRetry(drop) {
   }
 }
 
-function shouldStopPlacementLevelEarly() {
-  if (!placementState?.active) return false;
-  if (placementState.levelAsked < PLACEMENT_MIN_EARLY_ASKED) return false;
-  if (placementState.levelMistakes < PLACEMENT_EARLY_MISTAKES) return false;
-  const accuracy = placementState.levelCorrect / placementState.levelAsked;
-  return accuracy < PLACEMENT_EARLY_ACCURACY;
-}
-
 function recordPlacementLevelSummary() {
   if (!placementState?.active) return;
   const accuracy = placementState.levelAsked > 0
@@ -5651,18 +5658,16 @@ function recordPlacementLevelSummary() {
   return accuracy;
 }
 
-function completePlacementLevel() {
+// Shield filled — the player is comfortable at this level, so climb to the next
+// (or finish if they cleared the top level).
+function climbPlacementLevel() {
   if (!placementState?.active) return;
-  const accuracy = recordPlacementLevelSummary();
-  if (accuracy >= PLACEMENT_PASS_ACCURACY) {
-    placementState.passedLevel = Math.max(placementState.passedLevel, placementState.level);
-    if (placementState.level >= 10) {
-      finishPlacementRun({ recommendedLevel: 10, reason: "completed all levels" });
-    } else {
-      preparePlacementLevel(placementState.level + 1);
-    }
+  recordPlacementLevelSummary();
+  placementState.passedLevel = Math.max(placementState.passedLevel, placementState.level);
+  if (placementState.level >= 10) {
+    finishPlacementRun({ recommendedLevel: 10, reason: "cleared every level" });
   } else {
-    finishPlacementRun({ recommendedLevel: placementState.level, reason: "level became difficult" });
+    preparePlacementLevel(placementState.level + 1);
   }
 }
 
@@ -5673,9 +5678,11 @@ function handlePlacementDropFinished(drop, correct, outcome = correct ? "correct
   if (correct) {
     placementState.totalCorrect += 1;
     placementState.levelCorrect += 1;
+    placementState.shield = Math.min(PLACEMENT_SHIELD_MAX, placementState.shield + PLACEMENT_SHIELD_GAIN);
   } else {
     placementState.totalMistakes += 1;
     placementState.levelMistakes += 1;
+    placementState.shield = Math.max(0, placementState.shield - PLACEMENT_SHIELD_LOSS);
     queuePlacementRetry(drop);
   }
   placementState.history.push({
@@ -5688,23 +5695,28 @@ function handlePlacementDropFinished(drop, correct, outcome = correct ? "correct
   placementState.pendingDropMs = PLACEMENT_NEXT_DROP_MS;
   updateScoreDisplay();
 
-  if (shouldStopPlacementLevelEarly()) {
-    finishPlacementRun({ recommendedLevel: placementState.level, reason: "early struggle" });
+  // Shield resolves the level: full → climb, empty → recommend this level.
+  if (placementState.shield >= PLACEMENT_SHIELD_MAX) {
+    climbPlacementLevel();
+  } else if (placementState.shield <= 0) {
+    finishPlacementRun({ recommendedLevel: placementState.level, reason: "shield collapsed" });
+  } else if (placementState.levelAsked >= PLACEMENT_LEVEL_ATTEMPT_CAP) {
+    // Borderline after the cap: climb if net-positive, otherwise stop here.
+    if (placementState.shield > PLACEMENT_SHIELD_START) climbPlacementLevel();
+    else finishPlacementRun({ recommendedLevel: placementState.level, reason: "reached attempt cap" });
   }
 }
 
 function spawnNextPlacementDrop() {
   if (!placementState?.active) return false;
+  // The shield (not an exhausted queue) ends a level, so refill when empty.
+  if (placementState.queue.length === 0) {
+    placementState.queue = shuffleArray(getPlacementFrontierProblems(placementState.opKey, placementState.level))
+      .map((entry) => ({ ...entry, retry: false }));
+  }
   const entry = placementState.queue.shift();
-  if (!entry) {
-    completePlacementLevel();
-    return false;
-  }
-  const drop = makePlacementDrop(entry);
-  if (!drop) {
-    completePlacementLevel();
-    return false;
-  }
+  const drop = entry ? makePlacementDrop(entry) : null;
+  if (!drop) return false;
   placementState.currentDropId = drop.id;
   drops.push(drop);
   return true;

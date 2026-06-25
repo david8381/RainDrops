@@ -4,6 +4,8 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-25
+- Test Me now decides when to move up with a per-level shield instead of hidden accuracy thresholds: correct answers fill the shield and climb to the next level, misses drain it, and an emptied shield (or stalling past the attempt cap) recommends the level you stalled on. The shield and level show in the header readout.
+- Slowed Test Me fall speed for harder problem types (Shapes, SI, factoring) so they stay readable; plain arithmetic is unchanged.
 - Accept simple fractions for half-value answers: a problem whose answer is 4.5 (e.g. a triangle area) can now be cleared by typing `9/2`. A bare numerator no longer counts as an impossible answer while a fractional drop is on screen.
 - Reworked Test Me from a three-question modal quiz into a falling-drop diagnostic that runs in the normal playfield, repeats missed facts twice, climbs through level frontiers while accuracy is comfortable, and locks controls while active.
 - Added durable Test Me placed-out credit to local profiles. Accepted placements mark lower-level facts as green/mastered without adding fake attempts; enough later real attempts can override that estimate.
