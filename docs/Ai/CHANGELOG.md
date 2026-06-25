@@ -5,6 +5,7 @@ This file records meaningful project changes so future collaborators (including 
 
 ## 2026-06-25
 - Added a shareable read-only progress link. From the Session Log a player can "Copy parent link"; opening that link (data encoded in `#report=`, no server) shows the same Session Log and Report popups in a read-only shared view. The popups now read from a swappable source (`getReportProfile()`), so the shared view reuses the existing rendering instead of duplicating it. Extracted a shared `copyTextToClipboard` helper (now used by both the Recap and the share link).
+- Compressed the share link with the built-in `CompressionStream` (deflate-raw, no dependency, plain-base64 fallback), shrinking it ~38× (a 10-session log from ~92k chars to ~2.4k; a single session to ~1k). As a side benefit the decoded bytes are a binary stream rather than readable JSON, so casual decode-edit-re-encode is no longer trivial.
 - Renamed the shareable per-level summary from "badge" to "Recap" (button label, popup title, share/copy text); the underlying CSS classes/ids are unchanged.
 - Test Me now decides when to move up with a per-level shield instead of hidden accuracy thresholds: correct answers fill the shield and climb to the next level, misses drain it, and an emptied shield (or stalling past the attempt cap) recommends the level you stalled on. The shield and level show in the header readout.
 - Slowed Test Me fall speed for harder problem types (Shapes, SI, factoring) so they stay readable; plain arithmetic is unchanged.

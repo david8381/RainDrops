@@ -4999,6 +4999,8 @@ function buildSharedReportPayload(profile = progressProfile) {
   };
 }
 
+// URL-safe base64 of the (unicode) JSON — the plain fallback when the browser
+// has no CompressionStream.
 function encodeShareString(obj) {
   const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(obj))));
   return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -5014,13 +5016,71 @@ function decodeShareString(str) {
   }
 }
 
-function getShareReportCode(profile = progressProfile) {
-  return encodeShareString(buildSharedReportPayload(profile));
+function bytesToB64url(bytes) {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function getSharedReportLink(profile = progressProfile) {
+function b64urlToBytes(b64) {
+  const bin = atob(b64.replace(/-/g, "+").replace(/_/g, "/"));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+async function deflateRawToB64url(str) {
+  const cs = new CompressionStream("deflate-raw");
+  const writer = cs.writable.getWriter();
+  writer.write(new TextEncoder().encode(str));
+  writer.close();
+  const buf = await new Response(cs.readable).arrayBuffer();
+  return bytesToB64url(new Uint8Array(buf));
+}
+
+async function inflateRawFromB64url(b64) {
+  const ds = new DecompressionStream("deflate-raw");
+  const writer = ds.writable.getWriter();
+  writer.write(b64urlToBytes(b64));
+  writer.close();
+  const buf = await new Response(ds.readable).arrayBuffer();
+  return new TextDecoder().decode(buf);
+}
+
+// The share code is one scheme tag + body: "1" = deflate-raw (huge size win on
+// the repetitive session JSON, and decoded bytes aren't human-readable), "0" =
+// plain base64 fallback. Anything else is treated as a legacy untagged plain code.
+async function getShareReportCode(profile = progressProfile) {
+  const payload = buildSharedReportPayload(profile);
+  if (typeof CompressionStream === "function") {
+    try {
+      return `1${await deflateRawToB64url(JSON.stringify(payload))}`;
+    } catch {
+      /* fall back to plain */
+    }
+  }
+  return `0${encodeShareString(payload)}`;
+}
+
+async function decodeShareReportCode(code) {
+  if (!code) return null;
+  const tag = code[0];
+  const body = code.slice(1);
+  try {
+    if (tag === "1") {
+      if (typeof DecompressionStream !== "function") return null;
+      return JSON.parse(await inflateRawFromB64url(body));
+    }
+    if (tag === "0") return decodeShareString(body);
+    return decodeShareString(code); // legacy untagged plain b64
+  } catch {
+    return null;
+  }
+}
+
+async function getSharedReportLink(profile = progressProfile) {
   const base = `${window.location.origin}${window.location.pathname}`;
-  return `${base}#report=${getShareReportCode(profile)}`;
+  return `${base}#report=${await getShareReportCode(profile)}`;
 }
 
 function openSharedReportView(payload) {
@@ -5044,9 +5104,9 @@ function exitSharedReportView() {
   answerInput.focus();
 }
 
-function readSharedReportFromHash() {
+function getReportHashCode() {
   const match = window.location.hash.match(/^#report=(.+)$/);
-  return match ? decodeShareString(match[1]) : null;
+  return match ? match[1] : null;
 }
 
 function buildSessionLogPopup() {
@@ -5103,8 +5163,9 @@ function buildSessionLogPopup() {
     const shareStatus = document.createElement("span");
     shareStatus.className = "session-log-share-status";
     shareStatus.setAttribute("aria-live", "polite");
-    shareBtn.addEventListener("click", () => {
-      copyTextToClipboard(getSharedReportLink(), shareStatus, "Link copied — send it to a parent.");
+    shareBtn.addEventListener("click", async () => {
+      shareStatus.textContent = "Preparing link…";
+      copyTextToClipboard(await getSharedReportLink(), shareStatus, "Link copied — send it to a parent.");
     });
     share.append(shareBtn, shareStatus);
     card.appendChild(share);
@@ -7485,7 +7546,7 @@ function installTestHooks() {
       return getTestState();
     },
     getShareReportCode() {
-      return getShareReportCode();
+      return getShareReportCode(); // async — resolved by page.evaluate
     },
     enableOps(opKeys) {
       Object.keys(opConfig).forEach((key) => {
@@ -7667,9 +7728,13 @@ function init() {
   updateLoginLink();
   installTestHooks();
   window.__RAIN_MATH_READY__ = true;
-  const sharedPayload = readSharedReportFromHash();
-  if (sharedPayload && openSharedReportView(sharedPayload)) {
-    // Parent opened a shared report link — show the read-only log, skip welcome.
+  const sharedCode = getReportHashCode();
+  if (sharedCode) {
+    // Parent opened a shared report link — decode (async) then show the
+    // read-only log, skipping the welcome menu.
+    decodeShareReportCode(sharedCode).then((payload) => {
+      if (!(payload && openSharedReportView(payload))) answerInput.focus();
+    });
   } else if (shouldShowWelcomeOnLoad()) {
     buildWelcomeMenu({ firstVisit: true });
   } else {
