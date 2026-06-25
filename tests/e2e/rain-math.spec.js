@@ -294,6 +294,28 @@ test.describe("desktop gameplay", () => {
     expect(state.problemStats.add["3,5"]).toEqual({ asked: 1, correct: 1 });
   });
 
+  test("clears a half-value drop when answered as a fraction", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["shapes"]);
+    await freezeAutoSpawns(page);
+    await invoke(page, "addDrop", {
+      opKey: "shapes",
+      text: "A△ b=3 h=3",
+      answer: 4.5,
+      answerText: "4.5",
+      statsKey: "tri,A,3,3",
+      y: 120,
+    });
+
+    // Typing the numerator alone must not penalize while a fractional drop is up.
+    await invoke(page, "submit", "9");
+    expect((await invoke(page, "getState")).drops).toHaveLength(1);
+
+    await invoke(page, "submit", "9/2");
+    await expect(page.locator("#score")).toHaveText("1");
+    expect((await invoke(page, "getState")).drops).toHaveLength(0);
+  });
+
   test("impossible typed input does not penalize every visible drop", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);

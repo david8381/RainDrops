@@ -4,6 +4,7 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-25
+- Accept simple fractions for half-value answers: a problem whose answer is 4.5 (e.g. a triangle area) can now be cleared by typing `9/2`. A bare numerator no longer counts as an impossible answer while a fractional drop is on screen.
 - Reworked Test Me from a three-question modal quiz into a falling-drop diagnostic that runs in the normal playfield, repeats missed facts twice, climbs through level frontiers while accuracy is comfortable, and locks controls while active.
 - Added durable Test Me placed-out credit to local profiles. Accepted placements mark lower-level facts as green/mastered without adding fake attempts; enough later real attempts can override that estimate.
 - Accepted Test Me placements now mark lower levels as placement-advanced, so lowering the level selector does not block returning to the suggested starting level.

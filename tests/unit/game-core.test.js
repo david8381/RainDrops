@@ -31,6 +31,7 @@ const {
   isPrime,
   matchesFactorDrop,
   normalizeTypedValue,
+  parseNumericAnswer,
   parseFactorizationInput,
   pow10,
   recordProblemResult,
@@ -56,6 +57,18 @@ describe("numeric utilities", () => {
     assert.equal(normalizeTypedValue("-.5"), "-0.5");
     assert.equal(normalizeTypedValue("1.2300", { allowIncomplete: false }), "1.23");
     assert.equal(normalizeTypedValue("12abc"), "12abc");
+  });
+
+  it("parses decimal and simple-fraction answers", () => {
+    assert.equal(parseNumericAnswer("4.5"), 4.5);
+    assert.equal(parseNumericAnswer("9/2"), 4.5);
+    assert.equal(parseNumericAnswer("5"), 5);
+    assert.equal(parseNumericAnswer("-3/2"), -1.5);
+    assert.equal(parseNumericAnswer("12/4"), 3);
+    assert.ok(Number.isNaN(parseNumericAnswer("9/0")));
+    assert.ok(Number.isNaN(parseNumericAnswer("9/"))); // still typing
+    assert.ok(Number.isNaN(parseNumericAnswer("abc")));
+    assert.ok(Number.isNaN(parseNumericAnswer("")));
   });
 
   it("formats and shifts fixed-scale decimal values", () => {

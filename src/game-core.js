@@ -79,6 +79,22 @@ function normalizeTypedValue(inputValue, { allowIncomplete = true } = {}) {
   return out;
 }
 
+// Parse a typed answer to a number, accepting either a decimal (4.5) or a simple
+// fraction (9/2 → 4.5). Returns NaN for incomplete/invalid input. Lets players
+// answer half-value problems (e.g. triangle area b·h/2) as a fraction.
+function parseNumericAnswer(value) {
+  const str = String(value == null ? "" : value).trim();
+  if (!str) return NaN;
+  const frac = str.match(/^(-?\d+)\/(\d+)$/);
+  if (frac) {
+    const denom = Number(frac[2]);
+    if (denom === 0) return NaN;
+    return Number(frac[1]) / denom;
+  }
+  if (/^-?\d*\.?\d+$/.test(str)) return Number(str);
+  return NaN;
+}
+
 function pow10(exp) {
   let out = 1;
   for (let i = 0; i < exp; i += 1) out *= 10;
@@ -868,6 +884,7 @@ globalThis.RainMathCore = {
   lerp,
   matchesFactorDrop,
   normalizeTypedValue,
+  parseNumericAnswer,
   operationDefaults,
   operators,
   parseFactorizationInput,

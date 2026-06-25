@@ -16,6 +16,7 @@ const {
   getSIPrefixesForDifficulty,
   matchesFactorDrop,
   normalizeTypedValue,
+  parseNumericAnswer,
   operators,
   randInt,
   recordProblemResult: recordProblemResultCore,
@@ -3180,8 +3181,8 @@ function findDropMatch(value, { enterPressed = false } = {}) {
   const normalizedTyped = normalizeTypedValue(value, {
     allowIncomplete: false,
   });
-  const numericValue = Number(value);
-  const hasNumeric = !Number.isNaN(numericValue);
+  const numericValue = parseNumericAnswer(value);
+  const hasNumeric = Number.isFinite(numericValue);
 
   for (const drop of getAnswerTargets()) {
     if (!isAnswerTargetVisible(drop)) continue;
@@ -3199,7 +3200,7 @@ function findDropMatch(value, { enterPressed = false } = {}) {
     }
     const text = drop.answerText || String(drop.answer);
     if (normalizedTyped && text === normalizedTyped) return drop;
-    if (hasNumeric && drop.answer === numericValue) return drop;
+    if (hasNumeric && Math.abs(drop.answer - numericValue) < 1e-9) return drop;
   }
   return null;
 }
@@ -3213,9 +3214,18 @@ function isInputPossible(inputValue) {
   // If factor drops are visible, any digit input could be the start of a factorization
   const hasFactorDrops = getAnswerTargets().some((d) => d.opKey === "factor" && isAnswerTargetVisible(d));
   if (hasFactorDrops && /^\d+$/.test(inputValue)) return true;
+  const visible = getAnswerTargets().filter((d) => isAnswerTargetVisible(d) && d.opKey !== "si" && d.opKey !== "factor");
+  // Fraction entry (e.g. 9/2 for 4.5): allow while it is still being typed, and
+  // accept it once it evaluates to a visible answer. A bare integer can also be
+  // the numerator of a fraction when a fractional-answer drop is on screen.
+  if (/^-?\d+\/\d*$/.test(inputValue)) {
+    const fracValue = parseNumericAnswer(inputValue);
+    if (!Number.isFinite(fracValue)) return true;
+    return visible.some((drop) => Math.abs(drop.answer - fracValue) < 1e-9);
+  }
+  if (/^-?\d+$/.test(inputValue) && visible.some((drop) => !Number.isInteger(drop.answer))) return true;
   const typed = normalizeTypedValue(inputValue, { allowIncomplete: true });
   if (!typed) return true;
-  const visible = getAnswerTargets().filter((d) => isAnswerTargetVisible(d) && d.opKey !== "si" && d.opKey !== "factor");
   return visible.some((drop) => {
     const text = drop.answerText || String(drop.answer);
     const normalizedAnswer = normalizeTypedValue(text, {
