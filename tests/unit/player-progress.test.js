@@ -29,6 +29,8 @@ const {
   getChallengeBest,
   getChallengeBests,
   getFinishLevelPracticeProblems,
+  isPlacementPlacedOut,
+  recordPlacementCredit,
   recordProgressEvent,
   recordSessionChallenge,
   recordSessionEvent,
@@ -561,6 +563,78 @@ describe("player progress profile", () => {
     });
 
     assert.ok(problemMastery(profile.skills.add.problems["1,7"]) < 50);
+  });
+
+  it("marks placed-out problems as mastered without inventing attempts", () => {
+    const profile = createDefaultProfile(Date.UTC(2026, 0, 1));
+    syncSettings(profile, { difficulties: { add: 2 } });
+    const universe = getSkillUniverseProblems("add", 2);
+
+    recordPlacementCredit(profile, "add", { level: 3, source: "test-me" }, Date.UTC(2026, 0, 1, 0, 1));
+
+    const skill = profile.skills.add;
+    const first = skill.problems[universe[0].statsKey];
+    const summary = computeSkillReadiness(skill);
+
+    assert.equal(skill.placementCredits.length, 1);
+    assert.equal(skill.placementCredits[0].placedOutThrough, 2);
+    assert.deepEqual(skill.levelAdvances.map((advance) => advance.level), [1, 2]);
+    assert.deepEqual(skill.levelAdvances.map((advance) => advance.result), ["placed-out", "placed-out"]);
+    assert.equal(first.attempts, 0);
+    assert.equal(first.correct, 0);
+    assert.equal(isPlacementPlacedOut(first), true);
+    assert.equal(problemCurrentAccuracy(first), 1);
+    assert.equal(problemMastery(first), 100);
+    assert.equal(isBossMasteredProblem(first), true);
+    assert.equal(summary.attempts, 0);
+    assert.equal(summary.masteredCount, universe.length);
+    assert.equal(summary.readiness, 100);
+    assert.equal(summary.bossReady, true);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      recordProgressEvent(profile, {
+        opKey: "add",
+        statsKey: universe[0].statsKey,
+        text: universe[0].text,
+        outcome: "wrong",
+        responseMs: 900,
+      });
+    }
+
+    const updated = skill.problems[universe[0].statsKey];
+    const updatedSummary = computeSkillReadiness(skill);
+    assert.equal(isPlacementPlacedOut(updated), false);
+    assert.equal(updated.placementStatus, "superseded");
+    assert.equal(problemCurrentAccuracy(updated), 0);
+    assert.equal(isBossMasteredProblem(updated), false);
+    assert.equal(updatedSummary.masteredCount, universe.length - 1);
+    assert.ok(updatedSummary.readiness < 100);
+  });
+
+  it("does not activate placed-out display for facts that already have enough attempts", () => {
+    const profile = createDefaultProfile(Date.UTC(2026, 0, 1));
+    syncSettings(profile, { difficulties: { add: 2 } });
+    const [problem] = getSkillUniverseProblems("add", 2);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      recordProgressEvent(profile, {
+        opKey: "add",
+        statsKey: problem.statsKey,
+        text: problem.text,
+        outcome: "wrong",
+        responseMs: 900,
+      });
+    }
+
+    recordPlacementCredit(profile, "add", { level: 3, source: "test-me" }, Date.UTC(2026, 0, 1, 0, 1));
+
+    const stored = profile.skills.add.problems[problem.statsKey];
+    assert.equal(stored.attempts, 3);
+    assert.equal(stored.placementStatus, "superseded");
+    assert.equal(isPlacementPlacedOut(stored), false);
+    assert.equal(problemCurrentAccuracy(stored), 0);
+    assert.equal(problemMastery(stored), 0);
+    assert.equal(isBossMasteredProblem(stored), false);
   });
 
   it("uses recent weighted accuracy so old misses can be overcome", () => {

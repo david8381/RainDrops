@@ -3,9 +3,15 @@
 ## Purpose
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
+## 2026-06-25
+- Reworked Test Me from a three-question modal quiz into a falling-drop diagnostic that runs in the normal playfield, repeats missed facts twice, climbs through level frontiers while accuracy is comfortable, and locks controls while active.
+- Added durable Test Me placed-out credit to local profiles. Accepted placements mark lower-level facts as green/mastered without adding fake attempts; enough later real attempts can override that estimate.
+- Accepted Test Me placements now mark lower levels as placement-advanced, so lowering the level selector does not block returning to the suggested starting level.
+- Updated the accuracy grid/list, falling-drop shading, tooltip text, tutorial copy, and tests so placed-out facts are visible as placement credit rather than ordinary accuracy.
+
 ## 2026-06-24
 - Added a persisted Text Size control for problem drops and worksheet nodes, with crisper heavier canvas text and matching desktop/touch controls.
-- Added a Test Me diagnostic placement flow from the header and welcome menu. It climbs by operation level after 2/3 correct, can set a starting level, and does not write mastery stats.
+- Added the first Test Me diagnostic placement flow from the header and welcome menu.
 - Added a Share Badge popup from boss victory and unlocked level cards, summarizing best Blitz, Wave, and Worksheet results with copy/share actions.
 - Added a short cannon-overload cooldown after repeated impossible submissions, so keyboard spamming is throttled without counting as ordinary mastery accuracy.
 - Let fully mastered current levels show Blitz, Wave, and Worksheet buttons immediately after choosing Keep Practicing, without requiring a temporary jump to the next level and back.

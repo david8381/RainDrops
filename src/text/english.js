@@ -39,8 +39,8 @@ globalThis.RainMathText = {
   placement: {
     ariaLabel: "Rain Math placement test",
     title: "Test Me",
-    subtitle: "Try a few problems by level to find a reasonable starting point. This does not change mastery stats.",
-    note: "Placement starts easy and climbs after 2 out of 3 correct at a level. You can stop whenever a level feels right.",
+    subtitle: "Pick a problem type. Test Me runs like the regular game, one falling problem at a time, to find a reasonable starting level.",
+    note: "Missed problems repeat soon. Accepting a higher level marks lower-level facts as placed out only until real attempts take over.",
   },
   tutorial: {
     ariaLabel: "Rain Math tutorial",
@@ -100,7 +100,7 @@ globalThis.RainMathText = {
         target: ".version",
         kicker: "Profiles",
         title: "Use local players, Test Me, and Log.",
-        body: "Profiles live in this browser's localStorage for now. Use Login to switch players, Test Me to choose a starting level without changing mastery stats, Grid to inspect mastery, and Log to review recent sessions.",
+        body: "Profiles live in this browser's localStorage for now. Use Login to switch players, Test Me to choose a starting level, Grid to inspect mastery and placed-out facts, and Log to review recent sessions.",
         tip: "Open a session's Report to show time, correct/missed counts, and mastery changes by problem type and level.",
       },
     ],

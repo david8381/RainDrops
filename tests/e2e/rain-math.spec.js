@@ -183,7 +183,7 @@ test.describe("desktop gameplay", () => {
     expect(state.progressProfile.settings.textSize).toBe("huge");
   });
 
-  test("test me recommends and applies a starting level without mastery stats", async ({ page }) => {
+  test("test me runs as falling drops and applies placed-out credit", async ({ page }) => {
     await openApp(page);
 
     await page.locator("#testMeLink").click();
@@ -191,30 +191,81 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator(".placement-card h2")).toHaveText("Test Me");
 
     await page.locator('.placement-op[data-op="add"]').click();
-    for (let i = 0; i < 3; i += 1) {
-      const state = await invoke(page, "getState");
-      await page.locator(".placement-answer").fill(state.placementState.problem.answerText);
-      await page.locator(".placement-answer-form button").click();
-      if (i < 2) await page.locator(".placement-next").click();
-    }
+    await expect(page.locator("#placementOverlay")).toHaveCount(0);
 
-    await expect(page.locator("#placementOverlay")).toContainText("Level 1 looked comfortable");
-    await page.getByRole("button", { name: "Try Level 2" }).click();
+    let state = await invoke(page, "advanceDrops", 250);
+    expect(state.placementState.active).toBe(true);
+    expect(state.scoreReadout.label).toBe("Test Me");
+    const drop = state.drops.find((candidate) => candidate.placementRunId);
+    expect(drop).toBeTruthy();
 
-    for (let i = 0; i < 3; i += 1) {
-      await page.locator(".placement-answer").fill("999");
-      await page.locator(".placement-answer-form button").click();
-      if (i < 2) await page.locator(".placement-next").click();
-    }
+    state = await invoke(page, "submit", drop.answerText);
+    expect(state.placementState.totalAsked).toBe(1);
+    expect(state.placementState.totalCorrect).toBe(1);
+    expect(state.progressSummary.skills.add.attempts).toBe(1);
 
-    await expect(page.locator("#placementOverlay")).toContainText("Recommended: Add Level 1");
-    await page.getByRole("button", { name: "Use Level 1" }).click();
-    const state = await invoke(page, "getState");
+    state = await invoke(page, "acceptPlacement", 3);
     expect(state.placementVisible).toBe(false);
     expect(state.opConfig.add.enabled).toBe(true);
-    expect(state.opConfig.add.difficulty).toBe(1);
-    expect(state.progressSummary.skills.add.attempts).toBe(0);
-    expect(state.problemStats.add).toEqual({});
+    expect(state.opConfig.add.difficulty).toBe(3);
+    expect(state.progressProfile.skills.add.placementCredits.at(-1).placedOutThrough).toBe(2);
+    expect(state.progressProfile.skills.add.levelAdvances.map((advance) => advance.level)).toEqual([1, 2]);
+
+    state = await invoke(page, "setOpDifficulty", "add", 2);
+    expect(state.opConfig.add.difficulty).toBe(2);
+    state = await invoke(page, "setOpDifficulty", "add", 3);
+    expect(state.opConfig.add.difficulty).toBe(3);
+
+    const placedEntry = Object.entries(state.progressProfile.skills.add.problems)
+      .find(([, problem]) => problem.placementStatus === "placed-out" && problem.attempts === 0);
+    expect(placedEntry).toBeTruthy();
+    const [placedKey] = placedEntry;
+    const [a, b] = placedKey.split(",").map(Number);
+    const label = `${a} + ${b} = ${a + b}`;
+
+    await page.locator('.diff-card[data-op="add"] .diff-grid-hint').click();
+    const cell = page.locator(`.stats-cell[aria-label^="${label}"]`);
+    await expect(cell).toHaveClass(/stats-cell-placed-out/);
+    await cell.hover();
+    await expect(page.locator("#statsHoverTooltip")).toContainText("Placed out by Test Me");
+    await expect(page.locator("#statsHoverTooltip")).toContainText("No attempts yet");
+    await expect(page.locator("#statsHoverTooltip")).toContainText("Boss mastered: yes (placement credit)");
+  });
+
+  test("placement-advanced levels can reopen choices after real attempts supersede placement credit", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await freezeAutoSpawns(page);
+
+    await invoke(page, "addDrop", {
+      opKey: "add",
+      text: "1 + 1",
+      answer: 2,
+      answerText: "2",
+      statsKey: "1,1",
+      y: 120,
+    });
+    for (let i = 0; i < 3; i += 1) {
+      await invoke(page, "submit", "999", { enter: true });
+    }
+
+    await invoke(page, "startPlacement", "add", 3);
+    let state = await invoke(page, "acceptPlacement", 3);
+    expect(state.progressProfile.skills.add.problems["1,1"].placementStatus).toBe("superseded");
+
+    state = await invoke(page, "setOpDifficulty", "add", 2);
+    expect(state.opConfig.add.difficulty).toBe(2);
+    expect(state.progressSummary.skills.add.bossReady).toBe(false);
+    expect(state.progressSummary.skills.add.levelAdvancedForLevel).toBe(true);
+
+    const ready = page.locator('.diff-card[data-op="add"] .diff-ready');
+    await expect(ready).toHaveText(/Unlocked:/);
+    await expect(ready).toBeEnabled();
+    await ready.click();
+    await expect(page.locator("#bossOfferOverlay")).toContainText("Level Unlocked");
+    await page.getByRole("button", { name: "Boss" }).click();
+    state = await invoke(page, "getState");
+    expect(state.bossMode.active).toBe(true);
   });
 
   test("clears a numeric drop immediately when the answer is typed", async ({ page }) => {

@@ -34,6 +34,7 @@ const {
   getProfileList,
   getSkillUniverseProblems,
   isBossMasteredProblem,
+  isPlacementPlacedOut,
   mirrorLegacyProblemStats,
   problemCurrentAccuracy,
   problemMastery: getProgressProblemMastery,
@@ -42,6 +43,7 @@ const {
   recordBossAttempt,
   recordChallengeAttempt,
   recordLevelAdvance,
+  recordPlacementCredit,
   recordProgressEvent,
   recordSessionChallenge,
   recordSessionEvent,
@@ -131,8 +133,13 @@ const TEXT_SIZE_SCALE = {
   large: 1.24,
   huge: 1.48,
 };
-const PLACEMENT_QUESTIONS_PER_LEVEL = 3;
-const PLACEMENT_PASS_CORRECT = 2;
+const PLACEMENT_DROP_SECONDS = 4.2;
+const PLACEMENT_NEXT_DROP_MS = 180;
+const PLACEMENT_MIN_EARLY_ASKED = 5;
+const PLACEMENT_EARLY_MISTAKES = 3;
+const PLACEMENT_EARLY_ACCURACY = 0.6;
+const PLACEMENT_PASS_ACCURACY = 0.78;
+const PLACEMENT_RETRY_COUNT = 2;
 const NUMPAD_INPUT_BY_CODE = {
   Numpad0: "0",
   Numpad1: "1",
@@ -734,7 +741,7 @@ function getOpSet(opKey) {
 }
 
 function toggleOp(opKey) {
-  if (isBossActive()) return;
+  if (isControlLocked()) return;
   if (!opConfig[opKey]) return;
   const turningOn = !opConfig[opKey].enabled;
   opConfig[opKey].enabled = turningOn;
@@ -749,7 +756,7 @@ function toggleOp(opKey) {
   }
   // Clear any on-screen drops whose operation is no longer enabled (we are not
   // mixing across sets), but leave boss/challenge drops alone.
-  if (!isBossActive()) {
+  if (!isControlLocked()) {
     drops = drops.filter((drop) => opConfig[drop.opKey]?.enabled);
     if (factorTargetId !== null && !drops.some((drop) => drop.id === factorTargetId)) {
       factorTargetId = null;
@@ -809,7 +816,7 @@ function recordMasteryAdvance(opKey, level = opConfig[opKey]?.difficulty) {
 }
 
 function advanceMasteredLevel(opKey) {
-  if (!opConfig[opKey] || isBossActive()) return false;
+  if (!opConfig[opKey] || isControlLocked()) return false;
   const currentLevel = opConfig[opKey].difficulty;
   if (currentLevel >= 10) return false;
   const skill = getProgressSkill(opKey);
@@ -823,7 +830,7 @@ function advanceMasteredLevel(opKey) {
 
 function setDifficulty(opKey, level, { force = false } = {}) {
   if (!opConfig[opKey]) return;
-  if (isBossActive() && !force) return;
+  if (isControlLocked() && !force) return;
   const nextLevel = clamp(1, 10, level);
   if (!force && !canAdvanceDifficulty(opKey, nextLevel)) {
     showReadyRequired(opKey);
@@ -880,6 +887,18 @@ function pickRandomEnabledOp() {
 
 function isBossActive() {
   return Boolean(bossMode?.active);
+}
+
+function isPlacementActive() {
+  return Boolean(placementState?.active);
+}
+
+function isPlacementDrop(drop) {
+  return Boolean(isPlacementActive() && drop?.placementRunId === placementState.runId);
+}
+
+function isControlLocked() {
+  return isBossActive() || isPlacementActive();
 }
 
 function isBossStunned() {
@@ -2058,9 +2077,11 @@ function createDrop() {
 }
 
 function updateDrops(dt) {
-  if (!isBossActive() && gameSpeed === 0) return;
+  if (!isBossActive() && !isPlacementActive() && gameSpeed === 0) return;
 
-  const mult = isBossActive() ? getBossSpeedMultiplier() : getSpeedMultiplier();
+  const mult = isBossActive() ? getBossSpeedMultiplier()
+    : isPlacementActive() ? 1
+      : getSpeedMultiplier();
   for (const drop of drops) {
     drop.y += (drop.baseSpeed * mult * dt) / 1000;
   }
@@ -2074,6 +2095,9 @@ function updateDrops(dt) {
     if (drop.y >= bottom) {
       if (!drop.revealed) {
         recordLearningResult(drop, "missed");
+        if (isPlacementDrop(drop)) {
+          handlePlacementDropFinished(drop, false, "missed");
+        }
         missCount += 1;
         if (drop.bossKind === "bomb") {
           applyBossStun();
@@ -2115,8 +2139,9 @@ function getDropAccuracyVisual(drop) {
   const asked = entry?.asked || 0;
   const correct = entry?.correct || 0;
   const statsKey = drop.statsKey || drop.text;
+  const placedOut = isProblemPlacedOut(drop.opKey, statsKey);
   const accuracy = getVisualAccuracy(drop.opKey, statsKey, asked, correct);
-  const rgb = getAccuracyRGB(accuracy, asked > 0);
+  const rgb = getAccuracyRGB(accuracy, asked > 0 || placedOut);
 
   if (!rgb) {
     return {
@@ -2130,7 +2155,7 @@ function getDropAccuracyVisual(drop) {
     };
   }
 
-  const evidence = getEvidenceRatio(asked);
+  const evidence = placedOut && asked === 0 ? 0.75 : getEvidenceRatio(asked);
   const fillAlpha = clamp(0.24, 0.9, 0.18 + evidence * 0.72);
   const strokeAlpha = clamp(0.42, 0.96, 0.34 + evidence * 0.62);
   const shadowAlpha = clamp(0.12, 0.42, 0.08 + evidence * 0.34);
@@ -2141,7 +2166,7 @@ function getDropAccuracyVisual(drop) {
     fillColor: `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${fillAlpha.toFixed(2)})`,
     strokeColor: `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${strokeAlpha.toFixed(2)})`,
     shadowColor: `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${shadowAlpha.toFixed(2)})`,
-    label: getAccuracyText(asked, correct),
+    label: getAccuracyText(asked, correct, drop.opKey, statsKey),
   };
 }
 
@@ -3204,6 +3229,12 @@ function isInputPossible(inputValue) {
 // (Blitz survival, Wave load, mothership nodes) instead of the frozen session
 // score.
 function getScoreReadout() {
+  if (isPlacementActive()) {
+    return {
+      label: "Test Me",
+      value: `L${placementState.level} ${placementState.levelCorrect}/${placementState.levelAsked}`,
+    };
+  }
   if (!bossMode?.active) return { label: "Cleared", value: String(score) };
   const phase = bossMode.phase;
   const isMothership = phase === "boss" || phase === "victory";
@@ -3251,6 +3282,9 @@ function handleCorrectAnswer(match) {
     changeBlitzShield(BLITZ_CORRECT_SHIELD_GAIN, "correct");
   }
   if (!isBossActive()) score += 1;
+  if (isPlacementDrop(match)) {
+    handlePlacementDropFinished(match, true, "correct");
+  }
   updateScoreDisplay();
   if (match.targetType === "bossProblem") {
     handleBossProblemDestroyed(match);
@@ -3302,6 +3336,13 @@ function handleWrongInput({ targets = null } = {}) {
       : [];
   for (const drop of targetsToRecord) {
     recordLearningResult(drop, "wrong");
+    if (isPlacementDrop(drop)) {
+      handlePlacementDropFinished(drop, false, "wrong");
+    }
+  }
+  if (targetsToRecord.some(isPlacementDrop)) {
+    const placementIds = new Set(targetsToRecord.filter(isPlacementDrop).map((drop) => drop.id));
+    drops = drops.filter((drop) => !placementIds.has(drop.id));
   }
   // A wrong typed answer does not drain shields — consistent with normal play,
   // where a wrong answer simply doesn't clear. Only landed bombs cost shields.
@@ -3515,6 +3556,8 @@ function tick(timestamp) {
     if (isBossActive()) {
       updateBossMode(dt);
       updateStarfield(dt);
+    } else if (isPlacementActive()) {
+      updatePlacementMode(dt);
     } else if (isBreatherMode) {
       maybeExitBreatherMode();
     } else if (dropLimit > 0) {
@@ -3707,8 +3750,15 @@ function formatDropSeconds(seconds) {
 }
 
 function formatReadyText(skill) {
+  if (skill?.levelAdvancedForLevel && !skill?.bossReady) {
+    return `Unlocked: ${formatReadinessPercent(skill)}`;
+  }
   const suffix = skill?.bossAttemptedForLevel ? " ✓" : "";
   return `Mastered: ${formatReadinessPercent(skill)}${suffix}`;
+}
+
+function canOpenLevelChoices(skill) {
+  return Boolean(skill?.bossReady || skill?.bossAttemptedForLevel || skill?.levelAdvancedForLevel);
 }
 
 function shouldPromptBossAttempt(skill) {
@@ -3734,26 +3784,34 @@ function closeBossOffer() {
 
 function showBossOffer(opKey) {
   closeBossOffer();
+  const skill = getProgressSkill(opKey);
   const level = opConfig[opKey]?.difficulty;
   const canAdvance = level < 10;
+  const ready = Boolean(skill?.bossReady);
   const overlay = document.createElement("div");
   overlay.className = "overlay boss-offer-overlay";
   overlay.id = "bossOfferOverlay";
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-modal", "true");
-  overlay.setAttribute("aria-label", "Level mastered");
+  overlay.setAttribute("aria-label", ready ? "Level mastered" : "Level unlocked");
 
   const card = document.createElement("div");
   card.className = "card boss-offer";
 
   const title = document.createElement("h2");
-  title.textContent = "Level Mastered";
+  title.textContent = ready ? "Level Mastered" : "Level Unlocked";
 
   const msg = document.createElement("span");
   msg.className = "boss-offer-msg";
-  msg.textContent = canAdvance
-    ? `${opDisplayNames[opKey]} Level ${level} is mastered. Keep practicing, try the boss, or move to Level ${level + 1}.`
-    : `${opDisplayNames[opKey]} Level ${level} is mastered. Keep practicing or try the boss.`;
+  if (ready) {
+    msg.textContent = canAdvance
+      ? `${opDisplayNames[opKey]} Level ${level} is mastered. Keep practicing, try the boss, or move to Level ${level + 1}.`
+      : `${opDisplayNames[opKey]} Level ${level} is mastered. Keep practicing or try the boss.`;
+  } else {
+    msg.textContent = canAdvance
+      ? `${opDisplayNames[opKey]} Level ${level} is already unlocked. Keep practicing, try the boss, or move to Level ${level + 1}.`
+      : `${opDisplayNames[opKey]} Level ${level} is already unlocked. Keep practicing or try the boss.`;
+  }
 
   const actions = document.createElement("div");
   actions.className = "boss-offer-actions";
@@ -3765,7 +3823,7 @@ function showBossOffer(opKey) {
   start.addEventListener("click", () => {
     initAudio();
     closeBossOffer();
-    startBossMode(opKey);
+    startBossMode(opKey, { force: !getProgressSkill(opKey)?.bossReady });
   });
 
   const dismiss = document.createElement("button");
@@ -4044,6 +4102,9 @@ function showBossVictoryPopup(info) {
 
 function getBossButtonTitle(skill) {
   if (skill?.bossReady) return "Choose boss, next level, or more practice";
+  if (skill?.levelAdvancedForLevel || skill?.bossAttemptedForLevel) {
+    return "This level is already unlocked. Choose boss, next level, or more practice.";
+  }
   return `Choices unlock when ${BOSS_READY_SCORE}% of current-level problems have at least 3 attempts and 90% current accuracy.`;
 }
 
@@ -4127,7 +4188,7 @@ function updateOpChits() {
     const opKey = btn.dataset.op;
     if (!opKey || !opConfig[opKey]) return;
     btn.classList.toggle("active", opConfig[opKey].enabled);
-    btn.disabled = isBossActive();
+    btn.disabled = isControlLocked();
   });
   updateOpChitProgress();
   buildDiffCards();
@@ -4140,6 +4201,12 @@ function updateInputHint() {
   if (!el) return;
   if (isCannonOverloaded()) {
     const text = getCannonOverloadText();
+    el.textContent = text;
+    if (kpHint) kpHint.textContent = text;
+    return;
+  }
+  if (isPlacementActive()) {
+    const text = "Test Me: answer the falling problem. Missed problems repeat soon.";
     el.textContent = text;
     if (kpHint) kpHint.textContent = text;
     return;
@@ -4219,7 +4286,7 @@ function buildDiffCards() {
     downBtn.className = "diff-btn";
     downBtn.tabIndex = -1;
     downBtn.textContent = "\u2212";
-    downBtn.disabled = isBossActive();
+    downBtn.disabled = isControlLocked();
     downBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       initAudio();
@@ -4234,7 +4301,7 @@ function buildDiffCards() {
     upBtn.className = "diff-btn";
     upBtn.tabIndex = -1;
     upBtn.textContent = "+";
-    upBtn.disabled = isBossActive();
+    upBtn.disabled = isControlLocked();
     upBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       initAudio();
@@ -4272,9 +4339,9 @@ function buildDiffCards() {
     readyText.dataset.op = opKey;
     readyText.textContent = formatReadyText(skill);
     readyText.classList.toggle("is-qualified", Boolean(skill.bossAttemptedForLevel));
-    readyText.classList.toggle("is-locked", !skill.bossReady);
+    readyText.classList.toggle("is-locked", !canOpenLevelChoices(skill));
     readyText.classList.toggle("is-ready-attention", shouldPromptBossAttempt(skill));
-    readyText.disabled = isBossActive() || !skill.bossReady;
+    readyText.disabled = isControlLocked() || !canOpenLevelChoices(skill);
     readyText.title = getBossButtonTitle(skill);
     readyText.setAttribute("aria-pressed", skill.bossAttemptedForLevel ? "true" : "false");
     readyText.addEventListener("click", (e) => {
@@ -4298,7 +4365,7 @@ function buildDiffCards() {
     blitzBtn.dataset.challenge = "blitz";
     blitzBtn.textContent = formatBlitzText(opKey, skill);
     blitzBtn.hidden = !canReplayChallenges(opKey, skill);
-    blitzBtn.disabled = isBossActive();
+    blitzBtn.disabled = isControlLocked();
     blitzBtn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -4313,7 +4380,7 @@ function buildDiffCards() {
     waveBtn.dataset.challenge = "wave";
     waveBtn.textContent = formatWaveText(opKey, skill);
     waveBtn.hidden = !canReplayChallenges(opKey, skill);
-    waveBtn.disabled = isBossActive();
+    waveBtn.disabled = isControlLocked();
     waveBtn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -4328,7 +4395,7 @@ function buildDiffCards() {
     bossReplayBtn.dataset.challenge = "boss";
     bossReplayBtn.textContent = formatBossReplayText(opKey, skill);
     bossReplayBtn.hidden = !canReplayChallenges(opKey, skill);
-    bossReplayBtn.disabled = isBossActive();
+    bossReplayBtn.disabled = isControlLocked();
     bossReplayBtn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -4343,7 +4410,7 @@ function buildDiffCards() {
     badgeBtn.dataset.challenge = "badge";
     badgeBtn.textContent = formatBadgeText(opKey, skill);
     badgeBtn.hidden = !canReplayChallenges(opKey, skill);
-    badgeBtn.disabled = isBossActive();
+    badgeBtn.disabled = isControlLocked();
     badgeBtn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -4382,10 +4449,10 @@ function updateReadinessDisplays() {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatReadyText(skill);
     el.classList.toggle("is-qualified", Boolean(skill?.bossAttemptedForLevel));
-    el.classList.toggle("is-locked", !skill?.bossReady);
+    el.classList.toggle("is-locked", !canOpenLevelChoices(skill));
     el.classList.toggle("is-ready-attention", shouldPromptBossAttempt(skill));
     el.classList.remove("needs-ready");
-    el.disabled = isBossActive() || !skill?.bossReady;
+    el.disabled = isControlLocked() || !canOpenLevelChoices(skill);
     el.title = getBossButtonTitle(skill);
     el.setAttribute("aria-pressed", skill?.bossAttemptedForLevel ? "true" : "false");
   });
@@ -4399,38 +4466,38 @@ function updateReadinessDisplays() {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatBlitzText(el.dataset.op, skill);
     el.hidden = !canReplayChallenges(el.dataset.op, skill);
-    el.disabled = isBossActive();
+    el.disabled = isControlLocked();
   });
 
   document.querySelectorAll(".diff-wave[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatWaveText(el.dataset.op, skill);
     el.hidden = !canReplayChallenges(el.dataset.op, skill);
-    el.disabled = isBossActive();
+    el.disabled = isControlLocked();
   });
 
   document.querySelectorAll(".diff-boss[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatBossReplayText(el.dataset.op, skill);
     el.hidden = !canReplayChallenges(el.dataset.op, skill);
-    el.disabled = isBossActive();
+    el.disabled = isControlLocked();
   });
 
   document.querySelectorAll(".diff-badge[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatBadgeText(el.dataset.op, skill);
     el.hidden = !canReplayChallenges(el.dataset.op, skill);
-    el.disabled = isBossActive();
+    el.disabled = isControlLocked();
   });
 
   document.querySelectorAll(".kp-diff-ready[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatReadyText(skill);
     el.classList.toggle("is-qualified", Boolean(skill?.bossAttemptedForLevel));
-    el.classList.toggle("is-locked", !skill?.bossReady);
+    el.classList.toggle("is-locked", !canOpenLevelChoices(skill));
     el.classList.toggle("is-ready-attention", shouldPromptBossAttempt(skill));
     el.classList.remove("needs-ready");
-    el.disabled = isBossActive() || !skill?.bossReady;
+    el.disabled = isControlLocked() || !canOpenLevelChoices(skill);
     el.title = getBossButtonTitle(skill);
     el.setAttribute("aria-pressed", skill?.bossAttemptedForLevel ? "true" : "false");
   });
@@ -4439,28 +4506,28 @@ function updateReadinessDisplays() {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatBlitzText(el.dataset.op, skill);
     el.hidden = !canReplayChallenges(el.dataset.op, skill);
-    el.disabled = isBossActive();
+    el.disabled = isControlLocked();
   });
 
   document.querySelectorAll(".kp-diff-wave[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatWaveText(el.dataset.op, skill);
     el.hidden = !canReplayChallenges(el.dataset.op, skill);
-    el.disabled = isBossActive();
+    el.disabled = isControlLocked();
   });
 
   document.querySelectorAll(".kp-diff-boss[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatBossReplayText(el.dataset.op, skill);
     el.hidden = !canReplayChallenges(el.dataset.op, skill);
-    el.disabled = isBossActive();
+    el.disabled = isControlLocked();
   });
 
   document.querySelectorAll(".kp-diff-badge[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     el.textContent = formatBadgeText(el.dataset.op, skill);
     el.hidden = !canReplayChallenges(el.dataset.op, skill);
-    el.disabled = isBossActive();
+    el.disabled = isControlLocked();
   });
 }
 
@@ -4470,9 +4537,14 @@ function updateReadinessDisplays() {
 
 function getVisualAccuracy(opKey, statsKey, asked, correct) {
   const problem = opKey && statsKey ? getProgressProblem(opKey, statsKey) : null;
+  if (problem && isPlacementPlacedOut(problem) && (problem.attempts || 0) <= 0) return 1;
   if (problem?.attempts > 0) return problemCurrentAccuracy(problem);
   if (!asked) return 0;
   return correct / asked;
+}
+
+function isProblemPlacedOut(opKey, statsKey) {
+  return Boolean(isPlacementPlacedOut(getProgressProblem(opKey, statsKey)));
 }
 
 function mixRGB(from, to, t) {
@@ -4502,14 +4574,18 @@ function getConfidenceAlpha(asked) {
 }
 
 function getAccuracyColor(asked, correct, opKey = null, statsKey = null) {
+  const placedOut = isProblemPlacedOut(opKey, statsKey);
   const accuracy = getVisualAccuracy(opKey, statsKey, asked, correct);
-  const rgb = getAccuracyRGB(accuracy, asked > 0);
+  const rgb = getAccuracyRGB(accuracy, asked > 0 || placedOut);
   if (!rgb) return "#1a1a2e"; // never asked — dark
-  const alpha = getConfidenceAlpha(asked);
+  const alpha = placedOut && asked === 0 ? 0.78 : getConfidenceAlpha(asked);
   return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha.toFixed(2)})`;
 }
 
-function getAccuracyText(asked, correct) {
+function getAccuracyText(asked, correct, opKey = null, statsKey = null) {
+  if (isProblemPlacedOut(opKey, statsKey)) {
+    return asked > 0 ? `Placed out · ${Math.round((correct / asked) * 100)}% (${correct}/${asked})` : "Placed out";
+  }
   if (asked === 0) return "—";
   return `${Math.round((correct / asked) * 100)}% (${correct}/${asked})`;
 }
@@ -4524,6 +4600,7 @@ function getProgressProblem(opKey, statsKey) {
 
 function getStatsTooltip(opKey, statsKey, label, asked, correct) {
   const problem = getProgressProblem(opKey, statsKey);
+  const placedOut = isPlacementPlacedOut(problem);
   const attempts = problem?.attempts ?? asked;
   const correctCount = problem?.correct ?? correct;
   const wrong = problem?.wrong ?? 0;
@@ -4534,9 +4611,10 @@ function getStatsTooltip(opKey, statsKey, label, asked, correct) {
   const bossMastered = problem ? isBossMasteredProblem(problem) : attempts >= 3 && lifetime >= 0.9;
   const lines = [
     label,
+    placedOut ? "Placed out by Test Me" : null,
     attempts > 0 ? `Attempts: ${attempts}` : "No attempts yet",
     `Correct: ${correctCount}`,
-  ];
+  ].filter(Boolean);
   if (attempts > 0) {
     lines.push(`Wrong: ${wrong}`);
     lines.push(`Missed: ${missed}`);
@@ -4544,6 +4622,8 @@ function getStatsTooltip(opKey, statsKey, label, asked, correct) {
     lines.push(`Lifetime accuracy: ${formatStatsPercent(lifetime)}`);
     lines.push(`Current accuracy: ${formatStatsPercent(current)}`);
     lines.push(`Boss mastered: ${bossMastered ? "yes" : "no"} (needs 3 attempts and 90% current accuracy)`);
+  } else if (placedOut) {
+    lines.push("Boss mastered: yes (placement credit)");
   }
   return lines.join("\n");
 }
@@ -4613,7 +4693,7 @@ function showStatsPopup(opKey) {
 
   const note = document.createElement("p");
   note.className = "stats-note";
-  note.textContent = "These colors match the falling drops: black is unseen, hue shows accuracy from red to yellow to green, and brighter color means more attempts.";
+  note.textContent = "These colors match the falling drops: black is unseen, hue shows accuracy from red to yellow to green, brighter color means more attempts, and placed-out facts are green placement credit.";
   card.appendChild(note);
 
   if (opKey === "si") {
@@ -5382,7 +5462,15 @@ function removePlacementOverlay() {
 
 function closePlacementOverlay({ focus = true } = {}) {
   removePlacementOverlay();
+  const runId = placementState?.runId;
+  if (runId) {
+    drops = drops.filter((drop) => drop.placementRunId !== runId);
+  }
   placementState = null;
+  updateScoreDisplay();
+  updateInputHint();
+  updateOpChits();
+  updateControlDisplay();
   if (focus) answerInput.focus();
 }
 
@@ -5412,44 +5500,240 @@ function isPlacementAnswerCorrect(problem, value) {
   return normalizedTyped === normalizedAnswer;
 }
 
-function startPlacementQuestion() {
-  if (!placementState?.opKey) return;
-  placementState.stage = "question";
-  placementState.problem = makePlacementProblem(placementState.opKey, placementState.level);
-  placementState.feedback = null;
-  renderPlacementOverlay();
+function getPlacementFrontierProblems(opKey, level) {
+  const current = getSkillUniverseProblems(opKey, level);
+  if (level <= 1) return current;
+  const prior = new Set(getSkillUniverseProblems(opKey, level - 1).map((problem) => problem.statsKey));
+  const frontier = current.filter((problem) => !prior.has(problem.statsKey));
+  return frontier.length > 0 ? frontier : current;
 }
 
-function startPlacementForOp(opKey, level = 1) {
+function makePlacementDrop(entry) {
+  if (!placementState?.opKey) return null;
+  const problem = makeProblemFromUniverseEntry(placementState.opKey, entry, placementState.level)
+    || makePlacementProblem(placementState.opKey, placementState.level);
+  if (!problem) return null;
+  const padding = 42;
+  const left = padding;
+  const right = Math.max(padding + 20, canvasW - padding);
+  const drop = {
+    id: nextDropId++,
+    x: randInt(left, right),
+    y: -24,
+    baseSpeed: Math.max(46, (canvasH + 60) / PLACEMENT_DROP_SECONDS),
+    placementRunId: placementState.runId,
+    placementLevel: placementState.level,
+    placementEntry: { statsKey: entry.statsKey, text: entry.text, retry: Boolean(entry.retry) },
+    createdAtMs: performance.now(),
+  };
+  copyProblemToTarget(problem, drop);
+  drop.placementEntry = {
+    statsKey: drop.statsKey || entry.statsKey,
+    text: drop.text || entry.text,
+    retry: Boolean(entry.retry),
+  };
+  return drop;
+}
+
+function preparePlacementLevel(level) {
+  if (!placementState?.active) return;
+  const nextLevel = clamp(1, 10, Math.round(level || 1));
+  const queue = shuffleArray(getPlacementFrontierProblems(placementState.opKey, nextLevel));
+  placementState.level = nextLevel;
+  placementState.stage = "running";
+  placementState.queue = queue.map((entry) => ({ ...entry, retry: false }));
+  placementState.levelTotal = placementState.queue.length;
+  placementState.levelAsked = 0;
+  placementState.levelCorrect = 0;
+  placementState.levelMistakes = 0;
+  placementState.pendingDropMs = 0;
+  placementState.currentDropId = null;
+  updateScoreDisplay();
+  updateInputHint();
+}
+
+function startPlacementRun(opKey, level = 1) {
   if (!opConfig[opKey]) return;
+  removePlacementOverlay();
+  clearAmbiguousTimer();
+  resetCannonOverload({ clearCooldown: true });
+  for (const key of Object.keys(opConfig)) {
+    opConfig[key].enabled = key === opKey;
+  }
+  drops = [];
+  factorTargetId = null;
+  spawnTimer = 0;
   placementState = {
-    stage: "question",
+    active: true,
+    stage: "running",
+    runId: `placement-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     opKey,
     level: clamp(1, 10, Math.round(level || 1)),
     passedLevel: 0,
     totalAsked: 0,
     totalCorrect: 0,
-    roundAsked: 0,
-    roundCorrect: 0,
+    totalMistakes: 0,
     history: [],
-    problem: null,
+    levelSummaries: [],
     recommendedLevel: null,
-    feedback: null,
+    reason: "",
+    queue: [],
+    levelTotal: 0,
+    levelAsked: 0,
+    levelCorrect: 0,
+    levelMistakes: 0,
+    pendingDropMs: 0,
+    currentDropId: null,
   };
-  startPlacementQuestion();
+  preparePlacementLevel(placementState.level);
+  isPaused = false;
+  if (pauseBtn) pauseBtn.textContent = "Pause";
+  updateOpChits();
+  updateControlDisplay();
+  drawDrops();
+  answerInput.focus();
 }
 
-function continuePlacementToNextLevel() {
+function startPlacementForOp(opKey, level = 1) {
+  startPlacementRun(opKey, level);
+}
+
+function queuePlacementRetry(drop) {
+  if (!placementState?.active || !drop) return;
+  const retry = {
+    ...(drop.placementEntry || { statsKey: drop.statsKey || drop.text, text: drop.text }),
+    retry: true,
+  };
+  const firstSlot = Math.min(1, placementState.queue.length);
+  for (let i = 0; i < PLACEMENT_RETRY_COUNT; i += 1) {
+    if (i === 0) {
+      placementState.queue.splice(firstSlot, 0, { ...retry });
+    } else {
+      placementState.queue.push({ ...retry });
+    }
+  }
+}
+
+function shouldStopPlacementLevelEarly() {
+  if (!placementState?.active) return false;
+  if (placementState.levelAsked < PLACEMENT_MIN_EARLY_ASKED) return false;
+  if (placementState.levelMistakes < PLACEMENT_EARLY_MISTAKES) return false;
+  const accuracy = placementState.levelCorrect / placementState.levelAsked;
+  return accuracy < PLACEMENT_EARLY_ACCURACY;
+}
+
+function recordPlacementLevelSummary() {
+  if (!placementState?.active) return;
+  const accuracy = placementState.levelAsked > 0
+    ? placementState.levelCorrect / placementState.levelAsked
+    : 0;
+  const last = placementState.levelSummaries.at(-1);
+  if (last?.level === placementState.level && last.asked === placementState.levelAsked) {
+    return accuracy;
+  }
+  placementState.levelSummaries.push({
+    level: placementState.level,
+    asked: placementState.levelAsked,
+    correct: placementState.levelCorrect,
+    mistakes: placementState.levelMistakes,
+    accuracy,
+  });
+  return accuracy;
+}
+
+function completePlacementLevel() {
+  if (!placementState?.active) return;
+  const accuracy = recordPlacementLevelSummary();
+  if (accuracy >= PLACEMENT_PASS_ACCURACY) {
+    placementState.passedLevel = Math.max(placementState.passedLevel, placementState.level);
+    if (placementState.level >= 10) {
+      finishPlacementRun({ recommendedLevel: 10, reason: "completed all levels" });
+    } else {
+      preparePlacementLevel(placementState.level + 1);
+    }
+  } else {
+    finishPlacementRun({ recommendedLevel: placementState.level, reason: "level became difficult" });
+  }
+}
+
+function handlePlacementDropFinished(drop, correct, outcome = correct ? "correct" : "wrong") {
+  if (!isPlacementDrop(drop)) return;
+  placementState.totalAsked += 1;
+  placementState.levelAsked += 1;
+  if (correct) {
+    placementState.totalCorrect += 1;
+    placementState.levelCorrect += 1;
+  } else {
+    placementState.totalMistakes += 1;
+    placementState.levelMistakes += 1;
+    queuePlacementRetry(drop);
+  }
+  placementState.history.push({
+    level: placementState.level,
+    text: drop.text,
+    statsKey: drop.statsKey,
+    outcome,
+  });
+  placementState.currentDropId = null;
+  placementState.pendingDropMs = PLACEMENT_NEXT_DROP_MS;
+  updateScoreDisplay();
+
+  if (shouldStopPlacementLevelEarly()) {
+    finishPlacementRun({ recommendedLevel: placementState.level, reason: "early struggle" });
+  }
+}
+
+function spawnNextPlacementDrop() {
+  if (!placementState?.active) return false;
+  const entry = placementState.queue.shift();
+  if (!entry) {
+    completePlacementLevel();
+    return false;
+  }
+  const drop = makePlacementDrop(entry);
+  if (!drop) {
+    completePlacementLevel();
+    return false;
+  }
+  placementState.currentDropId = drop.id;
+  drops.push(drop);
+  return true;
+}
+
+function updatePlacementMode(dt) {
+  if (!placementState?.active) return;
+  if (drops.some(isPlacementDrop)) return;
+  placementState.pendingDropMs = Math.max(0, (placementState.pendingDropMs || 0) - dt);
+  if (placementState.pendingDropMs > 0) return;
+  spawnNextPlacementDrop();
+}
+
+function finishPlacementRun({ recommendedLevel, reason = "" } = {}) {
   if (!placementState) return;
-  placementState.level = clamp(1, 10, placementState.level + 1);
-  placementState.roundAsked = 0;
-  placementState.roundCorrect = 0;
-  startPlacementQuestion();
+  const runId = placementState.runId;
+  if (placementState.active && placementState.levelAsked > 0) {
+    recordPlacementLevelSummary();
+  }
+  placementState.active = false;
+  placementState.stage = "result";
+  placementState.reason = reason;
+  placementState.recommendedLevel = clamp(1, 10, Math.round(recommendedLevel || placementState.level || 1));
+  drops = drops.filter((drop) => drop.placementRunId !== runId);
+  if (factorTargetId !== null && !drops.some((drop) => drop.id === factorTargetId)) {
+    factorTargetId = null;
+  }
+  showPlacementResultOverlay();
+  updateOpChits();
+  updateControlDisplay();
+  updateScoreDisplay();
+  updateInputHint();
+  drawDrops();
 }
 
 function acceptPlacementLevel(level = placementState?.recommendedLevel || placementState?.passedLevel || placementState?.level || 1) {
   if (!placementState?.opKey) return;
   const opKey = placementState.opKey;
+  const runId = placementState.runId;
   const nextLevel = clamp(1, 10, Math.round(level || 1));
   const set = getOpSet(opKey);
   for (const key of Object.keys(opConfig)) {
@@ -5459,51 +5743,34 @@ function acceptPlacementLevel(level = placementState?.recommendedLevel || placem
       opConfig[key].enabled = false;
     }
   }
-  drops = drops.filter((drop) => opConfig[drop.opKey]?.enabled);
+  drops = drops.filter((drop) => drop.placementRunId !== runId && opConfig[drop.opKey]?.enabled);
+  progressProfile = recordPlacementCredit(progressProfile, opKey, {
+    level: nextLevel,
+    placedOutThrough: nextLevel - 1,
+    source: "test-me",
+  });
+  saveProfile(progressProfile);
+  resetProblemStats(problemStats);
+  mirrorLegacyProblemStats(progressProfile, problemStats);
   setDifficulty(opKey, nextLevel, { force: true });
   syncProgressSettings();
   markWelcomeSeen();
   closePlacementOverlay();
   updateOpChits();
   updateControlDisplay();
+  updateScoreDisplay();
   drawDrops();
 }
 
 function submitPlacementAnswer(value) {
-  if (!placementState?.problem || placementState.stage !== "question") return;
-  const correct = isPlacementAnswerCorrect(placementState.problem, value);
-  const answer = getPlacementCorrectAnswer(placementState.problem);
-  placementState.totalAsked += 1;
-  placementState.roundAsked += 1;
-  if (correct) {
-    placementState.totalCorrect += 1;
-    placementState.roundCorrect += 1;
-  }
-  placementState.history.push({
-    level: placementState.level,
-    text: placementState.problem.text,
-    answer,
-    correct,
-  });
-  placementState.feedback = { correct, answer };
-
-  if (placementState.roundAsked >= PLACEMENT_QUESTIONS_PER_LEVEL) {
-    if (placementState.roundCorrect >= PLACEMENT_PASS_CORRECT) {
-      placementState.passedLevel = Math.max(placementState.passedLevel, placementState.level);
-      if (placementState.level >= 10) {
-        placementState.recommendedLevel = 10;
-        placementState.stage = "result";
-      } else {
-        placementState.stage = "levelPassed";
-      }
-    } else {
-      placementState.recommendedLevel = Math.max(1, placementState.passedLevel || placementState.level - 1);
-      placementState.stage = "result";
-    }
+  if (!placementState?.active) return;
+  const drop = drops.find(isPlacementDrop);
+  if (!drop) return;
+  if (isPlacementAnswerCorrect(drop, value)) {
+    handleCorrectAnswer(drop);
   } else {
-    placementState.stage = "feedback";
+    handleWrongInput({ targets: [drop] });
   }
-  renderPlacementOverlay();
 }
 
 function renderPlacementHeader(card) {
@@ -5540,99 +5807,27 @@ function renderPlacementSelect(card) {
   card.append(grid, close);
 }
 
-function renderPlacementQuestion(card) {
-  const opName = opDisplayNames[placementState.opKey] || placementState.opKey;
-  const number = Math.min(PLACEMENT_QUESTIONS_PER_LEVEL, placementState.roundAsked + 1);
-  const meta = document.createElement("div");
-  meta.className = "placement-meta";
-  meta.textContent = `${opName} · Level ${placementState.level} · ${number}/${PLACEMENT_QUESTIONS_PER_LEVEL}`;
-  const question = document.createElement("div");
-  question.className = "placement-question";
-  question.textContent = placementState.problem.text;
-  const form = document.createElement("form");
-  form.className = "placement-answer-form";
-  const input = document.createElement("input");
-  input.className = "placement-answer";
-  input.type = "text";
-  input.autocomplete = "off";
-  input.placeholder = placementState.problem.opKey === "factor" ? "2^2*3" : "Answer";
-  const submit = document.createElement("button");
-  submit.type = "submit";
-  submit.className = "primary";
-  submit.textContent = "Check";
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    submitPlacementAnswer(input.value);
-  });
-  form.append(input, submit);
-  const actions = document.createElement("div");
-  actions.className = "placement-actions";
-  const selectDifferent = document.createElement("button");
-  selectDifferent.type = "button";
-  selectDifferent.textContent = "Choose another type";
-  selectDifferent.addEventListener("click", () => {
-    placementState = { stage: "select" };
-    renderPlacementOverlay();
-  });
-  const accept = document.createElement("button");
-  accept.type = "button";
-  accept.textContent = `Use Level ${placementState.level}`;
-  accept.addEventListener("click", () => acceptPlacementLevel(placementState.level));
-  actions.append(selectDifferent, accept);
-  const note = document.createElement("div");
-  note.className = "placement-note";
-  note.textContent = getText("placement.note");
-  card.append(meta, question, form, actions, note);
-  setTimeout(() => input.focus(), 0);
-}
-
-function renderPlacementFeedback(card) {
-  const feedback = placementState.feedback || {};
-  const msg = document.createElement("div");
-  msg.className = `placement-feedback ${feedback.correct ? "correct" : "wrong"}`;
-  msg.textContent = feedback.correct ? "Correct." : `Not this time. Answer: ${feedback.answer}`;
-  const progress = document.createElement("p");
-  progress.className = "placement-sub";
-  progress.textContent = `Level ${placementState.level}: ${placementState.roundCorrect}/${placementState.roundAsked} correct so far.`;
-  const next = document.createElement("button");
-  next.type = "button";
-  next.className = "primary placement-next";
-  next.textContent = "Next problem";
-  next.addEventListener("click", startPlacementQuestion);
-  card.append(msg, progress, next);
-  setTimeout(() => next.focus(), 0);
-}
-
-function renderPlacementLevelPassed(card) {
-  const msg = document.createElement("h2");
-  msg.textContent = `Level ${placementState.level} looked comfortable.`;
-  const body = document.createElement("p");
-  body.className = "placement-sub";
-  body.textContent = `${placementState.roundCorrect}/${PLACEMENT_QUESTIONS_PER_LEVEL} correct. You can start here or keep testing higher levels.`;
-  const actions = document.createElement("div");
-  actions.className = "placement-actions";
-  const accept = document.createElement("button");
-  accept.type = "button";
-  accept.textContent = `Use Level ${placementState.level}`;
-  accept.addEventListener("click", () => acceptPlacementLevel(placementState.level));
-  const next = document.createElement("button");
-  next.type = "button";
-  next.className = "primary";
-  next.textContent = `Try Level ${placementState.level + 1}`;
-  next.addEventListener("click", continuePlacementToNextLevel);
-  actions.append(accept, next);
-  card.append(msg, body, actions);
-  setTimeout(() => next.focus(), 0);
-}
-
 function renderPlacementResult(card) {
   const level = placementState.recommendedLevel || 1;
   const opName = opDisplayNames[placementState.opKey] || placementState.opKey;
+  const placedThrough = Math.max(0, level - 1);
   const title = document.createElement("h2");
   title.textContent = `Recommended: ${opName} Level ${level}`;
   const body = document.createElement("p");
   body.className = "placement-sub";
-  body.textContent = `${placementState.totalCorrect}/${placementState.totalAsked} correct across the diagnostic. This sets a starting level only; it does not change mastery stats.`;
+  const placedOutText = placedThrough > 0
+    ? `Eligible problems through Level ${placedThrough} will show as placed out until real attempts take over.`
+    : "No lower levels will be marked placed out.";
+  body.textContent = `${placementState.totalCorrect}/${placementState.totalAsked} correct in Test Me. ${placedOutText} Your actual Test Me answers stay recorded as ordinary practice.`;
+  const details = document.createElement("div");
+  details.className = "placement-note";
+  const summaries = Array.isArray(placementState.levelSummaries) ? placementState.levelSummaries : [];
+  details.textContent = summaries.length > 0
+    ? summaries.map((summary) => {
+      const pct = summary.asked > 0 ? Math.round((summary.correct / summary.asked) * 100) : 0;
+      return `L${summary.level}: ${summary.correct}/${summary.asked} (${pct}%)`;
+    }).join(" · ")
+    : "Test Me runs like the regular game: one falling problem at a time, with missed problems repeated.";
   const actions = document.createElement("div");
   actions.className = "placement-actions";
   const close = document.createElement("button");
@@ -5649,16 +5844,17 @@ function renderPlacementResult(card) {
     const tryNext = document.createElement("button");
     tryNext.type = "button";
     tryNext.textContent = `Try Level ${level + 1}`;
-    tryNext.addEventListener("click", () => {
-      placementState.level = level + 1;
-      placementState.roundAsked = 0;
-      placementState.roundCorrect = 0;
-      startPlacementQuestion();
-    });
+    tryNext.addEventListener("click", () => startPlacementRun(placementState.opKey, level + 1));
     actions.append(tryNext);
   }
-  card.append(title, body, actions);
+  card.append(title, body, details, actions);
   setTimeout(() => use.focus(), 0);
+}
+
+function showPlacementResultOverlay() {
+  if (!placementState) return;
+  removePlacementOverlay();
+  renderPlacementOverlay();
 }
 
 function renderPlacementOverlay() {
@@ -5675,13 +5871,7 @@ function renderPlacementOverlay() {
   });
   const card = document.createElement("div");
   card.className = "card placement-card";
-  if (placementState.stage === "question") {
-    renderPlacementQuestion(card);
-  } else if (placementState.stage === "feedback") {
-    renderPlacementFeedback(card);
-  } else if (placementState.stage === "levelPassed") {
-    renderPlacementLevelPassed(card);
-  } else if (placementState.stage === "result") {
+  if (placementState.stage === "result") {
     renderPlacementResult(card);
   } else {
     renderPlacementSelect(card);
@@ -6083,12 +6273,15 @@ function buildGridStats(opKey, stats) {
       const entry = stats[key];
       const asked = entry ? entry.asked : 0;
       const correct = entry ? entry.correct : 0;
+      const placedOut = isProblemPlacedOut(opKey, key);
 
       const inRange = a <= currentRange.max && b <= currentRange.max;
       const label = `${a} ${operators[opKey]?.symbol || ""} ${b} = ${
         opKey === "div" ? a : operators[opKey].fn(a, b)
       }`;
-      td.className = "stats-cell" + (inRange ? "" : " stats-cell-outside");
+      td.className = "stats-cell"
+        + (inRange ? "" : " stats-cell-outside")
+        + (placedOut ? " stats-cell-placed-out" : "");
       td.style.background = getAccuracyColor(asked, correct, opKey, key);
       attachStatsTooltip(td, getStatsTooltip(opKey, key, label, asked, correct));
 
@@ -6227,6 +6420,7 @@ function buildListStats(opKey, stats) {
     const row = document.createElement("div");
     row.className = "stats-f10-row";
     row.style.borderLeft = `4px solid ${getAccuracyColor(entry.asked, entry.correct, opKey, text)}`;
+    row.classList.toggle("stats-row-placed-out", isProblemPlacedOut(opKey, text));
     const label = opKey === "si"
       ? formatSIStatsKey(text)
       : opKey === "shapes"
@@ -6242,7 +6436,7 @@ function buildListStats(opKey, stats) {
 
     const pct = document.createElement("span");
     pct.className = "stats-f10-pct";
-    pct.textContent = getAccuracyText(entry.asked, entry.correct);
+    pct.textContent = getAccuracyText(entry.asked, entry.correct, opKey, text);
 
     row.appendChild(problem);
     row.appendChild(pct);
@@ -6267,21 +6461,21 @@ function updateDifficultyDisplays() {
 function updateControlDisplay() {
   if (speedSlider) {
     speedSlider.value = String(gameSpeed);
-    speedSlider.disabled = isBossActive();
+    speedSlider.disabled = isControlLocked();
   }
   if (speedValueEl) {
     speedValueEl.textContent = `${gameSpeed}%`;
   }
   if (dropLimitSlider) {
     dropLimitSlider.value = String(dropLimit);
-    dropLimitSlider.disabled = isBossActive();
+    dropLimitSlider.disabled = isControlLocked();
   }
   if (dropLimitValueEl) {
     dropLimitValueEl.textContent = String(dropLimit);
   }
   if (textSizeSelect) {
     textSizeSelect.value = normalizeTextSizeSetting(textSize);
-    textSizeSelect.disabled = isBossActive();
+    textSizeSelect.disabled = isControlLocked();
   }
   if (textSizeValueEl) {
     textSizeValueEl.textContent = getTextSizeLabel();
@@ -6293,10 +6487,10 @@ function updateControlDisplay() {
   const kpTextSizeBtn = document.getElementById("kpTextSizeBtn");
   if (kpTextSizeBtn) kpTextSizeBtn.textContent = getTextSizeLabel();
   document.querySelectorAll(".kp-sbtn").forEach((btn) => {
-    btn.disabled = isBossActive();
+    btn.disabled = isControlLocked();
   });
   document.querySelectorAll(".op-chit").forEach((btn) => {
-    btn.disabled = isBossActive();
+    btn.disabled = isControlLocked();
   });
 }
 
@@ -6572,7 +6766,7 @@ if (restartBtn) {
 // Practice controls
 if (speedSlider) {
   speedSlider.addEventListener("input", () => {
-    if (isBossActive()) return;
+    if (isControlLocked()) return;
     initAudio();
     setPracticeControls({ speed: Number(speedSlider.value) });
   });
@@ -6580,7 +6774,7 @@ if (speedSlider) {
 
 if (dropLimitSlider) {
   dropLimitSlider.addEventListener("input", () => {
-    if (isBossActive()) return;
+    if (isControlLocked()) return;
     initAudio();
     setPracticeControls({ drops: Number(dropLimitSlider.value) });
   });
@@ -6588,7 +6782,7 @@ if (dropLimitSlider) {
 
 if (textSizeSelect) {
   textSizeSelect.addEventListener("change", () => {
-    if (isBossActive()) return;
+    if (isControlLocked()) return;
     initAudio();
     setTextSize(textSizeSelect.value);
   });
@@ -6810,19 +7004,19 @@ function setupTouchKeypad() {
   });
 
   wireKpButton(document.getElementById("kpSpeedDn"), () => {
-    if (!isBossActive()) setPracticeControls({ speed: gameSpeed - 10 });
+    if (!isControlLocked()) setPracticeControls({ speed: gameSpeed - 10 });
   });
   wireKpButton(document.getElementById("kpSpeedUp"), () => {
-    if (!isBossActive()) setPracticeControls({ speed: gameSpeed + 10 });
+    if (!isControlLocked()) setPracticeControls({ speed: gameSpeed + 10 });
   });
   wireKpButton(document.getElementById("kpDropsDn"), () => {
-    if (!isBossActive()) setPracticeControls({ drops: dropLimit - 1 });
+    if (!isControlLocked()) setPracticeControls({ drops: dropLimit - 1 });
   });
   wireKpButton(document.getElementById("kpDropsUp"), () => {
-    if (!isBossActive()) setPracticeControls({ drops: dropLimit + 1 });
+    if (!isControlLocked()) setPracticeControls({ drops: dropLimit + 1 });
   });
   wireKpButton(document.getElementById("kpTextSizeBtn"), () => {
-    if (!isBossActive()) cycleTextSize();
+    if (!isControlLocked()) cycleTextSize();
   });
 
   updateControlDisplay();
@@ -6852,7 +7046,7 @@ function buildKpDiffStrip() {
     const downBtn = document.createElement("button");
     downBtn.className = "kp-diff-btn";
     downBtn.textContent = "\u2212";
-    downBtn.disabled = isBossActive();
+    downBtn.disabled = isControlLocked();
     wireKpButton(downBtn, () => setDifficulty(opKey, opConfig[opKey].difficulty - 1));
 
     const val = document.createElement("span");
@@ -6865,8 +7059,8 @@ function buildKpDiffStrip() {
     ready.dataset.op = opKey;
     ready.textContent = formatReadyText(skill);
     ready.classList.toggle("is-qualified", Boolean(skill.bossAttemptedForLevel));
-    ready.classList.toggle("is-locked", !skill.bossReady);
-    ready.disabled = isBossActive() || !skill.bossReady;
+    ready.classList.toggle("is-locked", !canOpenLevelChoices(skill));
+    ready.disabled = isControlLocked() || !canOpenLevelChoices(skill);
     ready.title = getBossButtonTitle(skill);
     ready.setAttribute("aria-pressed", skill.bossAttemptedForLevel ? "true" : "false");
     wireKpButton(ready, () => showBossOffer(opKey));
@@ -6877,7 +7071,7 @@ function buildKpDiffStrip() {
     blitz.dataset.op = opKey;
     blitz.textContent = formatBlitzText(opKey, skill);
     blitz.hidden = !canReplayChallenges(opKey, skill);
-    blitz.disabled = isBossActive();
+    blitz.disabled = isControlLocked();
     wireKpButton(blitz, () => startBlitzMode(opKey));
 
     const wave = document.createElement("button");
@@ -6886,7 +7080,7 @@ function buildKpDiffStrip() {
     wave.dataset.op = opKey;
     wave.textContent = formatWaveText(opKey, skill);
     wave.hidden = !canReplayChallenges(opKey, skill);
-    wave.disabled = isBossActive();
+    wave.disabled = isControlLocked();
     wireKpButton(wave, () => startWaveMode(opKey));
 
     const bossReplay = document.createElement("button");
@@ -6895,7 +7089,7 @@ function buildKpDiffStrip() {
     bossReplay.dataset.op = opKey;
     bossReplay.textContent = formatBossReplayText(opKey, skill);
     bossReplay.hidden = !canReplayChallenges(opKey, skill);
-    bossReplay.disabled = isBossActive();
+    bossReplay.disabled = isControlLocked();
     wireKpButton(bossReplay, () => startBossReplayMode(opKey));
 
     const badge = document.createElement("button");
@@ -6904,7 +7098,7 @@ function buildKpDiffStrip() {
     badge.dataset.op = opKey;
     badge.textContent = formatBadgeText(opKey, skill);
     badge.hidden = !canReplayChallenges(opKey, skill);
-    badge.disabled = isBossActive();
+    badge.disabled = isControlLocked();
     wireKpButton(badge, () => {
       const level = getReplayChallengeLevel(opKey, summarizeProfile(progressProfile).skills[opKey]);
       if (level) showShareBadge(opKey, level);
@@ -6913,7 +7107,7 @@ function buildKpDiffStrip() {
     const upBtn = document.createElement("button");
     upBtn.className = "kp-diff-btn";
     upBtn.textContent = "+";
-    upBtn.disabled = isBossActive();
+    upBtn.disabled = isControlLocked();
     wireKpButton(upBtn, () => setDifficulty(opKey, opConfig[opKey].difficulty + 1));
 
     item.appendChild(label);
@@ -7022,6 +7216,7 @@ function cloneForTest(value) {
 function getTestState() {
   return {
     score,
+    scoreReadout: cloneForTest(getScoreReadout()),
     drops: drops.map((drop) => ({ ...drop, factorCollected: { ...(drop.factorCollected || {}) } })),
     opConfig: cloneForTest(opConfig),
     problemStats: cloneForTest(problemStats),
@@ -7226,6 +7421,9 @@ function installTestHooks() {
     advanceDrops(ms = 16) {
       const dt = Math.max(0, Number(ms) || 0);
       updateCannonOverload(dt);
+      if (isPlacementActive()) {
+        updatePlacementMode(dt);
+      }
       updateDrops(dt);
       drawDrops();
       return getTestState();

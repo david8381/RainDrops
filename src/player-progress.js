@@ -20,6 +20,8 @@ const MIN_RECENT_ACCURACY_FOR_READY = 0.85;
 const MIN_ACCURACY_FOR_READY = 0.85;
 const BOSS_MASTERY_MIN_ATTEMPTS = 3;
 const BOSS_MASTERY_MIN_ACCURACY = 0.9;
+const PLACEMENT_STATUS_PLACED_OUT = "placed-out";
+const PLACEMENT_STATUS_SUPERSEDED = "superseded";
 const RECENT_ACCURACY_BLEND = 0.9;
 const RECENT_ACCURACY_WEIGHTS = [0.3, 0.2, 0.15, 0.1, 0.08, 0.06, 0.04, 0.03, 0.02, 0.02];
 const PROBLEM_MASTERY_THRESHOLD = 80;
@@ -311,6 +313,7 @@ function createEmptySkill(opKey, nowMs = Date.now()) {
     },
     recent: [],
     problems: {},
+    placementCredits: [],
     pressureTiers: createPressureTierStatsMap(),
     blitzAttempts: [],
     challengeAttempts: [],
@@ -574,6 +577,19 @@ function normalizeChallengeAttempts(attempts = []) {
     });
 }
 
+function normalizePlacementCredits(credits = []) {
+  if (!Array.isArray(credits)) return [];
+  return credits
+    .filter((credit) => credit && typeof credit === "object")
+    .map((credit) => ({
+      ...credit,
+      level: clamp(1, 10, Math.round(Number.isFinite(credit.level) ? credit.level : 1)),
+      placedOutThrough: clamp(0, 10, Math.round(Number.isFinite(credit.placedOutThrough) ? credit.placedOutThrough : 0)),
+      problemCount: Math.max(0, Math.round(Number.isFinite(credit.problemCount) ? credit.problemCount : 0)),
+      result: credit.result || "placed-out",
+    }));
+}
+
 function ensureProfileShape(profile, nowMs = Date.now()) {
   if (!profile || typeof profile !== "object") return createDefaultProfile(nowMs);
   const defaultProfile = createDefaultProfile(nowMs);
@@ -613,6 +629,7 @@ function ensureProfileShape(profile, nowMs = Date.now()) {
         ...(rawSkill.totals || {}),
       },
       problems: { ...(rawSkill.problems || {}) },
+      placementCredits: normalizePlacementCredits(rawSkill.placementCredits),
       recent: Array.isArray(rawSkill.recent) ? rawSkill.recent : [],
       bossAttempts: normalizeBossAttempts(rawSkill.bossAttempts),
       levelAdvances: normalizeLevelAdvances(rawSkill.levelAdvances),
@@ -1448,6 +1465,7 @@ function recordProgressEvent(profile, event, nowMs = Date.now()) {
 
   problem.lastOutcome = outcome;
   problem.lastSeenAt = at;
+  supersedePlacementCreditIfReady(problem, at);
   skill.updatedAt = at;
   profile.user.updatedAt = at;
 
@@ -1457,7 +1475,77 @@ function recordProgressEvent(profile, event, nowMs = Date.now()) {
   return profile;
 }
 
+function recordPlacementCredit(profile, opKey, options = {}, nowMs = Date.now()) {
+  if (!profile?.skills?.[opKey]) return profile;
+  const skill = profile.skills[opKey];
+  const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : skill.currentLevel || 1));
+  const placedOutThrough = clamp(
+    0,
+    10,
+    Math.round(Number.isFinite(options.placedOutThrough) ? options.placedOutThrough : level - 1)
+  );
+  const source = options.source || "test-me";
+  const at = nowIso(nowMs);
+  const entries = placedOutThrough > 0 ? getSkillUniverseProblems(opKey, placedOutThrough) : [];
+
+  for (const entry of entries) {
+    const problem = getProblemEntry(skill, entry.statsKey, entry.text);
+    problem.placementStatus = hasEnoughPracticeEvidence(problem)
+      ? PLACEMENT_STATUS_SUPERSEDED
+      : PLACEMENT_STATUS_PLACED_OUT;
+    problem.placementLevel = level;
+    problem.placementPlacedOutThrough = placedOutThrough;
+    problem.placementSource = source;
+    problem.placementAt = at;
+    if (problem.placementStatus === PLACEMENT_STATUS_SUPERSEDED) {
+      problem.placementSupersededAt = at;
+    } else {
+      delete problem.placementSupersededAt;
+    }
+  }
+
+  if (!Array.isArray(skill.placementCredits)) skill.placementCredits = [];
+  skill.placementCredits.push({
+    level,
+    placedOutThrough,
+    problemCount: entries.length,
+    result: PLACEMENT_STATUS_PLACED_OUT,
+    source,
+    at,
+  });
+  skill.placementCredits = normalizePlacementCredits(skill.placementCredits).slice(-20);
+  if (placedOutThrough > 0) {
+    recordLevelAdvance(profile, opKey, {
+      level: placedOutThrough,
+      result: "placed-out",
+      nowMs,
+    });
+  }
+  skill.totals.distinct = Object.keys(skill.problems).length;
+  skill.updatedAt = at;
+  profile.user.updatedAt = at;
+  updateSkillReadiness(skill);
+  return profile;
+}
+
+function hasEnoughPracticeEvidence(problem) {
+  return (problem?.attempts || 0) >= BOSS_MASTERY_MIN_ATTEMPTS;
+}
+
+function supersedePlacementCreditIfReady(problem, at = nowIso()) {
+  if (problem?.placementStatus !== PLACEMENT_STATUS_PLACED_OUT) return false;
+  if (!hasEnoughPracticeEvidence(problem)) return false;
+  problem.placementStatus = PLACEMENT_STATUS_SUPERSEDED;
+  problem.placementSupersededAt = at;
+  return true;
+}
+
+function isPlacementPlacedOut(problem) {
+  return problem?.placementStatus === PLACEMENT_STATUS_PLACED_OUT && !hasEnoughPracticeEvidence(problem);
+}
+
 function problemMastery(problem) {
+  if (isPlacementPlacedOut(problem) && (!problem || problem.attempts < BOSS_MASTERY_MIN_ATTEMPTS)) return 100;
   if (!problem || problem.attempts === 0) return 0;
   const accuracy = problemCurrentAccuracy(problem);
   const attemptScore = Math.min(problem.attempts, BOSS_MASTERY_MIN_ATTEMPTS) / BOSS_MASTERY_MIN_ATTEMPTS;
@@ -1481,6 +1569,7 @@ function weightedRecentProblemAccuracy(problem) {
 }
 
 function problemCurrentAccuracy(problem) {
+  if (isPlacementPlacedOut(problem) && (!problem || problem.attempts <= 0)) return 1;
   if (!problem || problem.attempts <= 0) return 0;
   const lifetime = problem.correct / problem.attempts;
   const recent = weightedRecentProblemAccuracy(problem);
@@ -1489,6 +1578,7 @@ function problemCurrentAccuracy(problem) {
 }
 
 function isBossMasteredProblem(problem) {
+  if (isPlacementPlacedOut(problem) && (!problem || problem.attempts < BOSS_MASTERY_MIN_ATTEMPTS)) return true;
   if (!problem || problem.attempts < BOSS_MASTERY_MIN_ATTEMPTS) return false;
   return problemCurrentAccuracy(problem) >= BOSS_MASTERY_MIN_ACCURACY;
 }
@@ -1533,7 +1623,7 @@ function computeSkillReadiness(skill) {
   const readinessDenominator = hasEnumerableUniverse
     ? universeProblems.length
     : Math.max(universeCount, problems.length);
-  if (attempts === 0 || problems.length === 0) {
+  if (problems.length === 0) {
     return {
       readiness: 0,
       bossReady: false,
@@ -1565,8 +1655,8 @@ function computeSkillReadiness(skill) {
   }
 
   const weightedCorrect = skill.totals.correct + skill.totals.helped * OUTCOME_WEIGHTS.helped;
-  const accuracy = weightedCorrect / attempts;
-  const recent = recentAccuracy(skill.recent);
+  const accuracy = attempts > 0 ? weightedCorrect / attempts : 0;
+  const recent = attempts > 0 ? recentAccuracy(skill.recent) : 0;
   const problemMasteries = problems.map(problemMastery);
   const masteredCount = hasEnumerableUniverse
     ? universeProblems.filter((problem) => isBossMasteredProblem(skill.problems[problem.statsKey])).length
@@ -1904,6 +1994,7 @@ globalThis.RainMathProgress = {
   SESSION_LOG_LIMIT,
   SPEED_TIERS,
   STORAGE_KEY,
+  PLACEMENT_STATUS_PLACED_OUT,
   computeSkillReadiness,
   createDefaultProfile,
   createEmptySkill,
@@ -1936,12 +2027,14 @@ globalThis.RainMathProgress = {
   problemCurrentAccuracy,
   problemMastery,
   isBossMasteredProblem,
+  isPlacementPlacedOut,
   readProfile,
   readProfileStore,
   recordBossAttempt,
   recordLevelAdvance,
   recordBlitzAttempt,
   recordChallengeAttempt,
+  recordPlacementCredit,
   recordProgressEvent,
   recordSessionChallenge,
   recordSessionEvent,
