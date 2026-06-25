@@ -610,6 +610,54 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#sessionReportOverlay .session-report-donate")).toHaveText("donating");
   });
 
+  test("shares a read-only report link a parent can open", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await freezeAutoSpawns(page);
+
+    for (let i = 0; i < 3; i += 1) {
+      await invoke(page, "addDrop", {
+        opKey: "add",
+        text: "1 + 1",
+        answer: 2,
+        answerText: "2",
+        statsKey: "1,1",
+        y: 120,
+      });
+      await invoke(page, "submit", "2");
+    }
+
+    // The owner sees a copy-link button in their own log.
+    await page.locator("#sessionLogLink").click();
+    await expect(page.locator("#sessionLogShareLink")).toBeVisible();
+    const code = await invoke(page, "getShareReportCode");
+    expect(code.length).toBeGreaterThan(0);
+
+    // A parent opening the #report link (fresh page = cold load) sees the same
+    // log, read-only.
+    const parent = await page.context().newPage();
+    await parent.goto(`/?test=1#report=${code}`);
+    await parent.waitForFunction(() => window.__RAIN_MATH_READY__ && window.__RAIN_MATH_TEST__);
+    await expect(parent.locator("#sessionLogOverlay")).toBeVisible();
+    await expect(parent.locator("#sessionLogOverlay")).toContainText("shared progress (read-only)");
+    await expect(parent.locator("#sessionLogOverlay")).toContainText("Practice: 3/3 correct (100%)");
+    await expect(parent.locator("#sessionLogShareLink")).toHaveCount(0);
+    let state = await parent.evaluate(() => window.__RAIN_MATH_TEST__.getState());
+    expect(state.viewingSharedReport).toBe(true);
+
+    // The same report popup renders from the shared data.
+    await parent.locator(".session-log-report").click();
+    await expect(parent.locator("#sessionReportOverlay")).toBeVisible();
+    await expect(parent.locator("#sessionReportOverlay")).toContainText("Correct/missed: 3/0");
+
+    // Exiting the shared view returns to normal play.
+    await parent.locator('#sessionReportOverlay button:has-text("Exit shared view")').click();
+    state = await parent.evaluate(() => window.__RAIN_MATH_TEST__.getState());
+    expect(state.viewingSharedReport).toBe(false);
+    await expect(parent.locator("#sessionReportOverlay")).toHaveCount(0);
+    await parent.close();
+  });
+
   test("stats grid hover text shows problem attempts and mastery state", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);

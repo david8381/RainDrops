@@ -1837,6 +1837,29 @@ button.primary:hover {
   color: var(--muted);
 }
 
+.session-log-share {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 14px 0;
+}
+
+.session-log-share-btn {
+  border: 1px solid rgba(96, 180, 240, 0.4);
+  border-radius: 8px;
+  padding: 6px 12px;
+  background: rgba(96, 180, 240, 0.14);
+  color: var(--accent-2);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.session-log-share-status {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
 .session-log-list {
   display: flex;
   flex-direction: column;
