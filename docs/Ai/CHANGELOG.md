@@ -3,6 +3,10 @@
 ## Purpose
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
+## 2026-06-27
+- Added a hidden tamper-evidence checksum to shared report links: a cyrb53 hash of the content is disguised as the trailing segment of a plausible `id` field, so someone who decodes the blob, edits scores/name, and re-encodes won't know to update it. On open, a mismatch routes to the same "looks broken or incomplete" toast. Not real security (the salt is in client JS) — just a deterrent layered on top of the compression.
+- Hardened the test matrix to run on six browser/device profiles: desktop Chromium/Firefox/WebKit plus mobile Chrome, mobile Safari, and iPad. Added a top-level spec that verifies a shared link opens read-only on every engine (the parent-on-a-phone case). Full matrix: 46 unit, 162 e2e green.
+
 ## 2026-06-26
 - Added a new operation, **Powers & Roots** (`xⁿ` chit, its own op set), a level-gated cumulative ladder of 10 levels: L1–L2 squares (2²–12²), L3 square roots, L4 powers of 10, L5 roots of 10, L6 powers of 2, L7 cubes, L8 cube roots, L9 powers of 3, L10 negative powers of 10. Roots use perfect powers so answers stay whole; negative powers are clean terminating decimals; all answers clear immediately like arithmetic. Notation uses superscripts (`7²`, `10⁻³`) and radicals (`√`, `∛`).
 

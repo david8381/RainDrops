@@ -20,13 +20,31 @@ export default defineConfig({
     stderr: "pipe",
   },
   projects: [
+    // Desktop browsers
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
     {
+      name: "firefox",
+      use: { ...devices["Desktop Firefox"] },
+    },
+    {
+      name: "webkit",
+      use: { ...devices["Desktop Safari"] },
+    },
+    // Touch devices (phones run the touch keypad; iPad is a tablet WebKit)
+    {
       name: "mobile-chrome",
       use: { ...devices["Pixel 5"] },
+    },
+    {
+      name: "mobile-safari",
+      use: { ...devices["iPhone 13"] },
+    },
+    {
+      name: "ipad",
+      use: { ...devices["iPad (gen 7)"] },
     },
   ],
 });

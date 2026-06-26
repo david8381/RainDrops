@@ -32,6 +32,7 @@ const {
   getSelectionWeight,
   isComposite,
   isPrime,
+  hashString,
   matchesFactorDrop,
   normalizeTypedValue,
   parseNumericAnswer,
@@ -72,6 +73,13 @@ describe("numeric utilities", () => {
     assert.ok(Number.isNaN(parseNumericAnswer("9/"))); // still typing
     assert.ok(Number.isNaN(parseNumericAnswer("abc")));
     assert.ok(Number.isNaN(parseNumericAnswer("")));
+  });
+
+  it("hashString is deterministic and sensitive to changes", () => {
+    assert.equal(hashString("hello"), hashString("hello"));
+    assert.notEqual(hashString("hello"), hashString("hellp"));
+    assert.notEqual(hashString("hello"), hashString("hello", 1)); // seed matters
+    assert.match(hashString("anything"), /^[0-9a-z]+$/); // base36
   });
 
   it("formats and shifts fixed-scale decimal values", () => {

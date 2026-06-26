@@ -116,6 +116,27 @@ test("first visit menu creates a player, starts the tutorial, and enters play", 
   expect(await page.evaluate(() => localStorage.getItem("rainMath.welcomeSeen.v1"))).toBe("1");
 });
 
+// Runs on every project (desktop + mobile + iPad): a parent commonly opens a
+// shared link on their phone, so the decode/decompress/checksum/view path must
+// work on every browser engine, not just desktop.
+test("a shared report link opens read-only on this device", async ({ page }) => {
+  await openApp(page);
+  await invoke(page, "enableOps", ["add"]);
+  await invoke(page, "setControls", { speed: 0, drops: 0 });
+  await invoke(page, "addDrop", { opKey: "add", text: "1 + 1", answer: 2, answerText: "2", statsKey: "1,1", y: 120 });
+  const state = await invoke(page, "submit", "2");
+  const code = await invoke(page, "getShareReportCode", state.activeSessionId);
+  expect(code.length).toBeGreaterThan(0);
+
+  const parent = await page.context().newPage();
+  await parent.goto(`/?test=1#report=${code}`);
+  await parent.waitForFunction(() => window.__RAIN_MATH_READY__ && window.__RAIN_MATH_TEST__);
+  await expect(parent.locator("#sessionReportOverlay")).toBeVisible();
+  await expect(parent.locator("#sessionReportOverlay")).toContainText("Shared progress (read-only)");
+  expect((await parent.evaluate(() => window.__RAIN_MATH_TEST__.getState())).viewingSharedReport).toBe(true);
+  await parent.close();
+});
+
 test.describe("desktop gameplay", () => {
   test.skip(({ isMobile }) => isMobile, "desktop-only input bar flows");
 
@@ -694,6 +715,27 @@ test.describe("desktop gameplay", () => {
     await page.locator('#sessionReportOverlay button:has-text("Exit shared view")').click();
     await page.evaluate(() => { window.location.hash = "#report=1this-is-not-valid-deflate"; });
     await expect(page.locator("#bossOfferToast")).toContainText("broken or incomplete");
+  });
+
+  test("rejects a tampered report link via the hidden checksum", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await freezeAutoSpawns(page);
+    await invoke(page, "addDrop", { opKey: "add", text: "1 + 1", answer: 2, answerText: "2", statsKey: "1,1", y: 120 });
+    const state = await invoke(page, "submit", "2");
+
+    // A valid link opens; an edited-content link (stale checksum) is rejected.
+    const good = await invoke(page, "getShareReportCode", state.activeSessionId);
+    const tampered = await invoke(page, "getTamperedReportCode", state.activeSessionId);
+    expect(tampered).not.toEqual(good);
+
+    const parent = await page.context().newPage();
+    await parent.goto(`/?test=1#report=${tampered}`);
+    await parent.waitForFunction(() => window.__RAIN_MATH_READY__ && window.__RAIN_MATH_TEST__);
+    await expect(parent.locator("#bossOfferToast")).toContainText("broken or incomplete");
+    await expect(parent.locator("#sessionReportOverlay")).toHaveCount(0);
+    expect((await parent.evaluate(() => window.__RAIN_MATH_TEST__.getState())).viewingSharedReport).toBe(false);
+    await parent.close();
   });
 
   test("stats grid hover text shows problem attempts and mastery state", async ({ page }) => {

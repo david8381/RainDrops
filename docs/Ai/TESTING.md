@@ -3,7 +3,7 @@
 ## First-Time Setup
 1. Install Node 24 or newer.
 2. Run `npm install`.
-3. Run `npx playwright install chromium`.
+3. Run `npx playwright install chromium firefox webkit` (the e2e matrix runs on all three engines plus mobile/iPad device profiles).
 
 The app has no production build step. These commands install only developer test tooling.
 
@@ -18,11 +18,23 @@ The app has no production build step. These commands install only developer test
 - Unit tests cover numeric normalization, decimal shifting, difficulty ranges, problem generation, SI conversions, geometry formulas, prime checks, factorization parsing/progression, problem stats, mastery, weighted selection, local profile persistence, single-profile migration, local profile create/switch behavior, 3-attempt/90%-current-accuracy boss readiness scoring with a 100% unlock gate and 80% finish-focus practice helper, Speed/Drops settings sync, pressure-tier compatibility metadata, boss clears, mastery-advance records, level-specific Blitz attempts/bests, generalized Blitz/Wave/Worksheet challenge bests, and practice suggestions.
 - Browser tests cover loading, canvas paint, operation toggles, difficulty/readiness controls, Speed/Drops controls, Grid hints and hover tooltips for stats popups, falling-drop accuracy/evidence shading, Spacebar Breather mode, mastery-before-level-advance gating, optional Next Level advancement, boss HUD/stun behavior, locked boss Speed/Drops/operation/level-control behavior, persisted unlocked-level reloads, Blitz shield scoring, full Wave 1/Wave 2/Worksheet boss sequencing, Wave/Worksheet replay buttons, immediate numeric clearing, Enter-required SI and factorization answers, Tab-targeted factorization, pause/restart, local login/profile switching, clear-stats, feedback, stats/log/report overlays, removed Results-tab checks, and mobile keypad/layout controls.
 
+## Browser/device matrix
+`playwright.config.mjs` runs every spec across six projects: desktop `chromium`,
+`firefox`, and `webkit` (Safari engine), plus touch profiles `mobile-chrome`
+(Pixel 5), `mobile-safari` (iPhone 13), and `ipad` (iPad gen 7). Desktop-only
+input-bar specs skip on touch profiles and vice versa via `test.skip(isMobile)`.
+The shared-report link path (compress/decompress + checksum + read-only view) is
+also covered by one top-level spec that runs on **all** projects, since a parent
+often opens a shared link on a phone or iPad.
+
 ## CI
 `.github/workflows/tests.yml` runs on pushes to `main`, pull requests, and manual dispatch:
 1. `npm ci`
 2. `npx playwright install --with-deps chromium`
 3. `npm run test:ci`
+
+Note: CI currently installs only `chromium`; the full local matrix additionally
+needs `firefox` and `webkit` (`npx playwright install firefox webkit`).
 
 The existing GitHub Pages deploy workflow remains separate.
 

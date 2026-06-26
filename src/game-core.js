@@ -543,6 +543,23 @@ function toSuperscript(n) {
     .join("");
 }
 
+// Deterministic, cross-browser 53-bit string hash (cyrb53), returned as base36.
+// Not cryptographic — used only as a tamper-evidence checksum for share links.
+function hashString(str, seed = 0) {
+  let h1 = 0xdeadbeef ^ seed;
+  let h2 = 0x41c6ce57 ^ seed;
+  const s = String(str);
+  for (let i = 0; i < s.length; i += 1) {
+    const ch = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  const n = 4294967296 * (2097151 & h2) + (h1 >>> 0);
+  return n.toString(36);
+}
+
 function formatFactorization(collected, remaining) {
   const parts = [];
   const primes = Object.keys(collected)
@@ -980,6 +997,7 @@ globalThis.RainMathCore = {
   siBaseUnits,
   siPrefixes,
   toSuperscript,
+  hashString,
   weightedPick,
 };
 })();
