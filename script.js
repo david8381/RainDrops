@@ -5,6 +5,7 @@ const {
   createProblemStats,
   expDiffToConversion,
   makeShapeProblemFromKey,
+  makePowProblemFromKey,
   makeF10ProblemFromKey,
   formatF10StatsKey,
   generateProblem,
@@ -745,6 +746,7 @@ const OP_SETS = {
   div: "arithmetic",
   f10: "arithmetic",
   shapes: "shapes",
+  pow: "pow",
   si: "si",
   factor: "factor",
 };
@@ -965,6 +967,9 @@ function makeProblemFromUniverseEntry(opKey, entry, level = opConfig[opKey]?.dif
   }
   if (opKey === "shapes") {
     return makeShapeProblemFromKey(statsKey);
+  }
+  if (opKey === "pow") {
+    return makePowProblemFromKey(statsKey);
   }
   if (opKey === "f10") {
     return makeF10ProblemFromKey(statsKey);
@@ -1416,7 +1421,7 @@ function positionBossProblems(part) {
   const count = liveProblems.length;
   if (count === 0) return;
 
-  const wide = ["si", "shapes"].includes(bossMode?.opKey);
+  const wide = ["si", "shapes", "pow"].includes(bossMode?.opKey);
   const nodeScale = Math.min(getTextScale(), 1.34);
   const nodeW = Math.round((wide ? 86 : 56) * nodeScale);
   const nodeH = Math.round(26 * Math.min(getTextScale(), 1.28));
@@ -3741,6 +3746,7 @@ const opDisplayLabels = {
   f10: "x10",
   si: "SI",
   shapes: "\u25b1",
+  pow: "x\u207f",
   factor: "p\u00b7q",
 };
 
@@ -3752,6 +3758,7 @@ const opDisplayNames = {
   f10: "Factors of 10",
   si: "SI Conversions",
   shapes: "Shapes (P & A)",
+  pow: "Powers & Roots",
   factor: "Prime Factors",
 };
 
@@ -4227,9 +4234,11 @@ function updateInputHint() {
   const hasBasic = enabled.some((op) => ["add", "sub", "mul", "div", "f10"].includes(op));
   const hasSI = enabled.includes("si");
   const hasShapes = enabled.includes("shapes");
+  const hasPow = enabled.includes("pow");
   const hasFactor = enabled.includes("factor");
-  if (hasBasic || hasShapes) hints.push("Type answer to clear");
+  if (hasBasic || hasShapes || hasPow) hints.push("Type answer to clear");
   if (hasShapes) hints.push("Shapes: type the value; ○ is the π coefficient");
+  if (hasPow) hints.push("Powers/roots: type the value (e.g. 7² → 49, √81 → 9)");
   if (hasSI) hints.push("SI: type *1000 or /100 + Enter");
   if (hasFactor) hints.push("p·q: type 2^2*3 + Enter, or Tab to factor");
   hints.push("Spacebar: pause drops until clear");
@@ -4704,7 +4713,7 @@ function showStatsPopup(opKey) {
   if (opKey === "si") {
     card.appendChild(buildSIReferenceTable());
     card.appendChild(buildListStats(opKey, stats));
-  } else if (opKey === "f10" || opKey === "factor" || opKey === "shapes") {
+  } else if (opKey === "f10" || opKey === "factor" || opKey === "shapes" || opKey === "pow") {
     card.appendChild(buildListStats(opKey, stats));
   } else {
     card.appendChild(buildGridStats(opKey, stats));
@@ -6688,9 +6697,11 @@ function buildListStats(opKey, stats) {
       ? formatSIStatsKey(text)
       : opKey === "shapes"
         ? makeShapeProblemFromKey(text).text
-        : opKey === "f10"
-          ? formatF10StatsKey(text)
-          : text;
+        : opKey === "pow"
+          ? makePowProblemFromKey(text).text
+          : opKey === "f10"
+            ? formatF10StatsKey(text)
+            : text;
     attachStatsTooltip(row, getStatsTooltip(opKey, text, label, entry.asked, entry.correct));
 
     const problem = document.createElement("span");

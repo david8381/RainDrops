@@ -35,7 +35,7 @@ test("loads without page errors and paints the canvas", async ({ page }) => {
   await expect(page).toHaveTitle("Rain Math");
   await expect(page.locator("#canvas")).toBeVisible();
   await expect(page.locator(".stats .label")).toHaveText("Cleared");
-  await expect(page.locator(".op-chit")).toHaveCount(8);
+  await expect(page.locator(".op-chit")).toHaveCount(9);
   expect(pageErrors).toEqual([]);
 
   const hasPaintedPixel = await page.locator("#canvas").evaluate((canvas) => {
@@ -58,7 +58,7 @@ test("loads directly from index.html and operation chits respond", async ({ page
   if (await page.locator("#welcomeOverlay").isVisible()) {
     await page.locator("#welcomePlay").click();
   }
-  await expect(page.locator(".op-chit")).toHaveCount(8);
+  await expect(page.locator(".op-chit")).toHaveCount(9);
 
   await page.locator('.op-chit[data-op="add"]').click();
   await expect(page.locator('.op-chit[data-op="add"]')).toHaveClass(/active/);
@@ -340,6 +340,23 @@ test.describe("desktop gameplay", () => {
 
     await invoke(page, "submit", "9/2");
     await expect(page.locator("#score")).toHaveText("1");
+    expect((await invoke(page, "getState")).drops).toHaveLength(0);
+  });
+
+  test("clears powers and roots, including a negative power of 10", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["pow"]);
+    await freezeAutoSpawns(page);
+
+    // A square clears on the integer answer.
+    await invoke(page, "addDrop", { opKey: "pow", text: "7²", answer: 49, answerText: "49", statsKey: "sq,7", y: 120 });
+    await invoke(page, "submit", "49");
+    await expect(page.locator("#score")).toHaveText("1");
+
+    // A negative power of 10 clears on the decimal answer.
+    await invoke(page, "addDrop", { opKey: "pow", text: "10⁻³", answer: 0.001, answerText: "0.001", statsKey: "neg10,3", y: 120 });
+    await invoke(page, "submit", "0.001");
+    await expect(page.locator("#score")).toHaveText("2");
     expect((await invoke(page, "getState")).drops).toHaveLength(0);
   });
 
@@ -1362,7 +1379,7 @@ test.describe("mobile gameplay", () => {
 
     await expect(page.locator("#touchKeypad")).toBeVisible();
     await expect(page.locator(".touch-score")).toContainText("Cleared:");
-    await expect(page.locator(".op-chit")).toHaveCount(8);
+    await expect(page.locator(".op-chit")).toHaveCount(9);
     const opChitMetrics = await page.locator(".op-chits").evaluate((el) => {
       const rect = el.getBoundingClientRect();
       const visibleCount = [...el.children].filter((child) => {
@@ -1375,7 +1392,7 @@ test.describe("mobile gameplay", () => {
         visibleCount,
       };
     });
-    expect(opChitMetrics.visibleCount).toBe(8);
+    expect(opChitMetrics.visibleCount).toBe(9);
     expect(opChitMetrics.scrollWidth).toBeLessThanOrEqual(opChitMetrics.clientWidth + 2);
     await page.locator('.kp-key[data-key="1"]').click();
     await page.locator('.kp-key[data-key="2"]').click();

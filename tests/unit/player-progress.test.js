@@ -74,6 +74,7 @@ describe("player progress profile", () => {
       "f10",
       "si",
       "shapes",
+      "pow",
       "factor",
     ]);
     assert.equal(profile.skills.add.currentLevel, 1);

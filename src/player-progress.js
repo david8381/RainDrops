@@ -90,6 +90,7 @@ const {
   getF10Universe,
   getFactorUniverse,
   getShapesUniverse,
+  getPowUniverse,
   getSIPrefixesForDifficulty,
   operationDefaults,
   clamp,
@@ -338,6 +339,10 @@ function getSkillUniverseSize(opKey, level) {
     return getShapesUniverse(level).length;
   }
 
+  if (opKey === "pow") {
+    return getPowUniverse(level).length;
+  }
+
   if (opKey === "si") {
     const prefixes = getSIPrefixesForDifficulty(level);
     return prefixes.length * Math.max(0, prefixes.length - 1);
@@ -376,6 +381,10 @@ function getSkillUniverseProblems(opKey, level) {
 
   if (opKey === "shapes") {
     return getShapesUniverse(level).map((problem) => ({ statsKey: problem.statsKey, text: problem.text }));
+  }
+
+  if (opKey === "pow") {
+    return getPowUniverse(level).map((problem) => ({ statsKey: problem.statsKey, text: problem.text }));
   }
 
   if (opKey === "f10") {

@@ -15,6 +15,9 @@ const {
   makeShapeProblem,
   makeShapeProblemFromKey,
   getShapesUniverse,
+  makePowProblem,
+  makePowProblemFromKey,
+  getPowUniverse,
   getF10Universe,
   makeF10ProblemFromKey,
   factorDifficulty,
@@ -160,6 +163,42 @@ describe("problem generation", () => {
     assert.equal(div.statsKey, "div,1,2");
     assert.equal(Number(div.answerText), div.answer);
     assert.match(div.text, /÷ 100$/);
+  });
+
+  it("builds powers & roots with clean answers and a cumulative level ladder", () => {
+    // Each family's formula and notation.
+    assert.deepEqual(
+      { t: makePowProblem("sq", 7).text, a: makePowProblem("sq", 7).answer },
+      { t: "7²", a: 49 }
+    );
+    assert.deepEqual({ t: makePowProblem("sqrt", 9).text, a: makePowProblem("sqrt", 9).answer }, { t: "√81", a: 9 });
+    assert.deepEqual({ t: makePowProblem("cube", 4).text, a: makePowProblem("cube", 4).answer }, { t: "4³", a: 64 });
+    assert.deepEqual({ t: makePowProblem("cbrt", 6).text, a: makePowProblem("cbrt", 6).answer }, { t: "∛216", a: 6 });
+    assert.deepEqual({ t: makePowProblem("pow", 10, 4).text, a: makePowProblem("pow", 10, 4).answer }, { t: "10⁴", a: 10000 });
+    assert.deepEqual({ t: makePowProblem("pow", 2, 8).text, a: makePowProblem("pow", 2, 8).answer }, { t: "2⁸", a: 256 });
+    assert.deepEqual({ t: makePowProblem("pow", 3, 5).text, a: makePowProblem("pow", 3, 5).answer }, { t: "3⁵", a: 243 });
+    assert.deepEqual({ t: makePowProblem("root10", 3, 1).text, a: makePowProblem("root10", 3, 1).answer }, { t: "∛1000", a: 10 });
+
+    // Negative powers of 10 must be clean terminating decimals, not 1e-6.
+    const neg = makePowProblem("neg10", 6);
+    assert.equal(neg.text, "10⁻⁶");
+    assert.equal(neg.answer, 0.000001);
+    assert.equal(neg.answerText, "0.000001");
+
+    // statsKey round-trips.
+    const rt = makePowProblemFromKey("pow,2,8");
+    assert.equal(rt.opKey, "pow");
+    assert.equal(rt.answer, 256);
+
+    // Cumulative ladder: squares at L1, square roots by L3, negatives only at L10.
+    const keysAt = (lvl) => getPowUniverse(lvl).map((p) => p.statsKey);
+    assert.ok(keysAt(1).includes("sq,7"));
+    assert.ok(!keysAt(1).includes("sqrt,9"));
+    assert.ok(keysAt(3).includes("sqrt,9"));
+    assert.ok(!keysAt(9).some((k) => k.startsWith("neg10")));
+    assert.ok(keysAt(10).some((k) => k.startsWith("neg10")));
+    assert.equal(getPowUniverse(1).length, 6); // squares 2–7
+    assert.equal(getPowUniverse(11).length, getPowUniverse(10).length); // clamps at 10
   });
 
   it("generates shape problems with known formulas", () => {

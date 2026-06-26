@@ -3,6 +3,9 @@
 ## Purpose
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
+## 2026-06-26
+- Added a new operation, **Powers & Roots** (`xⁿ` chit, its own op set), a level-gated cumulative ladder of 10 levels: L1–L2 squares (2²–12²), L3 square roots, L4 powers of 10, L5 roots of 10, L6 powers of 2, L7 cubes, L8 cube roots, L9 powers of 3, L10 negative powers of 10. Roots use perfect powers so answers stay whole; negative powers are clean terminating decimals; all answers clear immediately like arithmetic. Notation uses superscripts (`7²`, `10⁻³`) and radicals (`√`, `∛`).
+
 ## 2026-06-25
 - Made the share action a per-report "Share with a parent" button on the session Report (native share sheet) plus a separate "Copy link" button (some apps, e.g. copying a link inside iMessage, corrupt long URLs — an in-app copy avoids that), sharing just that one session; opening the link lands the parent straight on that read-only report. (Earlier same-day iteration shared the whole log from the Session Log popup.)
 - A shared `#report` link now also opens when the hash changes on an already-loaded tab (not just on a cold load), and a broken/truncated link shows a friendly "looks broken or incomplete" toast instead of doing nothing.

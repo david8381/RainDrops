@@ -14,6 +14,7 @@ const operationDefaults = {
   f10: { enabled: false, difficulty: 1, symbol: "×10", label: "x10" },
   si: { enabled: false, difficulty: 1, symbol: "SI", label: "SI" },
   shapes: { enabled: false, difficulty: 1, symbol: "▱", label: "▱" },
+  pow: { enabled: false, difficulty: 1, symbol: "xⁿ", label: "xⁿ" },
   factor: { enabled: false, difficulty: 1, symbol: "n!", label: "n!" },
 };
 
@@ -141,6 +142,10 @@ function getDifficultyRange(opKey, difficulty) {
 
   if (opKey === "shapes") {
     return { min: SHAPES_DIM_MIN, max: SHAPES_DIM_MAX };
+  }
+
+  if (opKey === "pow") {
+    return { min: 1, max: POW_MAX_LEVEL };
   }
 
   if (opKey === "factor") {
@@ -432,6 +437,68 @@ function generateShapesProblem(difficulty = 1, rng = Math.random) {
   return universe[randInt(0, universe.length - 1, rng)];
 }
 
+// ── Powers & Roots ────────────────────────────────────────────────
+// One level-gated, cumulative operation. Each level adds a family of powers or
+// roots; the level ladder is ordered easy→hard and tops out at level 10 (the
+// hardest, negative powers of 10). All answers are whole numbers or clean
+// terminating decimals, so they clear immediately like ordinary arithmetic.
+const POW_MAX_LEVEL = 10;
+
+// Builds a power/root problem. Roots always use perfect powers so answers stay
+// whole. Kinds: sq (x²), cube (x³), sqrt (√x²→x), cbrt (∛x³→x), pow (base^exp),
+// neg10 (10⁻ᵉ), root10 (degree-d root of a power of 10).
+function makePowProblem(kind, a, b) {
+  let text;
+  let answer;
+  let statsKey;
+  if (kind === "sq") {
+    answer = a * a; text = `${a}²`; statsKey = `sq,${a}`;
+  } else if (kind === "cube") {
+    answer = a * a * a; text = `${a}³`; statsKey = `cube,${a}`;
+  } else if (kind === "sqrt") {
+    answer = a; text = `√${a * a}`; statsKey = `sqrt,${a}`;
+  } else if (kind === "cbrt") {
+    answer = a; text = `∛${a * a * a}`; statsKey = `cbrt,${a}`;
+  } else if (kind === "pow") {
+    answer = Math.pow(a, b); text = `${a}${toSuperscript(b)}`; statsKey = `pow,${a},${b}`;
+  } else if (kind === "neg10") {
+    answer = Math.pow(10, -a); text = `10${toSuperscript(`-${a}`)}`; statsKey = `neg10,${a}`;
+  } else {
+    // root10: a = degree (2 or 3), b = k; radical of 10^(a*b) = 10^b
+    answer = Math.pow(10, b);
+    text = `${a === 2 ? "√" : "∛"}${Math.pow(10, a * b)}`;
+    statsKey = `root10,${a},${b}`;
+  }
+  return { text, answer, answerText: String(answer), opKey: "pow", statsKey };
+}
+
+function makePowProblemFromKey(statsKey) {
+  const [kind, ...rest] = statsKey.split(",");
+  const nums = rest.map(Number);
+  return makePowProblem(kind, nums[0], nums[1]);
+}
+
+function getPowUniverse(level) {
+  const lvl = clamp(1, POW_MAX_LEVEL, Math.round(level || 1));
+  const problems = [];
+  if (lvl >= 1) for (let x = 2; x <= 7; x += 1) problems.push(makePowProblem("sq", x)); // squares (small)
+  if (lvl >= 2) for (let x = 8; x <= 12; x += 1) problems.push(makePowProblem("sq", x)); // squares (full)
+  if (lvl >= 3) for (let x = 2; x <= 12; x += 1) problems.push(makePowProblem("sqrt", x)); // square roots
+  if (lvl >= 4) for (let e = 1; e <= 6; e += 1) problems.push(makePowProblem("pow", 10, e)); // powers of 10
+  if (lvl >= 5) for (const [deg, k] of [[2, 1], [2, 2], [2, 3], [3, 1], [3, 2]]) problems.push(makePowProblem("root10", deg, k)); // roots of 10
+  if (lvl >= 6) for (let e = 1; e <= 10; e += 1) problems.push(makePowProblem("pow", 2, e)); // powers of 2
+  if (lvl >= 7) for (let x = 2; x <= 10; x += 1) problems.push(makePowProblem("cube", x)); // cubes
+  if (lvl >= 8) for (let x = 2; x <= 10; x += 1) problems.push(makePowProblem("cbrt", x)); // cube roots
+  if (lvl >= 9) for (let e = 1; e <= 6; e += 1) problems.push(makePowProblem("pow", 3, e)); // powers of 3
+  if (lvl >= 10) for (let e = 1; e <= 6; e += 1) problems.push(makePowProblem("neg10", e)); // negative powers of 10
+  return problems;
+}
+
+function generatePowProblem(difficulty = 1, rng = Math.random) {
+  const universe = getPowUniverse(difficulty);
+  return universe[randInt(0, universe.length - 1, rng)];
+}
+
 function isPrime(n) {
   if (n < 2) return false;
   if (n < 4) return true;
@@ -466,6 +533,7 @@ const SUPERSCRIPTS = {
   "7": "\u2077",
   "8": "\u2078",
   "9": "\u2079",
+  "-": "\u207b",
 };
 
 function toSuperscript(n) {
@@ -602,6 +670,7 @@ function generateProblem(opKey, opConfig, rng = Math.random) {
 
   if (opKey === "factor") return generateFactorProblem(config.difficulty, rng);
   if (opKey === "shapes") return generateShapesProblem(config.difficulty, rng);
+  if (opKey === "pow") return generatePowProblem(config.difficulty, rng);
   if (opKey === "si") return generateSIProblem(config.difficulty, rng);
   if (opKey === "f10") return generateFactorsOfTenProblem(config.difficulty, rng);
 
@@ -686,6 +755,15 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
     const items = getShapesUniverse(config.difficulty).map((problem) => ({
       value: problem,
       weight: getSelectionWeight(getMastery(problemStats, "shapes", problem.statsKey, masteryLookup)),
+    }));
+    if (items.length === 0) return generateProblem(opKey, opConfig, rng);
+    return weightedPick(items, rng);
+  }
+
+  if (opKey === "pow") {
+    const items = getPowUniverse(config.difficulty).map((problem) => ({
+      value: problem,
+      weight: getSelectionWeight(getMastery(problemStats, "pow", problem.statsKey, masteryLookup)),
     }));
     if (items.length === 0) return generateProblem(opKey, opConfig, rng);
     return weightedPick(items, rng);
@@ -864,6 +942,7 @@ globalThis.RainMathCore = {
   generateFactorsOfTenProblem,
   generateProblem,
   generateShapesProblem,
+  generatePowProblem,
   generateSIProblem,
   generateWeightedProblem,
   getDifficultyRange,
@@ -873,6 +952,10 @@ globalThis.RainMathCore = {
   makeShapeProblem,
   makeShapeProblemFromKey,
   SHAPE_DEFS,
+  getPowUniverse,
+  makePowProblem,
+  makePowProblemFromKey,
+  POW_MAX_LEVEL,
   getFactorRemainingText,
   getFullFactorization,
   getMastery,
