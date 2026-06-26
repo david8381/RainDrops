@@ -4990,12 +4990,16 @@ async function copyTextToClipboard(text, statusEl, okMsg = "Copied.") {
 
 // Public, read-only share blob: just the name + recent session log, which is all
 // the log/report popups render. Encoded as URL-safe base64 (unicode-safe).
-function buildSharedReportPayload(profile = progressProfile) {
+// A share blob carries the name plus session(s). Pass a sessionId to share just
+// that one session's report (the common "share what I did today" case); omit it
+// to share the recent log (capped so the link stays sendable).
+function buildSharedReportPayload(profile = progressProfile, sessionId = null) {
+  const all = Array.isArray(profile?.sessionLog) ? profile.sessionLog : [];
+  const sessions = sessionId ? all.filter((s) => s.id === sessionId) : all.slice(0, 10);
   return {
     v: 1,
     name: profile?.user?.name || "Player",
-    // Cap to the most recent sessions so the link stays short enough to send.
-    sessionLog: Array.isArray(profile?.sessionLog) ? profile.sessionLog.slice(0, 10) : [],
+    sessionLog: sessions,
   };
 }
 
@@ -5050,8 +5054,8 @@ async function inflateRawFromB64url(b64) {
 // The share code is one scheme tag + body: "1" = deflate-raw (huge size win on
 // the repetitive session JSON, and decoded bytes aren't human-readable), "0" =
 // plain base64 fallback. Anything else is treated as a legacy untagged plain code.
-async function getShareReportCode(profile = progressProfile) {
-  const payload = buildSharedReportPayload(profile);
+async function getShareReportCode(profile = progressProfile, sessionId = null) {
+  const payload = buildSharedReportPayload(profile, sessionId);
   if (typeof CompressionStream === "function") {
     try {
       return `1${await deflateRawToB64url(JSON.stringify(payload))}`;
@@ -5078,19 +5082,40 @@ async function decodeShareReportCode(code) {
   }
 }
 
-async function getSharedReportLink(profile = progressProfile) {
+async function getSharedReportLink(profile = progressProfile, sessionId = null) {
   const base = `${window.location.origin}${window.location.pathname}`;
-  return `${base}#report=${await getShareReportCode(profile)}`;
+  return `${base}#report=${await getShareReportCode(profile, sessionId)}`;
+}
+
+// Share a single report with a parent: native share sheet when available
+// ("send it to their parents"), otherwise copy the link to the clipboard.
+async function shareReportWithParent(sessionId, statusEl) {
+  if (statusEl) statusEl.textContent = "Preparing link…";
+  const url = await getSharedReportLink(progressProfile, sessionId);
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: "Rain Math report", url });
+      if (statusEl) statusEl.textContent = "Shared.";
+      return;
+    } catch {
+      /* cancelled or unsupported — fall back to copying */
+    }
+  }
+  copyTextToClipboard(url, statusEl, "Link copied — send it to a parent.");
 }
 
 function openSharedReportView(payload) {
   if (!payload || payload.v !== 1) return false;
+  const sessions = Array.isArray(payload.sessionLog) ? payload.sessionLog : [];
   reportViewProfile = {
     user: { name: typeof payload.name === "string" ? payload.name : "Player" },
-    sessionLog: Array.isArray(payload.sessionLog) ? payload.sessionLog : [],
+    sessionLog: sessions,
     skills: {},
   };
-  buildSessionLogPopup();
+  // A single shared session opens straight to its report; a multi-session log
+  // opens the list.
+  if (sessions.length === 1) buildSessionReportPopup(sessions[0].id);
+  else buildSessionLogPopup();
   return true;
 }
 
@@ -5151,25 +5176,6 @@ function buildSessionLogPopup() {
     ? `Viewing ${active.textContent}'s shared progress (read-only). Open any session for its report.`
     : "Each visit or player switch creates a local session. Boss/challenge work is listed separately from ordinary practice accuracy.";
   card.appendChild(sub);
-
-  if (!viewing) {
-    const share = document.createElement("div");
-    share.className = "session-log-share";
-    const shareBtn = document.createElement("button");
-    shareBtn.type = "button";
-    shareBtn.id = "sessionLogShareLink";
-    shareBtn.className = "session-log-share-btn";
-    shareBtn.textContent = "Copy parent link";
-    const shareStatus = document.createElement("span");
-    shareStatus.className = "session-log-share-status";
-    shareStatus.setAttribute("aria-live", "polite");
-    shareBtn.addEventListener("click", async () => {
-      shareStatus.textContent = "Preparing link…";
-      copyTextToClipboard(await getSharedReportLink(), shareStatus, "Link copied — send it to a parent.");
-    });
-    share.append(shareBtn, shareStatus);
-    card.appendChild(share);
-  }
 
   const list = document.createElement("div");
   list.className = "session-log-list";
@@ -5252,8 +5258,9 @@ function buildSessionReportPopup(sessionId) {
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-modal", "true");
   overlay.setAttribute("aria-label", "Session report");
+  const viewing = isViewingSharedReport();
   overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) closeSessionReportPopup();
+    if (e.target === overlay) (viewing ? exitSharedReportView() : closeSessionReportPopup());
   });
 
   const card = document.createElement("div");
@@ -5262,7 +5269,9 @@ function buildSessionReportPopup(sessionId) {
   const header = document.createElement("div");
   header.className = "session-report-header";
   const title = document.createElement("h2");
-  title.textContent = "Session Report";
+  title.textContent = viewing
+    ? `${getReportProfile()?.user?.name || "Shared"}'s Report`
+    : "Session Report";
   const meta = document.createElement("div");
   meta.className = "session-report-meta";
   meta.textContent = `${formatSessionStartedAt(session.startedAt)} · ${formatDuration(session.durationMs)}`;
@@ -5272,8 +5281,26 @@ function buildSessionReportPopup(sessionId) {
 
   const sub = document.createElement("p");
   sub.className = "session-report-sub";
-  sub.textContent = "Per-operation progress for this saved session. Time is engaged problem time, capped per problem so idle tabs do not inflate it.";
+  sub.textContent = viewing
+    ? "Shared progress (read-only)."
+    : "Per-operation progress for this saved session. Time is engaged problem time, capped per problem so idle tabs do not inflate it.";
   card.appendChild(sub);
+
+  if (!viewing) {
+    const share = document.createElement("div");
+    share.className = "session-report-share";
+    const shareBtn = document.createElement("button");
+    shareBtn.type = "button";
+    shareBtn.id = "sessionReportShare";
+    shareBtn.className = "session-report-share-btn";
+    shareBtn.textContent = "Share with a parent";
+    const shareStatus = document.createElement("span");
+    shareStatus.className = "session-report-share-status";
+    shareStatus.setAttribute("aria-live", "polite");
+    shareBtn.addEventListener("click", () => shareReportWithParent(session.id, shareStatus));
+    share.append(shareBtn, shareStatus);
+    card.appendChild(share);
+  }
 
   const summary = document.createElement("div");
   summary.className = "session-report-summary";
@@ -5365,6 +5392,7 @@ function buildSessionReportPopup(sessionId) {
   backBtn.type = "button";
   backBtn.className = "session-report-back";
   backBtn.textContent = "Back to Log";
+  backBtn.hidden = viewing;
   backBtn.addEventListener("click", () => {
     closeSessionReportPopup();
     buildSessionLogPopup();
@@ -5372,9 +5400,9 @@ function buildSessionReportPopup(sessionId) {
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
   closeBtn.className = "primary";
-  closeBtn.textContent = isViewingSharedReport() ? "Exit shared view" : "Close";
-  closeBtn.addEventListener("click", () => (isViewingSharedReport() ? exitSharedReportView() : closeSessionReportPopup()));
-  actions.appendChild(backBtn);
+  closeBtn.textContent = viewing ? "Exit shared view" : "Close";
+  closeBtn.addEventListener("click", () => (viewing ? exitSharedReportView() : closeSessionReportPopup()));
+  if (!viewing) actions.appendChild(backBtn);
   actions.appendChild(closeBtn);
   card.appendChild(actions);
 
@@ -7545,8 +7573,8 @@ function installTestHooks() {
       acceptPlacementLevel(level);
       return getTestState();
     },
-    getShareReportCode() {
-      return getShareReportCode(); // async — resolved by page.evaluate
+    getShareReportCode(sessionId = null) {
+      return getShareReportCode(progressProfile, sessionId); // async — resolved by page.evaluate
     },
     enableOps(opKeys) {
       Object.keys(opConfig).forEach((key) => {

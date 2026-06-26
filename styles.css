@@ -1837,7 +1837,7 @@ button.primary:hover {
   color: var(--muted);
 }
 
-.session-log-share {
+.session-report-share {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1845,7 +1845,7 @@ button.primary:hover {
   margin: 0 0 14px 0;
 }
 
-.session-log-share-btn {
+.session-report-share-btn {
   border: 1px solid rgba(96, 180, 240, 0.4);
   border-radius: 8px;
   padding: 6px 12px;
@@ -1855,7 +1855,7 @@ button.primary:hover {
   cursor: pointer;
 }
 
-.session-log-share-status {
+.session-report-share-status {
   font-size: 0.78rem;
   color: var(--muted);
 }
