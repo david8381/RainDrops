@@ -629,10 +629,11 @@ test.describe("desktop gameplay", () => {
     const state = await invoke(page, "getState");
     const sessionId = state.activeSessionId;
 
-    // The kid opens their report and sees a Share button.
+    // The kid opens their report and sees Share + Copy buttons.
     await page.locator("#sessionLogLink").click();
     await page.locator(".session-log-report").click();
     await expect(page.locator("#sessionReportShare")).toBeVisible();
+    await expect(page.locator("#sessionReportCopy")).toBeVisible();
     const code = await invoke(page, "getShareReportCode", sessionId);
     expect(code.length).toBeGreaterThan(0);
 
@@ -655,6 +656,27 @@ test.describe("desktop gameplay", () => {
     expect(viewState.viewingSharedReport).toBe(false);
     await expect(parent.locator("#sessionReportOverlay")).toHaveCount(0);
     await parent.close();
+  });
+
+  test("opens a shared report when the hash changes on an already-loaded page", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await freezeAutoSpawns(page);
+    await invoke(page, "addDrop", { opKey: "add", text: "1 + 1", answer: 2, answerText: "2", statsKey: "1,1", y: 120 });
+    const state = await invoke(page, "submit", "2");
+    const code = await invoke(page, "getShareReportCode", state.activeSessionId);
+
+    // Same tab already open: only the hash changes (no reload) — the view should
+    // still open via the hashchange listener.
+    await page.evaluate((c) => { window.location.hash = `#report=${c}`; }, code);
+    await expect(page.locator("#sessionReportOverlay")).toBeVisible();
+    await expect(page.locator("#sessionReportOverlay")).toContainText("Shared progress (read-only)");
+    expect((await invoke(page, "getState")).viewingSharedReport).toBe(true);
+
+    // A broken link surfaces a friendly message instead of doing nothing.
+    await page.locator('#sessionReportOverlay button:has-text("Exit shared view")').click();
+    await page.evaluate(() => { window.location.hash = "#report=1this-is-not-valid-deflate"; });
+    await expect(page.locator("#bossOfferToast")).toContainText("broken or incomplete");
   });
 
   test("stats grid hover text shows problem attempts and mastery state", async ({ page }) => {

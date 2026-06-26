@@ -5134,6 +5134,44 @@ function getReportHashCode() {
   return match ? match[1] : null;
 }
 
+// Brief toast (reuses the boss-offer styling) shown when a #report link can't be
+// decoded — usually because it was truncated/duplicated when copied.
+function showSharedReportError() {
+  closeBossOffer();
+  const toast = document.createElement("div");
+  toast.className = "boss-offer";
+  toast.id = "bossOfferToast";
+  const msg = document.createElement("span");
+  msg.className = "boss-offer-msg";
+  msg.textContent = "That shared link looks broken or incomplete — ask for a fresh one.";
+  const dismiss = document.createElement("button");
+  dismiss.type = "button";
+  dismiss.className = "boss-offer-dismiss";
+  dismiss.textContent = "✕";
+  dismiss.setAttribute("aria-label", "Dismiss");
+  dismiss.addEventListener("click", closeBossOffer);
+  toast.append(msg, dismiss);
+  document.body.appendChild(toast);
+  window.setTimeout(() => {
+    if (document.getElementById("bossOfferToast") === toast) toast.remove();
+  }, 9000);
+}
+
+// Open a shared #report link. Used both at cold load and on hashchange (when the
+// site is already open in a tab and only the hash changes — no reload fires).
+function openSharedReportFromCode(code) {
+  if (!code) return;
+  decodeShareReportCode(code).then((payload) => {
+    if (!(payload && openSharedReportView(payload))) showSharedReportError();
+  });
+}
+
+window.addEventListener("hashchange", () => {
+  if (isViewingSharedReport()) return;
+  const code = getReportHashCode();
+  if (code) openSharedReportFromCode(code);
+});
+
 function buildSessionLogPopup() {
   closeWelcomeMenu({ focus: false });
   closeTutorialOverlay({ focus: false });
@@ -5294,11 +5332,20 @@ function buildSessionReportPopup(sessionId) {
     shareBtn.id = "sessionReportShare";
     shareBtn.className = "session-report-share-btn";
     shareBtn.textContent = "Share with a parent";
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.id = "sessionReportCopy";
+    copyBtn.className = "session-report-share-btn";
+    copyBtn.textContent = "Copy link";
     const shareStatus = document.createElement("span");
     shareStatus.className = "session-report-share-status";
     shareStatus.setAttribute("aria-live", "polite");
     shareBtn.addEventListener("click", () => shareReportWithParent(session.id, shareStatus));
-    share.append(shareBtn, shareStatus);
+    copyBtn.addEventListener("click", async () => {
+      shareStatus.textContent = "Preparing link…";
+      copyTextToClipboard(await getSharedReportLink(progressProfile, session.id), shareStatus, "Link copied — paste it to a parent.");
+    });
+    share.append(shareBtn, copyBtn, shareStatus);
     card.appendChild(share);
   }
 
@@ -7758,11 +7805,9 @@ function init() {
   window.__RAIN_MATH_READY__ = true;
   const sharedCode = getReportHashCode();
   if (sharedCode) {
-    // Parent opened a shared report link — decode (async) then show the
-    // read-only log, skipping the welcome menu.
-    decodeShareReportCode(sharedCode).then((payload) => {
-      if (!(payload && openSharedReportView(payload))) answerInput.focus();
-    });
+    // Parent opened a shared report link — decode (async) and open the read-only
+    // view, skipping the welcome menu (or show an error if the link is broken).
+    openSharedReportFromCode(sharedCode);
   } else if (shouldShowWelcomeOnLoad()) {
     buildWelcomeMenu({ firstVisit: true });
   } else {
