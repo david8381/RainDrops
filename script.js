@@ -2346,18 +2346,32 @@ function drawDrops() {
   drawBossStunOverlay();
 }
 
-// Compact shield + challenge readout shown on the player ship during Wave 1/Wave 2.
+// Compact shield + status readout near the player base, shown during the boss
+// Wave 1/Wave 2 challenge and during Test Me (same shield mechanic).
 function drawChallengeStatus() {
-  if (!bossMode?.active || bossMode.phase !== "challenge") return;
-  const shield = Math.max(0, Math.round(bossMode.blitzShield || 0));
-  const shieldMax = bossMode.blitzShieldMax || BLITZ_SHIELD_MAX;
-  const isWave = bossMode.challengeType === "wave";
-  const lines = [
-    `🛡 ${shield}/${shieldMax}`,
-    isWave
-      ? `Best ${bossMode.waveMaxLoadCleared || 0} · Try ${bossMode.challengeLoad}`
-      : `Blitz ${formatDuration(getBlitzSurvivalMs())}`,
-  ];
+  let lines;
+  let low;
+  if (bossMode?.active && bossMode.phase === "challenge") {
+    const shield = Math.max(0, Math.round(bossMode.blitzShield || 0));
+    const shieldMax = bossMode.blitzShieldMax || BLITZ_SHIELD_MAX;
+    const isWave = bossMode.challengeType === "wave";
+    lines = [
+      `🛡 ${shield}/${shieldMax}`,
+      isWave
+        ? `Best ${bossMode.waveMaxLoadCleared || 0} · Try ${bossMode.challengeLoad}`
+        : `Blitz ${formatDuration(getBlitzSurvivalMs())}`,
+    ];
+    low = getBlitzShieldRatio() <= 0.28;
+  } else if (isPlacementActive()) {
+    const shield = Math.max(0, Math.round(placementState.shield ?? PLACEMENT_SHIELD_START));
+    lines = [
+      `🛡 ${shield}/${PLACEMENT_SHIELD_MAX}`,
+      `Test Me · Level ${placementState.level}`,
+    ];
+    low = shield / PLACEMENT_SHIELD_MAX <= 0.34;
+  } else {
+    return;
+  }
 
   ctx.save();
   ctx.font = "700 13px Space Grotesk";
@@ -2370,7 +2384,6 @@ function drawChallengeStatus() {
   const boxH = lineH * lines.length + 10;
   const cx = canvasW / 2;
   const boxTop = canvasH - 20 - 44 - boxH;
-  const low = getBlitzShieldRatio() <= 0.28;
 
   ctx.fillStyle = "rgba(10, 14, 26, 0.74)";
   ctx.strokeStyle = low ? "rgba(248, 113, 113, 0.6)" : "rgba(96, 180, 240, 0.4)";
@@ -3020,14 +3033,37 @@ function drawLaser() {
   ctx.restore();
 }
 
+// Unified shield state for the player-base shield visual, shared by the boss
+// Wave 1/2 challenge and Test Me (which uses the same shield mechanic).
+function getShieldRenderState() {
+  if (bossMode?.active && ["challenge", "challengeComplete"].includes(bossMode.phase)) {
+    return {
+      ratio: bossMode.phase === "challengeComplete" ? 0 : getBlitzShieldRatio(),
+      pulse: clamp(0, 1, (bossMode.blitzShieldPulseMs || 0) / BLITZ_SHIELD_PULSE_MS),
+      hit: clamp(0, 1, (bossMode.blitzShieldHitMs || 0) / BLITZ_SHIELD_HIT_MS),
+      forceLow: bossMode.phase === "challengeComplete",
+    };
+  }
+  if (isPlacementActive()) {
+    return {
+      ratio: clamp(0, 1, (placementState.shield ?? PLACEMENT_SHIELD_START) / PLACEMENT_SHIELD_MAX),
+      pulse: clamp(0, 1, (placementState.shieldPulseMs || 0) / BLITZ_SHIELD_PULSE_MS),
+      hit: clamp(0, 1, (placementState.shieldHitMs || 0) / BLITZ_SHIELD_HIT_MS),
+      forceLow: false,
+    };
+  }
+  return null;
+}
+
 function drawBlitzShield(ship = getPlayerShipPosition()) {
-  if (!bossMode?.active || !["challenge", "challengeComplete"].includes(bossMode.phase)) return;
+  const s = getShieldRenderState();
+  if (!s) return;
   const shieldY = ship.y + 4 * ship.scale;
   const shieldX = ship.x;
-  const ratio = bossMode.phase === "challengeComplete" ? 0 : getBlitzShieldRatio();
-  const pulse = clamp(0, 1, (bossMode.blitzShieldPulseMs || 0) / BLITZ_SHIELD_PULSE_MS);
-  const hit = clamp(0, 1, (bossMode.blitzShieldHitMs || 0) / BLITZ_SHIELD_HIT_MS);
-  const low = ratio <= 0.28 || bossMode.phase === "challengeComplete";
+  const ratio = s.ratio;
+  const pulse = s.pulse;
+  const hit = s.hit;
+  const low = ratio <= 0.28 || s.forceLow;
   const color = low ? "248, 113, 113" : "56, 189, 248";
   const arcW = (62 + ratio * 32 + pulse * 6) * ship.scale;
   const arcH = (26 + ratio * 16 + pulse * 4) * ship.scale;
@@ -3043,7 +3079,7 @@ function drawBlitzShield(ship = getPlayerShipPosition()) {
   ctx.fill();
   ctx.stroke();
 
-  if (hit > 0 || bossMode.phase === "challengeComplete") {
+  if (hit > 0 || s.forceLow) {
     ctx.shadowBlur = 0;
     ctx.strokeStyle = `rgba(254, 202, 202, ${(0.36 + hit * 0.46).toFixed(2)})`;
     ctx.lineWidth = 2;
@@ -5962,10 +5998,12 @@ function handlePlacementDropFinished(drop, correct, outcome = correct ? "correct
     placementState.totalCorrect += 1;
     placementState.levelCorrect += 1;
     placementState.shield = Math.min(PLACEMENT_SHIELD_MAX, placementState.shield + PLACEMENT_SHIELD_GAIN);
+    placementState.shieldPulseMs = BLITZ_SHIELD_PULSE_MS;
   } else {
     placementState.totalMistakes += 1;
     placementState.levelMistakes += 1;
     placementState.shield = Math.max(0, placementState.shield - PLACEMENT_SHIELD_LOSS);
+    placementState.shieldHitMs = BLITZ_SHIELD_HIT_MS;
     queuePlacementRetry(drop);
   }
   placementState.history.push({
@@ -6007,6 +6045,9 @@ function spawnNextPlacementDrop() {
 
 function updatePlacementMode(dt) {
   if (!placementState?.active) return;
+  // Decay the shield pulse/crack animations every frame.
+  placementState.shieldPulseMs = Math.max(0, (placementState.shieldPulseMs || 0) - dt);
+  placementState.shieldHitMs = Math.max(0, (placementState.shieldHitMs || 0) - dt);
   if (drops.some(isPlacementDrop)) return;
   placementState.pendingDropMs = Math.max(0, (placementState.pendingDropMs || 0) - dt);
   if (placementState.pendingDropMs > 0) return;
