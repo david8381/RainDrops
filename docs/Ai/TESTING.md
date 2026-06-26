@@ -30,11 +30,8 @@ often opens a shared link on a phone or iPad.
 ## CI
 `.github/workflows/tests.yml` runs on pushes to `main`, pull requests, and manual dispatch:
 1. `npm ci`
-2. `npx playwright install --with-deps chromium`
-3. `npm run test:ci`
-
-Note: CI currently installs only `chromium`; the full local matrix additionally
-needs `firefox` and `webkit` (`npx playwright install firefox webkit`).
+2. `npx playwright install --with-deps chromium firefox webkit`
+3. `npm run test:ci` (runs the full six-project matrix)
 
 The existing GitHub Pages deploy workflow remains separate.
 
