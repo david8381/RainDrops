@@ -16,6 +16,7 @@ const {
   formatSessionLevelProgress,
   formatChallengeEntry,
   formatSkillDetails,
+  formatPracticeNext,
   generateProblem,
   generateWeightedProblem: generateCoreWeightedProblem,
   getDifficultyRange,
@@ -4775,11 +4776,6 @@ function closeStatsPopup() {
 // 13c. Results Popup
 // ============================================================
 
-function formatPracticeSuggestion(problem) {
-  if (problem.kind === "new") return `${problem.text} (new)`;
-  return `${problem.text} (${problem.mastery}%)`;
-}
-
 function buildChallengeRow(skill) {
   if (!skill.blitzUnlockedLevel) return null;
   const row = document.createElement("div");
@@ -4879,9 +4875,7 @@ function buildResultsPopup() {
     if (skill.practiceSuggestions.length > 0) {
       const weak = document.createElement("div");
       weak.className = "results-weak";
-      weak.textContent = `Practice next: ${skill.practiceSuggestions
-        .map(formatPracticeSuggestion)
-        .join(", ")}`;
+      weak.textContent = formatPracticeNext(skill.practiceSuggestions);
       row.appendChild(weak);
     }
 

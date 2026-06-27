@@ -4,6 +4,7 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-27
+- Folded the single-use `formatPracticeSuggestion` into a pure `formatPracticeNext(suggestions)` in `game-core.js` (returns the full "Practice next: …" line), unit-tested; results popup sets `weak.textContent = formatPracticeNext(...)`. Results-popup cleanup step 3; no behavior change.
 - Extracted the per-skill results detail line (level, boss-distance, attempts, seen/mastered counts, accuracy, recent, response time) into a pure `formatSkillDetails(skill)` in `game-core.js`, unit-tested; results popup now sets `details.textContent = formatSkillDetails(skill)`. Results-popup cleanup step 2; no behavior change.
 - Extracted the per-level results "Challenges" chip formatting into a pure `formatChallengeEntry(entry)` in `game-core.js` (returns `{ played, text }`), unit-tested; `buildChallengeRow` in `script.js` now just maps entries to chips. First baby step into the results-popup dark cluster. No behavior change.
 - Removed dead code from `script.js`: six functions that were defined but never called (`isTestMode`, `getBossWaveMaxActive`, `getBossWaveDelayMs`, `getBlitzUnlockedLevel`, `startBossAnnouncement`, `getActiveAnswerTexts`) and a no-op ternary (`phase: startsWithChallenge ? "announce" : "announce"`). No behavior change; `script.js` is ~100 lines smaller than at the start of this cleanup pass.

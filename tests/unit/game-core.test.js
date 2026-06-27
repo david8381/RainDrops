@@ -39,6 +39,7 @@ const {
   formatSessionLevelProgress,
   formatChallengeEntry,
   formatSkillDetails,
+  formatPracticeNext,
   isComposite,
   isPrime,
   hashString,
@@ -184,6 +185,17 @@ describe("difficulty ranges", () => {
       }),
       "L3 40% -> 70% (+10%; 2/8 -> 5/8 mastered)"
     );
+  });
+
+  it("formats the practice-next line, distinguishing new and seen facts", () => {
+    assert.equal(
+      formatPracticeNext([
+        { kind: "new", text: "7 + 8" },
+        { kind: "review", text: "6 × 9", mastery: 40 },
+      ]),
+      "Practice next: 7 + 8 (new), 6 × 9 (40%)"
+    );
+    assert.equal(formatPracticeNext([]), "Practice next: ");
   });
 
   it("formats the per-skill detail line in the results popup", () => {

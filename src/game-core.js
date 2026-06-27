@@ -1043,6 +1043,15 @@ function formatSkillDetails(skill) {
   ].join(" · ");
 }
 
+// The "Practice next: 7 + 8 (new), 6 × 9 (40%)" line under a skill in the
+// results popup. Caller decides whether to show it (only when there are
+// suggestions).
+function formatPracticeNext(suggestions) {
+  return `Practice next: ${suggestions
+    .map((p) => (p.kind === "new" ? `${p.text} (new)` : `${p.text} (${p.mastery}%)`))
+    .join(", ")}`;
+}
+
 globalThis.RainMathCore = {
   SUPERSCRIPTS,
   formatPercent,
@@ -1053,6 +1062,7 @@ globalThis.RainMathCore = {
   formatSessionLevelProgress,
   formatChallengeEntry,
   formatSkillDetails,
+  formatPracticeNext,
   advanceFactorDrop,
   clamp,
   createDefaultOpConfig,
