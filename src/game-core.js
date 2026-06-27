@@ -967,8 +967,51 @@ function advanceFactorDrop(drop, divisor, { fromTargeting = false } = {}) {
   return drop;
 }
 
+// --- Display formatters (pure; used by the stats/session-report popups) ---
+
+function formatPercent(value) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatDuration(ms) {
+  if (!Number.isFinite(ms)) return "--";
+  const seconds = Math.max(0, ms / 1000);
+  return seconds >= 60
+    ? `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, "0")}`
+    : `${seconds.toFixed(1)}s`;
+}
+
+function formatResponseTime(ms) {
+  if (ms === null || ms === undefined) return "—";
+  return `${(ms / 1000).toFixed(1)}s avg`;
+}
+
+function formatMasteryDelta(value) {
+  if (value > 0) return `+${value}%`;
+  if (value < 0) return `${value}%`;
+  return "no change";
+}
+
+function formatSessionAccuracy(stats) {
+  if (!stats || stats.attempts === 0) return "no practice attempts";
+  return `${stats.correct}/${stats.attempts} correct (${formatPercent(stats.accuracy)})`;
+}
+
+function formatSessionLevelProgress(level) {
+  const start = level.started;
+  const end = level.ended;
+  const mastered = `${start.masteredCount}/${start.universeCount} -> ${end.masteredCount}/${end.universeCount}`;
+  return `L${level.level} ${start.readiness}% -> ${end.readiness}% (${formatMasteryDelta(level.masteryDelta)}; ${mastered} mastered)`;
+}
+
 globalThis.RainMathCore = {
   SUPERSCRIPTS,
+  formatPercent,
+  formatDuration,
+  formatResponseTime,
+  formatMasteryDelta,
+  formatSessionAccuracy,
+  formatSessionLevelProgress,
   advanceFactorDrop,
   clamp,
   createDefaultOpConfig,

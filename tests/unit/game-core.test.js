@@ -31,6 +31,12 @@ const {
   getSIPrefixesForDifficulty,
   getSIReferenceRows,
   getSelectionWeight,
+  formatPercent,
+  formatDuration,
+  formatResponseTime,
+  formatMasteryDelta,
+  formatSessionAccuracy,
+  formatSessionLevelProgress,
   isComposite,
   isPrime,
   hashString,
@@ -140,6 +146,42 @@ describe("difficulty ranges", () => {
     assert.equal(milli.sym, "m");
     assert.equal(milli.base10, "10⁻³"); // 10^-3
     assert.equal(milli.factor, "1/1,000");
+  });
+
+  it("formats display strings for the stats and session-report popups", () => {
+    assert.equal(formatPercent(0.5), "50%");
+    assert.equal(formatPercent(0.857), "86%"); // rounds
+    assert.equal(formatPercent(1), "100%");
+
+    assert.equal(formatDuration(NaN), "--");
+    assert.equal(formatDuration(5500), "5.5s");
+    assert.equal(formatDuration(65000), "1:05"); // minutes:seconds past 60s
+    assert.equal(formatDuration(-100), "0.0s"); // clamps negatives
+
+    assert.equal(formatResponseTime(null), "—"); // em dash placeholder
+    assert.equal(formatResponseTime(undefined), "—");
+    assert.equal(formatResponseTime(1500), "1.5s avg");
+
+    assert.equal(formatMasteryDelta(5), "+5%");
+    assert.equal(formatMasteryDelta(-3), "-3%");
+    assert.equal(formatMasteryDelta(0), "no change");
+
+    assert.equal(formatSessionAccuracy(null), "no practice attempts");
+    assert.equal(formatSessionAccuracy({ attempts: 0 }), "no practice attempts");
+    assert.equal(
+      formatSessionAccuracy({ attempts: 4, correct: 3, accuracy: 0.75 }),
+      "3/4 correct (75%)"
+    );
+
+    assert.equal(
+      formatSessionLevelProgress({
+        level: 3,
+        masteryDelta: 10,
+        started: { readiness: 40, masteredCount: 2, universeCount: 8 },
+        ended: { readiness: 70, masteredCount: 5, universeCount: 8 },
+      }),
+      "L3 40% -> 70% (+10%; 2/8 -> 5/8 mastered)"
+    );
   });
 
   it("marks SI reference rows active only when unlocked at the difficulty", () => {

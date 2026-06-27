@@ -8,6 +8,12 @@ const {
   makePowProblemFromKey,
   makeF10ProblemFromKey,
   formatF10StatsKey,
+  formatPercent,
+  formatDuration,
+  formatResponseTime,
+  formatMasteryDelta,
+  formatSessionAccuracy,
+  formatSessionLevelProgress,
   generateProblem,
   generateWeightedProblem: generateCoreWeightedProblem,
   getDifficultyRange,
@@ -3804,14 +3810,6 @@ function formatReadinessPercent(skill) {
   return `${Math.round(skill?.readiness || 0)}%`;
 }
 
-function formatDuration(ms) {
-  if (!Number.isFinite(ms)) return "--";
-  const seconds = Math.max(0, ms / 1000);
-  return seconds >= 60
-    ? `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, "0")}`
-    : `${seconds.toFixed(1)}s`;
-}
-
 function formatDropSeconds(seconds) {
   if (!Number.isFinite(seconds)) return "--";
   return `${Math.max(0, seconds).toFixed(1)}s drops`;
@@ -4804,15 +4802,6 @@ function closeStatsPopup() {
 // 13c. Results Popup
 // ============================================================
 
-function formatPercent(value) {
-  return `${Math.round(value * 100)}%`;
-}
-
-function formatResponseTime(ms) {
-  if (ms === null || ms === undefined) return "—";
-  return `${(ms / 1000).toFixed(1)}s avg`;
-}
-
 function formatPracticeSuggestion(problem) {
   if (problem.kind === "new") return `${problem.text} (new)`;
   return `${problem.text} (${problem.mastery}%)`;
@@ -4975,26 +4964,8 @@ function formatSessionStartedAt(value) {
   });
 }
 
-function formatSessionAccuracy(stats) {
-  if (!stats || stats.attempts === 0) return "no practice attempts";
-  return `${stats.correct}/${stats.attempts} correct (${formatPercent(stats.accuracy)})`;
-}
-
 function getSessionSummaryById(sessionId) {
   return summarizeSessionLog(getReportProfile(), 20).find((session) => session.id === sessionId) || null;
-}
-
-function formatMasteryDelta(value) {
-  if (value > 0) return `+${value}%`;
-  if (value < 0) return `${value}%`;
-  return "no change";
-}
-
-function formatSessionLevelProgress(level) {
-  const start = level.started;
-  const end = level.ended;
-  const mastered = `${start.masteredCount}/${start.universeCount} -> ${end.masteredCount}/${end.universeCount}`;
-  return `L${level.level} ${start.readiness}% -> ${end.readiness}% (${formatMasteryDelta(level.masteryDelta)}; ${mastered} mastered)`;
 }
 
 // When set, the Session Log / Report popups render this shared (read-only)
