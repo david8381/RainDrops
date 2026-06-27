@@ -1,6 +1,6 @@
 {
   "name": "rain-math",
-  "version": "0.3.70",
+  "version": "0.3.71",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,9 +9,14 @@
     "test:unit": "node --test tests/unit/*.test.js",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:ci": "npm run test:unit && npm run test:e2e"
+    "test:ci": "npm run test:unit && npm run test:e2e",
+    "coverage:unit": "c8 --include 'src/**' --reporter=text --reporter=html --report-dir=coverage/unit node --test tests/unit/*.test.js",
+    "coverage:e2e": "playwright test --config=playwright.coverage.mjs",
+    "coverage": "npm run coverage:unit && npm run coverage:e2e"
   },
   "devDependencies": {
-    "@playwright/test": "^1.60.0"
+    "@playwright/test": "^1.60.0",
+    "c8": "^11.0.0",
+    "monocart-reporter": "^2.12.1"
   }
 }
