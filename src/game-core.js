@@ -1004,6 +1004,15 @@ function formatSessionLevelProgress(level) {
   return `L${level.level} ${start.readiness}% -> ${end.readiness}% (${formatMasteryDelta(level.masteryDelta)}; ${mastered} mastered)`;
 }
 
+// The middot-joined summary line at the top of a session report.
+function formatSessionSummary(session) {
+  return [
+    `Practice ${formatSessionAccuracy(session.practice)}`,
+    `Boss/challenge solved ${session.assessment.correct}`,
+    `Challenges ${session.challenges.started} started / ${session.challenges.completed} completed`,
+  ].join(" · ");
+}
+
 // One per-level chip in the results "Challenges" row: whether the level was
 // played at all, plus the "L3: Blitz 5.0s · Wave 4 at once · Worksheet 1:05"
 // summary line (en-dash placeholders for challenges not yet attempted).
@@ -1085,6 +1094,7 @@ globalThis.RainMathCore = {
   formatMasteryDelta,
   formatSessionAccuracy,
   formatSessionLevelProgress,
+  formatSessionSummary,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,

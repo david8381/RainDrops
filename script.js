@@ -14,6 +14,7 @@ const {
   formatMasteryDelta,
   formatSessionAccuracy,
   formatSessionLevelProgress,
+  formatSessionSummary,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
@@ -5351,11 +5352,7 @@ function buildSessionReportPopup(sessionId) {
 
   const summary = document.createElement("div");
   summary.className = "session-report-summary";
-  summary.textContent = [
-    `Practice ${formatSessionAccuracy(session.practice)}`,
-    `Boss/challenge solved ${session.assessment.correct}`,
-    `Challenges ${session.challenges.started} started / ${session.challenges.completed} completed`,
-  ].join(" · ");
+  summary.textContent = formatSessionSummary(session);
   card.appendChild(summary);
 
   const list = document.createElement("div");

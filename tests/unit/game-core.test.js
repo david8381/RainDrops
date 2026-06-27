@@ -37,6 +37,7 @@ const {
   formatMasteryDelta,
   formatSessionAccuracy,
   formatSessionLevelProgress,
+  formatSessionSummary,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
@@ -185,6 +186,25 @@ describe("difficulty ranges", () => {
         ended: { readiness: 70, masteredCount: 5, universeCount: 8 },
       }),
       "L3 40% -> 70% (+10%; 2/8 -> 5/8 mastered)"
+    );
+  });
+
+  it("formats the session-report summary line", () => {
+    assert.equal(
+      formatSessionSummary({
+        practice: { attempts: 10, correct: 8, accuracy: 0.8 },
+        assessment: { correct: 5 },
+        challenges: { started: 3, completed: 2 },
+      }),
+      "Practice 8/10 correct (80%) · Boss/challenge solved 5 · Challenges 3 started / 2 completed"
+    );
+    assert.equal(
+      formatSessionSummary({
+        practice: { attempts: 0 },
+        assessment: { correct: 0 },
+        challenges: { started: 0, completed: 0 },
+      }),
+      "Practice no practice attempts · Boss/challenge solved 0 · Challenges 0 started / 0 completed"
     );
   });
 

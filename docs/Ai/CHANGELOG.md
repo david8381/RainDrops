@@ -4,6 +4,7 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-27
+- Extracted the session-report summary line (practice accuracy · boss/challenge solved · challenges started/completed) into a pure `formatSessionSummary(session)` in `game-core.js`, unit-tested; `buildSessionReportPopup` sets `summary.textContent = formatSessionSummary(session)`. Popup-builder cleanup step 5; no behavior change.
 - Extracted the Test Me placement-result card text (title, body with placed-out explanation, per-level summary line) into a pure `formatPlacementResult(placementState, opName)` in `game-core.js`, unit-tested; `renderPlacementResult` now just builds DOM from the returned strings. Popup-builder cleanup step 4; no behavior change.
 - Folded the single-use `formatPracticeSuggestion` into a pure `formatPracticeNext(suggestions)` in `game-core.js` (returns the full "Practice next: …" line), unit-tested; results popup sets `weak.textContent = formatPracticeNext(...)`. Results-popup cleanup step 3; no behavior change.
 - Extracted the per-skill results detail line (level, boss-distance, attempts, seen/mastered counts, accuracy, recent, response time) into a pure `formatSkillDetails(skill)` in `game-core.js`, unit-tested; results popup now sets `details.textContent = formatSkillDetails(skill)`. Results-popup cleanup step 2; no behavior change.
