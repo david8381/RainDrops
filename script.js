@@ -15,6 +15,7 @@ const {
   formatSessionAccuracy,
   formatSessionLevelProgress,
   formatChallengeEntry,
+  formatSkillDetails,
   generateProblem,
   generateWeightedProblem: generateCoreWeightedProblem,
   getDifficultyRange,
@@ -4867,19 +4868,7 @@ function buildResultsPopup() {
 
     const details = document.createElement("div");
     details.className = "results-details";
-  const bossText = skill.bossReady
-      ? "Boss ready"
-      : `${Math.max(0, skill.bossThreshold - skill.readiness)}% to boss`;
-    details.textContent = [
-      `Level ${skill.currentLevel}`,
-      bossText,
-      `${skill.attempts} attempts`,
-      `${skill.distinct}/${skill.universeCount} seen`,
-      `${skill.masteredCount} mastered`,
-      `${formatPercent(skill.accuracy)} accuracy`,
-      `${formatPercent(skill.recentAccuracy)} recent`,
-      formatResponseTime(skill.averageResponseMs),
-    ].join(" · ");
+    details.textContent = formatSkillDetails(skill);
 
     row.appendChild(top);
     row.appendChild(meter);

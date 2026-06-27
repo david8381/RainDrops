@@ -1024,6 +1024,25 @@ function formatChallengeEntry(entry) {
   return { played, text: `L${entry.level}: ${parts.join(" · ")}` };
 }
 
+// The middot-joined detail line under each skill in the results popup:
+// "Level 3 · 12% to boss · 40 attempts · 5/8 seen · 3 mastered · 88% accuracy
+//  · 92% recent · 1.4s avg".
+function formatSkillDetails(skill) {
+  const bossText = skill.bossReady
+    ? "Boss ready"
+    : `${Math.max(0, skill.bossThreshold - skill.readiness)}% to boss`;
+  return [
+    `Level ${skill.currentLevel}`,
+    bossText,
+    `${skill.attempts} attempts`,
+    `${skill.distinct}/${skill.universeCount} seen`,
+    `${skill.masteredCount} mastered`,
+    `${formatPercent(skill.accuracy)} accuracy`,
+    `${formatPercent(skill.recentAccuracy)} recent`,
+    formatResponseTime(skill.averageResponseMs),
+  ].join(" · ");
+}
+
 globalThis.RainMathCore = {
   SUPERSCRIPTS,
   formatPercent,
@@ -1033,6 +1052,7 @@ globalThis.RainMathCore = {
   formatSessionAccuracy,
   formatSessionLevelProgress,
   formatChallengeEntry,
+  formatSkillDetails,
   advanceFactorDrop,
   clamp,
   createDefaultOpConfig,

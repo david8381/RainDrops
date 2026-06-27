@@ -38,6 +38,7 @@ const {
   formatSessionAccuracy,
   formatSessionLevelProgress,
   formatChallengeEntry,
+  formatSkillDetails,
   isComposite,
   isPrime,
   hashString,
@@ -182,6 +183,30 @@ describe("difficulty ranges", () => {
         ended: { readiness: 70, masteredCount: 5, universeCount: 8 },
       }),
       "L3 40% -> 70% (+10%; 2/8 -> 5/8 mastered)"
+    );
+  });
+
+  it("formats the per-skill detail line in the results popup", () => {
+    const skill = {
+      currentLevel: 3,
+      bossReady: false,
+      bossThreshold: 100,
+      readiness: 88,
+      attempts: 40,
+      distinct: 5,
+      universeCount: 8,
+      masteredCount: 3,
+      accuracy: 0.88,
+      recentAccuracy: 0.92,
+      averageResponseMs: 1400,
+    };
+    assert.equal(
+      formatSkillDetails(skill),
+      "Level 3 · 12% to boss · 40 attempts · 5/8 seen · 3 mastered · 88% accuracy · 92% recent · 1.4s avg"
+    );
+    assert.equal(
+      formatSkillDetails({ ...skill, bossReady: true }),
+      "Level 3 · Boss ready · 40 attempts · 5/8 seen · 3 mastered · 88% accuracy · 92% recent · 1.4s avg"
     );
   });
 
