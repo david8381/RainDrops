@@ -1004,6 +1004,29 @@ function formatSessionLevelProgress(level) {
   return `L${level.level} ${start.readiness}% -> ${end.readiness}% (${formatMasteryDelta(level.masteryDelta)}; ${mastered} mastered)`;
 }
 
+// The per-operation stat lines in a session report (one string per line).
+// Optional lines (wrong answers, boss/challenge attempts, challenge counts)
+// appear only when there is something to show.
+function formatSessionOperationStats(operation) {
+  const totalCorrect = operation.practice.correct + operation.assessment.correct;
+  const totalMissed = operation.practice.missed + operation.assessment.missed;
+  const totalWrong = operation.practice.wrong + operation.assessment.wrong;
+  const pieces = [
+    `Correct/missed: ${totalCorrect}/${totalMissed}`,
+    `Practice attempts: ${operation.practice.attempts}`,
+  ];
+  if (totalWrong > 0) pieces.push(`Wrong: ${totalWrong}`);
+  if (operation.assessment.attempts > 0) {
+    pieces.push(`Boss/challenge attempts: ${operation.assessment.attempts}`);
+  }
+  if (operation.challenges.started || operation.challenges.completed) {
+    pieces.push(
+      `Challenges: ${operation.challenges.started} started, ${operation.challenges.completed} completed`
+    );
+  }
+  return pieces;
+}
+
 // The middot-joined summary line at the top of a session report.
 function formatSessionSummary(session) {
   return [
@@ -1095,6 +1118,7 @@ globalThis.RainMathCore = {
   formatSessionAccuracy,
   formatSessionLevelProgress,
   formatSessionSummary,
+  formatSessionOperationStats,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,

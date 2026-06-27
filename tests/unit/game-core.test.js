@@ -38,6 +38,7 @@ const {
   formatSessionAccuracy,
   formatSessionLevelProgress,
   formatSessionSummary,
+  formatSessionOperationStats,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
@@ -186,6 +187,32 @@ describe("difficulty ranges", () => {
         ended: { readiness: 70, masteredCount: 5, universeCount: 8 },
       }),
       "L3 40% -> 70% (+10%; 2/8 -> 5/8 mastered)"
+    );
+  });
+
+  it("formats per-operation session-report stat lines, omitting empty ones", () => {
+    assert.deepEqual(
+      formatSessionOperationStats({
+        practice: { correct: 6, missed: 2, wrong: 1, attempts: 9 },
+        assessment: { correct: 3, missed: 1, wrong: 0, attempts: 4 },
+        challenges: { started: 2, completed: 1 },
+      }),
+      [
+        "Correct/missed: 9/3",
+        "Practice attempts: 9",
+        "Wrong: 1",
+        "Boss/challenge attempts: 4",
+        "Challenges: 2 started, 1 completed",
+      ]
+    );
+    // practice-only: no wrong/assessment/challenge lines
+    assert.deepEqual(
+      formatSessionOperationStats({
+        practice: { correct: 5, missed: 0, wrong: 0, attempts: 5 },
+        assessment: { correct: 0, missed: 0, wrong: 0, attempts: 0 },
+        challenges: { started: 0, completed: 0 },
+      }),
+      ["Correct/missed: 5/0", "Practice attempts: 5"]
     );
   });
 

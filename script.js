@@ -15,6 +15,7 @@ const {
   formatSessionAccuracy,
   formatSessionLevelProgress,
   formatSessionSummary,
+  formatSessionOperationStats,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
@@ -5380,21 +5381,7 @@ function buildSessionReportPopup(sessionId) {
 
       const stats = document.createElement("div");
       stats.className = "session-report-stats";
-      const totalCorrect = operation.practice.correct + operation.assessment.correct;
-      const totalMissed = operation.practice.missed + operation.assessment.missed;
-      const totalWrong = operation.practice.wrong + operation.assessment.wrong;
-      const pieces = [
-        `Correct/missed: ${totalCorrect}/${totalMissed}`,
-        `Practice attempts: ${operation.practice.attempts}`,
-      ];
-      if (totalWrong > 0) pieces.push(`Wrong: ${totalWrong}`);
-      if (operation.assessment.attempts > 0) {
-        pieces.push(`Boss/challenge attempts: ${operation.assessment.attempts}`);
-      }
-      if (operation.challenges.started || operation.challenges.completed) {
-        pieces.push(`Challenges: ${operation.challenges.started} started, ${operation.challenges.completed} completed`);
-      }
-      pieces.forEach((piece) => {
+      formatSessionOperationStats(operation).forEach((piece) => {
         const line = document.createElement("div");
         line.className = "session-report-stat-line";
         line.textContent = piece;
