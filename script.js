@@ -14,6 +14,7 @@ const {
   formatMasteryDelta,
   formatSessionAccuracy,
   formatSessionLevelProgress,
+  formatChallengeEntry,
   generateProblem,
   generateWeightedProblem: generateCoreWeightedProblem,
   getDifficultyRange,
@@ -4792,19 +4793,10 @@ function buildChallengeRow(skill) {
   list.className = "results-challenge-levels";
   const levels = skill.challengeBestsByLevel || [];
   levels.forEach((entry) => {
-    const played = Boolean(entry.blitz || entry.wave || entry.boss?.durationMs);
+    const { played, text } = formatChallengeEntry(entry);
     const chip = document.createElement("span");
     chip.className = `results-pressure-chip${played ? " is-cleared" : ""}`;
-    if (played) {
-      const parts = [
-        entry.blitz ? `Blitz ${Number.isFinite(entry.blitz.durationMs) ? formatDuration(entry.blitz.durationMs) : entry.blitz.score}` : "Blitz –",
-        entry.wave ? `Wave ${Number.isFinite(entry.wave.maxLoadCleared) ? `${entry.wave.maxLoadCleared} at once` : entry.wave.score}` : "Wave –",
-        entry.boss?.durationMs ? `Worksheet ${formatDuration(entry.boss.durationMs)}` : "Worksheet –",
-      ];
-      chip.textContent = `L${entry.level}: ${parts.join(" · ")}`;
-    } else {
-      chip.textContent = `L${entry.level}: not played`;
-    }
+    chip.textContent = text;
     list.appendChild(chip);
   });
   row.appendChild(list);

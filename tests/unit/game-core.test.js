@@ -37,6 +37,7 @@ const {
   formatMasteryDelta,
   formatSessionAccuracy,
   formatSessionLevelProgress,
+  formatChallengeEntry,
   isComposite,
   isPrime,
   hashString,
@@ -182,6 +183,27 @@ describe("difficulty ranges", () => {
       }),
       "L3 40% -> 70% (+10%; 2/8 -> 5/8 mastered)"
     );
+  });
+
+  it("formats results challenge-row chips per level", () => {
+    assert.deepEqual(formatChallengeEntry({ level: 5 }), {
+      played: false,
+      text: "L5: not played",
+    });
+    assert.deepEqual(
+      formatChallengeEntry({
+        level: 3,
+        blitz: { durationMs: 5000 },
+        wave: { maxLoadCleared: 4 },
+        boss: { durationMs: 65000 },
+      }),
+      { played: true, text: "L3: Blitz 5.0s · Wave 4 at once · Worksheet 1:05" }
+    );
+    // missing sub-challenges fall back to en-dash placeholders; score used when no metric
+    assert.deepEqual(formatChallengeEntry({ level: 2, blitz: { score: 12 } }), {
+      played: true,
+      text: "L2: Blitz 12 · Wave – · Worksheet –",
+    });
   });
 
   it("marks SI reference rows active only when unlocked at the difficulty", () => {

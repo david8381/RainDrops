@@ -1004,6 +1004,26 @@ function formatSessionLevelProgress(level) {
   return `L${level.level} ${start.readiness}% -> ${end.readiness}% (${formatMasteryDelta(level.masteryDelta)}; ${mastered} mastered)`;
 }
 
+// One per-level chip in the results "Challenges" row: whether the level was
+// played at all, plus the "L3: Blitz 5.0s · Wave 4 at once · Worksheet 1:05"
+// summary line (en-dash placeholders for challenges not yet attempted).
+function formatChallengeEntry(entry) {
+  const played = Boolean(entry.blitz || entry.wave || entry.boss?.durationMs);
+  if (!played) {
+    return { played, text: `L${entry.level}: not played` };
+  }
+  const parts = [
+    entry.blitz
+      ? `Blitz ${Number.isFinite(entry.blitz.durationMs) ? formatDuration(entry.blitz.durationMs) : entry.blitz.score}`
+      : "Blitz –",
+    entry.wave
+      ? `Wave ${Number.isFinite(entry.wave.maxLoadCleared) ? `${entry.wave.maxLoadCleared} at once` : entry.wave.score}`
+      : "Wave –",
+    entry.boss?.durationMs ? `Worksheet ${formatDuration(entry.boss.durationMs)}` : "Worksheet –",
+  ];
+  return { played, text: `L${entry.level}: ${parts.join(" · ")}` };
+}
+
 globalThis.RainMathCore = {
   SUPERSCRIPTS,
   formatPercent,
@@ -1012,6 +1032,7 @@ globalThis.RainMathCore = {
   formatMasteryDelta,
   formatSessionAccuracy,
   formatSessionLevelProgress,
+  formatChallengeEntry,
   advanceFactorDrop,
   clamp,
   createDefaultOpConfig,
