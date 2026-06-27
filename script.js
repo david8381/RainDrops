@@ -15,6 +15,7 @@ const {
   getFullFactorization,
   getSelectionWeight,
   getSIPrefixesForDifficulty,
+  getSIReferenceRows,
   hashString,
   matchesFactorDrop,
   normalizeTypedValue,
@@ -6644,26 +6645,7 @@ function buildGridStats(opKey, stats) {
 
 
 function buildSIReferenceTable() {
-  const currentDifficulty = opConfig.si.difficulty;
-  const unlocked = getSIPrefixesForDifficulty(currentDifficulty);
-  const unlockedSyms = new Set(unlocked.map((p) => p.sym));
-
-  // All prefixes in descending exponent order
-  const allPrefixes = [
-    { sym: "T", exp: 12, name: "tera" },
-    { sym: "G", exp: 9, name: "giga" },
-    { sym: "M", exp: 6, name: "mega" },
-    { sym: "k", exp: 3, name: "kilo" },
-    { sym: "h", exp: 2, name: "hecto" },
-    { sym: "da", exp: 1, name: "deca" },
-    { sym: "", exp: 0, name: "(base)" },
-    { sym: "d", exp: -1, name: "deci" },
-    { sym: "c", exp: -2, name: "centi" },
-    { sym: "m", exp: -3, name: "milli" },
-    { sym: "\u03bc", exp: -6, name: "micro" },
-    { sym: "n", exp: -9, name: "nano" },
-    { sym: "p", exp: -12, name: "pico" },
-  ];
+  const rows = getSIReferenceRows(opConfig.si.difficulty);
 
   const wrap = document.createElement("div");
   wrap.className = "si-ref-wrap";
@@ -6684,47 +6666,22 @@ function buildSIReferenceTable() {
   }
   table.appendChild(thead);
 
-  const superscripts = {
-    "0": "\u2070", "1": "\u00b9", "2": "\u00b2", "3": "\u00b3",
-    "4": "\u2074", "5": "\u2075", "6": "\u2076", "7": "\u2077",
-    "8": "\u2078", "9": "\u2079", "-": "\u207b",
-  };
-
-  function toSuperscript(n) {
-    return String(n).split("").map((c) => superscripts[c] || c).join("");
-  }
-
-  function formatFactor(exp) {
-    if (exp === 0) return "1";
-    if (exp > 0) return "1" + ",000".repeat(exp / 3).replace(/^,/, "") || String(Math.pow(10, exp));
-    // For negative, show decimal
-    if (exp >= -3) return String(Math.pow(10, exp));
-    return "10" + toSuperscript(exp);
-  }
-
-  for (const prefix of allPrefixes) {
+  for (const row of rows) {
     const tr = document.createElement("tr");
-    const isActive = unlockedSyms.has(prefix.sym);
-    if (!isActive) tr.style.opacity = "0.3";
+    if (!row.active) tr.style.opacity = "0.3";
 
     const tdName = document.createElement("td");
-    tdName.textContent = prefix.name;
+    tdName.textContent = row.name;
 
     const tdSym = document.createElement("td");
-    tdSym.textContent = prefix.sym || "—";
+    tdSym.textContent = row.sym || "—";
     tdSym.style.fontWeight = "700";
 
     const tdBase10 = document.createElement("td");
-    tdBase10.textContent = prefix.exp === 0 ? "10\u2070" : `10${toSuperscript(prefix.exp)}`;
+    tdBase10.textContent = row.base10;
 
     const tdFactor = document.createElement("td");
-    // Show a readable factor
-    const absExp = Math.abs(prefix.exp);
-    if (prefix.exp >= 0) {
-      tdFactor.textContent = Number(Math.pow(10, prefix.exp)).toLocaleString();
-    } else {
-      tdFactor.textContent = "1/" + Number(Math.pow(10, absExp)).toLocaleString();
-    }
+    tdFactor.textContent = row.factor;
 
     tr.appendChild(tdName);
     tr.appendChild(tdSym);

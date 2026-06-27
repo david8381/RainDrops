@@ -243,6 +243,32 @@ function getSIPrefixesForDifficulty(difficulty) {
   return siPrefixes.filter((_, i) => d >= thresholds[i]);
 }
 
+// Display rows for the SI "Prefix Reference" table: all prefixes in descending
+// exponent order, each with its base-10 (superscript) and readable factor
+// strings, plus whether it is unlocked at the given difficulty. Pure data so
+// the renderer in script.js stays a thin DOM loop.
+function getSIReferenceRows(difficulty) {
+  const activeSyms = new Set(getSIPrefixesForDifficulty(difficulty).map((p) => p.sym));
+  return siPrefixes
+    .slice()
+    .sort((a, b) => b.exp - a.exp)
+    .map((p) => {
+      const absExp = Math.abs(p.exp);
+      const factor =
+        p.exp >= 0
+          ? Number(Math.pow(10, p.exp)).toLocaleString("en-US")
+          : "1/" + Number(Math.pow(10, absExp)).toLocaleString("en-US");
+      return {
+        sym: p.sym,
+        exp: p.exp,
+        name: p.exp === 0 ? "(base)" : p.name,
+        base10: `10${toSuperscript(p.exp)}`,
+        factor,
+        active: activeSyms.has(p.sym),
+      };
+    });
+}
+
 const siBaseUnits = ["m", "g", "L"];
 
 function expDiffToConversion(expDiff) {
@@ -996,6 +1022,7 @@ globalThis.RainMathCore = {
   shiftDecimalSimple,
   siBaseUnits,
   siPrefixes,
+  getSIReferenceRows,
   toSuperscript,
   hashString,
   weightedPick,

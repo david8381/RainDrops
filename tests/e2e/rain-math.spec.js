@@ -760,6 +760,23 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#statsHoverTooltip")).toContainText("Boss mastered: no");
   });
 
+  test("SI stats popup renders the prefix reference table", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["si"]);
+
+    await page.locator('.diff-card[data-op="si"] .diff-grid-hint').click();
+
+    const refTable = page.locator(".si-ref-table");
+    await expect(refTable).toBeVisible();
+    await expect(page.locator(".si-ref-title")).toHaveText("Prefix Reference");
+    // 1 header row + 13 prefix rows, descending exponent order.
+    await expect(refTable.locator("tr")).toHaveCount(14);
+
+    const kiloRow = refTable.locator("tr", { hasText: "kilo" });
+    await expect(kiloRow).toContainText("10³");
+    await expect(kiloRow).toContainText("1,000");
+  });
+
   test("creates and switches local player profiles", async ({ page }) => {
     await openApp(page);
 

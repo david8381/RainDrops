@@ -39,7 +39,7 @@ run imports `test` from the same fixtures file but the fixture is a no-op
 without `COVERAGE=1`.
 
 Baseline (2026-06-27): unit — game-core ~89% lines, player-progress ~94% lines;
-e2e — `script.js` ~82% lines / ~64% branch. The thinnest browser areas are
+e2e — `script.js` ~83% lines / ~65% branch. The thinnest browser areas are
 results/report/SI-reference popup builders, placement (Test Me) result
 rendering, factor-targeting branches, and overlay Escape-key handling.
 

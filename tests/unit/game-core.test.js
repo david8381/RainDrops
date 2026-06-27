@@ -29,6 +29,7 @@ const {
   getFullFactorization,
   getMastery,
   getSIPrefixesForDifficulty,
+  getSIReferenceRows,
   getSelectionWeight,
   isComposite,
   isPrime,
@@ -111,6 +112,45 @@ describe("difficulty ranges", () => {
     assert.ok(getSIPrefixesForDifficulty(9).some((p) => p.sym === "p"));
     assert.equal(expDiffToConversion(3), "*1000");
     assert.equal(expDiffToConversion(-2), "/100");
+  });
+
+  it("builds SI reference rows in descending exponent order with display strings", () => {
+    const rows = getSIReferenceRows(10); // max difficulty -> all prefixes active
+
+    assert.equal(rows.length, 13);
+    assert.deepEqual(
+      rows.map((r) => r.exp),
+      [12, 9, 6, 3, 2, 1, 0, -1, -2, -3, -6, -9, -12]
+    );
+
+    const tera = rows[0];
+    assert.equal(tera.sym, "T");
+    assert.equal(tera.name, "tera");
+    assert.equal(tera.base10, "10¹²"); // 10^12
+    assert.equal(tera.factor, "1,000,000,000,000");
+    assert.equal(tera.active, true);
+
+    const base = rows.find((r) => r.exp === 0);
+    assert.equal(base.sym, "");
+    assert.equal(base.name, "(base)");
+    assert.equal(base.base10, "10⁰");
+    assert.equal(base.factor, "1");
+
+    const milli = rows.find((r) => r.exp === -3);
+    assert.equal(milli.sym, "m");
+    assert.equal(milli.base10, "10⁻³"); // 10^-3
+    assert.equal(milli.factor, "1/1,000");
+  });
+
+  it("marks SI reference rows active only when unlocked at the difficulty", () => {
+    const easy = getSIReferenceRows(1);
+    const activeSyms = easy
+      .filter((r) => r.active)
+      .map((r) => r.sym)
+      .sort();
+    assert.deepEqual(activeSyms, ["", "k"]); // difficulty 1 unlocks only kilo + base
+    assert.equal(easy.length, 13); // locked prefixes are still listed (greyed out)
+    assert.equal(easy.find((r) => r.sym === "p").active, false);
   });
 });
 
