@@ -40,6 +40,7 @@ const {
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
+  formatPlacementResult,
   isComposite,
   isPrime,
   hashString,
@@ -185,6 +186,34 @@ describe("difficulty ranges", () => {
       }),
       "L3 40% -> 70% (+10%; 2/8 -> 5/8 mastered)"
     );
+  });
+
+  it("formats the Test Me placement-result card text", () => {
+    const result = formatPlacementResult(
+      {
+        recommendedLevel: 4,
+        totalCorrect: 18,
+        totalAsked: 20,
+        levelSummaries: [
+          { level: 1, correct: 4, asked: 4 },
+          { level: 2, correct: 3, asked: 4 },
+          { level: 3, correct: 0, asked: 0 },
+        ],
+      },
+      "Multiplication"
+    );
+    assert.equal(result.level, 4);
+    assert.equal(result.title, "Recommended: Multiplication Level 4");
+    assert.match(result.body, /^18\/20 correct in Test Me\. Eligible problems through Level 3 /);
+    assert.equal(result.details, "L1: 4/4 (100%) · L2: 3/4 (75%) · L3: 0/0 (0%)");
+
+    // level 1 places nothing out and falls back to the explainer when no summaries
+    const base = formatPlacementResult(
+      { recommendedLevel: 1, totalCorrect: 2, totalAsked: 6 },
+      "Addition"
+    );
+    assert.match(base.body, /No lower levels will be marked placed out\./);
+    assert.match(base.details, /^Test Me runs like the regular game/);
   });
 
   it("formats the practice-next line, distinguishing new and seen facts", () => {

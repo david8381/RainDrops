@@ -17,6 +17,7 @@ const {
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
+  formatPlacementResult,
   generateProblem,
   generateWeightedProblem: generateCoreWeightedProblem,
   getDifficultyRange,
@@ -6072,26 +6073,17 @@ function renderPlacementSelect(card) {
 }
 
 function renderPlacementResult(card) {
-  const level = placementState.recommendedLevel || 1;
   const opName = opDisplayNames[placementState.opKey] || placementState.opKey;
-  const placedThrough = Math.max(0, level - 1);
+  const result = formatPlacementResult(placementState, opName);
+  const level = result.level;
   const title = document.createElement("h2");
-  title.textContent = `Recommended: ${opName} Level ${level}`;
+  title.textContent = result.title;
   const body = document.createElement("p");
   body.className = "placement-sub";
-  const placedOutText = placedThrough > 0
-    ? `Eligible problems through Level ${placedThrough} will show as placed out until real attempts take over.`
-    : "No lower levels will be marked placed out.";
-  body.textContent = `${placementState.totalCorrect}/${placementState.totalAsked} correct in Test Me. ${placedOutText} Your actual Test Me answers stay recorded as ordinary practice.`;
+  body.textContent = result.body;
   const details = document.createElement("div");
   details.className = "placement-note";
-  const summaries = Array.isArray(placementState.levelSummaries) ? placementState.levelSummaries : [];
-  details.textContent = summaries.length > 0
-    ? summaries.map((summary) => {
-      const pct = summary.asked > 0 ? Math.round((summary.correct / summary.asked) * 100) : 0;
-      return `L${summary.level}: ${summary.correct}/${summary.asked} (${pct}%)`;
-    }).join(" · ")
-    : "Test Me runs like the regular game: one falling problem at a time, with missed problems repeated.";
+  details.textContent = result.details;
   const actions = document.createElement("div");
   actions.className = "placement-actions";
   const close = document.createElement("button");

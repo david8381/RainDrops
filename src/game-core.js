@@ -1052,6 +1052,31 @@ function formatPracticeNext(suggestions) {
     .join(", ")}`;
 }
 
+// Text for the Test Me placement-result card (title, body, per-level detail
+// line). opName is the display label the caller resolves; level is returned so
+// the caller can label its Use/Try buttons.
+function formatPlacementResult(placementState, opName) {
+  const level = placementState.recommendedLevel || 1;
+  const placedThrough = Math.max(0, level - 1);
+  const placedOutText =
+    placedThrough > 0
+      ? `Eligible problems through Level ${placedThrough} will show as placed out until real attempts take over.`
+      : "No lower levels will be marked placed out.";
+  const title = `Recommended: ${opName} Level ${level}`;
+  const body = `${placementState.totalCorrect}/${placementState.totalAsked} correct in Test Me. ${placedOutText} Your actual Test Me answers stay recorded as ordinary practice.`;
+  const summaries = Array.isArray(placementState.levelSummaries) ? placementState.levelSummaries : [];
+  const details =
+    summaries.length > 0
+      ? summaries
+          .map((summary) => {
+            const pct = summary.asked > 0 ? Math.round((summary.correct / summary.asked) * 100) : 0;
+            return `L${summary.level}: ${summary.correct}/${summary.asked} (${pct}%)`;
+          })
+          .join(" · ")
+      : "Test Me runs like the regular game: one falling problem at a time, with missed problems repeated.";
+  return { level, title, body, details };
+}
+
 globalThis.RainMathCore = {
   SUPERSCRIPTS,
   formatPercent,
@@ -1063,6 +1088,7 @@ globalThis.RainMathCore = {
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
+  formatPlacementResult,
   advanceFactorDrop,
   clamp,
   createDefaultOpConfig,
