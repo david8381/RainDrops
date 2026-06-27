@@ -477,10 +477,6 @@ function getSearchParams() {
   return new URLSearchParams(window.location.search);
 }
 
-function isTestMode() {
-  return getSearchParams().has("test");
-}
-
 function storageGet(key) {
   try {
     return window.localStorage?.getItem(key) ?? null;
@@ -721,15 +717,6 @@ function getSpawnInterval() {
 
 function getMaxDrops() {
   return dropLimit;
-}
-
-function getBossWaveMaxActive() {
-  return getActivePressure().waveMaxActive;
-}
-
-function getBossWaveDelayMs() {
-  const pressure = getActivePressure();
-  return randInt(pressure.waveDelayMinMs, pressure.waveDelayMaxMs);
 }
 
 // ============================================================
@@ -1245,7 +1232,7 @@ function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficul
     opKey,
     level,
     pressure: { ...pressure },
-    phase: startsWithChallenge ? "announce" : "announce",
+    phase: "announce",
     announceMs: BOSS_ANNOUNCE_MS,
     nextAction: startsWithChallenge ? "challenge" : "boss",
     message: mode === "wave"
@@ -1305,10 +1292,6 @@ function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficul
   return true;
 }
 
-function getBlitzUnlockedLevel(opKey) {
-  return summarizeProfile(progressProfile).skills[opKey]?.blitzUnlockedLevel || 0;
-}
-
 function getSelectedReplayLevel(opKey) {
   const skill = summarizeProfile(progressProfile).skills[opKey];
   return canReplayChallenges(opKey, skill) ? opConfig[opKey].difficulty : 0;
@@ -1333,14 +1316,6 @@ function startBossReplayMode(opKey) {
   if (level <= 0) return false;
   startBossMode(opKey, { mode: "boss", level, force: true });
   return true;
-}
-
-function startBossAnnouncement(message, nextAction = "boss") {
-  bossMode.phase = "announce";
-  bossMode.message = message;
-  bossMode.announceMs = BOSS_ANNOUNCE_MS;
-  bossMode.nextAction = nextAction;
-  updateBossHud();
 }
 
 function startChallenge(type = "blitz") {
@@ -2043,10 +2018,6 @@ function updateBossHud() {
 
 function getActiveAnswers() {
   return drops.map((drop) => drop.answer);
-}
-
-function getActiveAnswerTexts() {
-  return drops.map((drop) => drop.answerText || String(drop.answer));
 }
 
 function createDrop() {
