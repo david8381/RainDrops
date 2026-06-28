@@ -7,6 +7,10 @@
 
 The app has no production build step. These commands install only developer test tooling.
 
+## Running locally
+- `npm start`: serve the site at `http://127.0.0.1:4173/` — the same static host Playwright uses, matching production.
+- `npm run dev`: same server with live-reload (edit a file → the open tab auto-refreshes). Live-reload is dev-only and injected solely in this mode, so `npm start` and the Playwright test server stay byte-identical (`tests/support/static-server.mjs`, gated behind `LIVERELOAD=1`).
+
 ## Daily Commands
 - `npm run test:unit`: Run deterministic Node unit tests for `src/game-core.js` and `src/player-progress.js`.
 - `npm run test:e2e`: Run Playwright browser tests against a local static server.
