@@ -1027,6 +1027,18 @@ function formatSessionOperationStats(operation) {
   return pieces;
 }
 
+// Short accuracy label for a stats cell/row: "75% (3/4)", an em-dash when
+// nothing has been attempted, or a "Placed out" form for placement credit.
+function formatAccuracyText(asked, correct, placedOut = false) {
+  if (placedOut) {
+    return asked > 0
+      ? `Placed out · ${Math.round((correct / asked) * 100)}% (${correct}/${asked})`
+      : "Placed out";
+  }
+  if (asked === 0) return "—";
+  return `${Math.round((correct / asked) * 100)}% (${correct}/${asked})`;
+}
+
 // The middot-joined details line under each row in the Session Log list.
 function formatSessionLogDetails(session) {
   const stress = session.assessment.missed + session.assessment.wrong;
@@ -1135,6 +1147,7 @@ globalThis.RainMathCore = {
   formatSessionSummary,
   formatSessionOperationStats,
   formatSessionLogDetails,
+  formatAccuracyText,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,

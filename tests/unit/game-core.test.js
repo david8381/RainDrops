@@ -40,6 +40,7 @@ const {
   formatSessionSummary,
   formatSessionOperationStats,
   formatSessionLogDetails,
+  formatAccuracyText,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
@@ -189,6 +190,13 @@ describe("difficulty ranges", () => {
       }),
       "L3 40% -> 70% (+10%; 2/8 -> 5/8 mastered)"
     );
+  });
+
+  it("formats the short accuracy label for stats cells", () => {
+    assert.equal(formatAccuracyText(4, 3, false), "75% (3/4)");
+    assert.equal(formatAccuracyText(0, 0, false), "—"); // nothing attempted
+    assert.equal(formatAccuracyText(4, 3, true), "Placed out · 75% (3/4)");
+    assert.equal(formatAccuracyText(0, 0, true), "Placed out"); // placed out, no attempts
   });
 
   it("formats the session-log row details line", () => {

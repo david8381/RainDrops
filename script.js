@@ -17,6 +17,7 @@ const {
   formatSessionSummary,
   formatSessionOperationStats,
   formatSessionLogDetails,
+  formatAccuracyText,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
@@ -4611,11 +4612,7 @@ function getAccuracyColor(asked, correct, opKey = null, statsKey = null) {
 }
 
 function getAccuracyText(asked, correct, opKey = null, statsKey = null) {
-  if (isProblemPlacedOut(opKey, statsKey)) {
-    return asked > 0 ? `Placed out · ${Math.round((correct / asked) * 100)}% (${correct}/${asked})` : "Placed out";
-  }
-  if (asked === 0) return "—";
-  return `${Math.round((correct / asked) * 100)}% (${correct}/${asked})`;
+  return formatAccuracyText(asked, correct, isProblemPlacedOut(opKey, statsKey));
 }
 
 function formatStatsPercent(value) {

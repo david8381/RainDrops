@@ -4,6 +4,7 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-27
+- Extracted the pure core of `getAccuracyText` (the short stats-cell label: "75% (3/4)", em-dash when unseen, and the "Placed out" forms) into `formatAccuracyText(asked, correct, placedOut)` in `game-core.js`, unit-tested; `getAccuracyText` now just resolves the placed-out flag and delegates. Popup-builder cleanup step 8; no behavior change.
 - Extracted the Session Log row details line (practice accuracy · boss/challenge solved · stress misses/wrongs · challenges) into a pure `formatSessionLogDetails(session)` in `game-core.js`, unit-tested; collapsed a redundant ternary (the boss-solved branch produced the same string either way, proven equal across cases). Popup-builder cleanup step 7; no behavior change.
 - Extracted the per-operation session-report stat lines (correct/missed, practice attempts, and the optional wrong/boss-attempts/challenges lines) into a pure `formatSessionOperationStats(operation)` returning a string array, unit-tested; the report row maps the array to DOM lines. Popup-builder cleanup step 6; no behavior change.
 - Extracted the session-report summary line (practice accuracy · boss/challenge solved · challenges started/completed) into a pure `formatSessionSummary(session)` in `game-core.js`, unit-tested; `buildSessionReportPopup` sets `summary.textContent = formatSessionSummary(session)`. Popup-builder cleanup step 5; no behavior change.
