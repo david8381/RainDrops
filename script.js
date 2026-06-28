@@ -25,6 +25,9 @@ const {
   formatDropSeconds,
   formatBlitzResult,
   formatWaveResult,
+  formatBlitzBestText,
+  formatWaveBestText,
+  formatBossReplayBestText,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
@@ -4115,27 +4118,19 @@ function getReplayChallengeLevel(opKey, skill) {
 function formatBlitzText(opKey, skill) {
   const level = getReplayChallengeLevel(opKey, skill);
   if (!level) return "";
-  const best = getBlitzBest(progressProfile.skills?.[opKey], level);
-  if (!best) return `Blitz L${level}`;
-  if (Number.isFinite(best.durationMs)) return `Blitz L${level} best ${formatDuration(best.durationMs)}`;
-  return `Blitz L${level} best ${best.score} solved`;
+  return formatBlitzBestText(level, getBlitzBest(progressProfile.skills?.[opKey], level));
 }
 
 function formatWaveText(opKey, skill) {
   const level = getReplayChallengeLevel(opKey, skill);
   if (!level) return "";
-  const best = getChallengeBest(progressProfile.skills?.[opKey], "wave", level);
-  if (!best) return `Wave L${level}`;
-  if (Number.isFinite(best.maxLoadCleared)) return `Wave L${level} best ${best.maxLoadCleared} at once`;
-  return `Wave L${level} best ${best.score} solved`;
+  return formatWaveBestText(level, getChallengeBest(progressProfile.skills?.[opKey], "wave", level));
 }
 
 function formatBossReplayText(opKey, skill) {
   const level = getReplayChallengeLevel(opKey, skill);
   if (!level) return "";
-  const best = getChallengeBest(progressProfile.skills?.[opKey], "boss", level);
-  if (!best?.durationMs) return `Worksheet L${level}`;
-  return `Worksheet L${level} ${formatDuration(best.durationMs)}`;
+  return formatBossReplayBestText(level, getChallengeBest(progressProfile.skills?.[opKey], "boss", level));
 }
 
 function formatBadgeText(opKey, skill) {

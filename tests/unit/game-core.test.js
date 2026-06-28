@@ -48,6 +48,9 @@ const {
   formatDropSeconds,
   formatBlitzResult,
   formatWaveResult,
+  formatBlitzBestText,
+  formatWaveBestText,
+  formatBossReplayBestText,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
@@ -197,6 +200,19 @@ describe("difficulty ranges", () => {
       }),
       "L3 40% -> 70% (+10%; 2/8 -> 5/8 mastered)"
     );
+  });
+
+  it("formats challenge replay-button best text", () => {
+    assert.equal(formatBlitzBestText(3, null), "Blitz L3");
+    assert.equal(formatBlitzBestText(3, { durationMs: 65000 }), "Blitz L3 best 1:05");
+    assert.equal(formatBlitzBestText(3, { score: 12 }), "Blitz L3 best 12 solved");
+
+    assert.equal(formatWaveBestText(2, null), "Wave L2");
+    assert.equal(formatWaveBestText(2, { maxLoadCleared: 4 }), "Wave L2 best 4 at once");
+    assert.equal(formatWaveBestText(2, { score: 9 }), "Wave L2 best 9 solved");
+
+    assert.equal(formatBossReplayBestText(5, null), "Worksheet L5");
+    assert.equal(formatBossReplayBestText(5, { durationMs: 90000 }), "Worksheet L5 1:30");
   });
 
   it("formats Blitz and Wave challenge results", () => {

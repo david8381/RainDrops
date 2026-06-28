@@ -1072,6 +1072,25 @@ function formatWaveResult(result) {
   return `${load} at once${solved}`;
 }
 
+// Replay-button labels for a level's best challenge result. The caller resolves
+// the level and looks up the stored best; these turn (level, best) into text.
+function formatBlitzBestText(level, best) {
+  if (!best) return `Blitz L${level}`;
+  if (Number.isFinite(best.durationMs)) return `Blitz L${level} best ${formatDuration(best.durationMs)}`;
+  return `Blitz L${level} best ${best.score} solved`;
+}
+
+function formatWaveBestText(level, best) {
+  if (!best) return `Wave L${level}`;
+  if (Number.isFinite(best.maxLoadCleared)) return `Wave L${level} best ${best.maxLoadCleared} at once`;
+  return `Wave L${level} best ${best.score} solved`;
+}
+
+function formatBossReplayBestText(level, best) {
+  if (!best?.durationMs) return `Worksheet L${level}`;
+  return `Worksheet L${level} ${formatDuration(best.durationMs)}`;
+}
+
 // Short accuracy label for a stats cell/row: "75% (3/4)", an em-dash when
 // nothing has been attempted, or a "Placed out" form for placement credit.
 function formatAccuracyText(asked, correct, placedOut = false) {
@@ -1200,6 +1219,9 @@ globalThis.RainMathCore = {
   formatDropSeconds,
   formatBlitzResult,
   formatWaveResult,
+  formatBlitzBestText,
+  formatWaveBestText,
+  formatBossReplayBestText,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
