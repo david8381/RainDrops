@@ -1,6 +1,7 @@
 import * as RainMathCore from "./src/game-core.js";
 import * as RainMathProgress from "./src/player-progress.js";
 import { RainMathText } from "./src/text/english.js";
+import { initAudio, playPop, playMiss, playWrongInput } from "./src/audio.js";
 
 const {
   advanceFactorDrop: advanceFactorDropCore,
@@ -246,7 +247,6 @@ let spawnTimer = 0;
 let lastTime = 0;
 let isPaused = false;
 let isBreatherMode = false;
-let audioCtx = null;
 let nextDropId = 0;
 let canvasW = 0;
 let canvasH = 0;
@@ -3693,75 +3693,7 @@ function isGameplayOverlayOpen() {
 // 11. Audio
 // ============================================================
 
-function initAudio() {
-  if (audioCtx) return;
-  const AudioContextRef = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextRef) return;
-  audioCtx = new AudioContextRef();
-  if (audioCtx.state === "suspended") {
-    audioCtx.resume();
-  }
-}
-
-function playPop() {
-  if (!audioCtx) return;
-  if (audioCtx.state === "suspended") {
-    audioCtx.resume();
-  }
-  const now = audioCtx.currentTime;
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = "sine";
-  osc.frequency.setValueAtTime(650, now);
-  osc.frequency.exponentialRampToValueAtTime(220, now + 0.09);
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.linearRampToValueAtTime(0.22, now + 0.01);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start(now);
-  osc.stop(now + 0.14);
-}
-
-function playMiss() {
-  if (!audioCtx) return;
-  if (audioCtx.state === "suspended") {
-    audioCtx.resume();
-  }
-  const now = audioCtx.currentTime;
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = "sawtooth";
-  osc.frequency.setValueAtTime(180, now);
-  osc.frequency.exponentialRampToValueAtTime(80, now + 0.15);
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.linearRampToValueAtTime(0.12, now + 0.01);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start(now);
-  osc.stop(now + 0.2);
-}
-
-function playWrongInput() {
-  if (!audioCtx) return;
-  if (audioCtx.state === "suspended") {
-    audioCtx.resume();
-  }
-  const now = audioCtx.currentTime;
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = "square";
-  osc.frequency.setValueAtTime(320, now);
-  osc.frequency.exponentialRampToValueAtTime(180, now + 0.12);
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.linearRampToValueAtTime(0.09, now + 0.01);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start(now);
-  osc.stop(now + 0.16);
-}
+// Audio sound effects live in src/audio.js (imported at the top of this file).
 
 // ============================================================
 // 12. Canvas Resize
