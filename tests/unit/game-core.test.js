@@ -67,6 +67,8 @@ import {
   smoothProgress,
   blitzDropSeconds,
   blitzSpeedPercent,
+  blitzBombIntervalMs,
+  waveBombIntervalMs,
   spawnIntervalMs,
   randomFallTimeSec,
   isComposite,
@@ -417,6 +419,19 @@ describe("difficulty ranges", () => {
       }),
       "Practice no practice attempts · Boss/challenge solved 0 · Challenges 0 started / 0 completed"
     );
+  });
+
+  it("computes boss bomb-spawn intervals (blitz ramp + wave load)", () => {
+    // blitz: eases 2200 -> 700 over one ramp unit, then tightens, floored at 320
+    assert.equal(blitzBombIntervalMs(0), 2200);
+    assert.equal(blitzBombIntervalMs(1), 700);
+    assert.ok(blitzBombIntervalMs(2) < 700 && blitzBombIntervalMs(2) >= 320);
+    assert.equal(blitzBombIntervalMs(50), 320); // deep overdrive floored
+
+    // wave: tighter as load grows, floored at 360
+    assert.equal(waveBombIntervalMs(1), 1150);
+    assert.equal(waveBombIntervalMs(5), 790);
+    assert.equal(waveBombIntervalMs(100), 360);
   });
 
   it("computes spawn interval and random fall time", () => {

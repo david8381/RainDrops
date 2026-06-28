@@ -46,6 +46,8 @@ const {
   smoothProgress,
   blitzDropSeconds,
   blitzSpeedPercent,
+  blitzBombIntervalMs,
+  waveBombIntervalMs,
   spawnIntervalMs,
   randomFallTimeSec,
   generateProblem,
@@ -1630,11 +1632,9 @@ function getBossBombFallSeconds() {
 function getBossBombIntervalMs() {
   if (bossMode?.phase === "challenge") {
     if (bossMode.challengeType === "wave") {
-      return Math.max(360, 1150 - (getBlitzDropLimit() - 1) * 90);
+      return waveBombIntervalMs(getBlitzDropLimit());
     }
-    const overdriveUnits = Math.max(0, getBlitzElapsedRampUnits() - 1);
-    if (overdriveUnits <= 0) return Math.round(lerp(2200, 700, getBlitzRampProgress()));
-    return Math.max(320, Math.round(700 - Math.log1p(overdriveUnits * 1.8) * 190));
+    return blitzBombIntervalMs(getBlitzElapsedRampUnits());
   }
   if (!bossMode?.parts) return 2200;
   const gunsAlive = bossMode.parts.some((part) => part.id === "guns" && !part.destroyed);

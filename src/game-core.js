@@ -1316,6 +1316,29 @@ function blitzSpeedPercent(rampUnits, cfg) {
 }
 
 /**
+ * Blitz bomb-spawn interval (ms) at a given elapsed ramp position: eases
+ * 2200ms→700ms over the first ramp unit, then tightens on a log curve in
+ * overdrive, floored at 320ms.
+ * @param {number} rampUnits
+ * @returns {number}
+ */
+function blitzBombIntervalMs(rampUnits) {
+  const overdriveUnits = Math.max(0, rampUnits - 1);
+  if (overdriveUnits <= 0) return Math.round(lerp(2200, 700, smoothProgress(rampUnits)));
+  return Math.max(320, Math.round(700 - Math.log1p(overdriveUnits * 1.8) * 190));
+}
+
+/**
+ * Wave bomb-spawn interval (ms) for a given simultaneous-load round: tighter as
+ * the load grows, floored at 360ms.
+ * @param {number} load
+ * @returns {number}
+ */
+function waveBombIntervalMs(load) {
+  return Math.max(360, 1150 - (load - 1) * 90);
+}
+
+/**
  * Spawn interval (ms) between drops for a given Speed setting. Infinite when
  * Drops are off; otherwise eases 2200ms→500ms as speed goes 0→100.
  * @param {number} speedPercent 0–100
@@ -1432,6 +1455,8 @@ export {
   smoothProgress,
   blitzDropSeconds,
   blitzSpeedPercent,
+  blitzBombIntervalMs,
+  waveBombIntervalMs,
   spawnIntervalMs,
   randomFallTimeSec,
   advanceFactorDrop,
