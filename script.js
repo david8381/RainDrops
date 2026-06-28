@@ -46,6 +46,8 @@ const {
   smoothProgress,
   blitzDropSeconds,
   blitzSpeedPercent,
+  spawnIntervalMs,
+  randomFallTimeSec,
   generateProblem,
   generateWeightedProblem: generateCoreWeightedProblem,
   getDifficultyRange,
@@ -738,10 +740,7 @@ function getMaxFallTime() {
 }
 
 function getRandomBaseSpeed() {
-  const maxTime = getMaxFallTime();
-  // Random fall time between 3s and maxTime
-  const fallTimeSec = maxTime <= 3 ? 3 : 3 + Math.random() * (maxTime - 3);
-  return canvasH / fallTimeSec;
+  return canvasH / randomFallTimeSec(getMaxFallTime());
 }
 
 function getSpeedMultiplier() {
@@ -753,8 +752,7 @@ function getBossSpeedMultiplier() {
 }
 
 function getSpawnInterval() {
-  if (dropLimit === 0) return Infinity;
-  return lerp(2200, 500, gameSpeed / 100);
+  return spawnIntervalMs(gameSpeed, dropLimit);
 }
 
 function getMaxDrops() {

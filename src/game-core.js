@@ -1315,6 +1315,29 @@ function blitzSpeedPercent(rampUnits, cfg) {
   return Math.round(lerp(cfg.startSpeed, 100, smoothProgress(rampUnits)) + Math.max(0, rampUnits - 1) * 25);
 }
 
+/**
+ * Spawn interval (ms) between drops for a given Speed setting. Infinite when
+ * Drops are off; otherwise eases 2200ms→500ms as speed goes 0→100.
+ * @param {number} speedPercent 0–100
+ * @param {number} dropLimit
+ * @returns {number}
+ */
+function spawnIntervalMs(speedPercent, dropLimit) {
+  if (dropLimit === 0) return Infinity;
+  return lerp(2200, 500, speedPercent / 100);
+}
+
+/**
+ * A random fall time (seconds) for a new drop: uniform between 3s and the
+ * configured max (which is clamped up to 3). Smaller = faster.
+ * @param {number} maxFallTimeSec
+ * @param {() => number} [rng]
+ * @returns {number}
+ */
+function randomFallTimeSec(maxFallTimeSec, rng = Math.random) {
+  return maxFallTimeSec <= 3 ? 3 : 3 + rng() * (maxFallTimeSec - 3);
+}
+
 // Canonical string of the verified share-content fields (everything except the
 // id that carries the checksum). Must be rebuilt in this exact order on both
 // sides for the tamper check to line up.
@@ -1409,6 +1432,8 @@ export {
   smoothProgress,
   blitzDropSeconds,
   blitzSpeedPercent,
+  spawnIntervalMs,
+  randomFallTimeSec,
   advanceFactorDrop,
   clamp,
   createDefaultOpConfig,

@@ -67,6 +67,8 @@ import {
   smoothProgress,
   blitzDropSeconds,
   blitzSpeedPercent,
+  spawnIntervalMs,
+  randomFallTimeSec,
   isComposite,
   isPrime,
   hashString,
@@ -415,6 +417,21 @@ describe("difficulty ranges", () => {
       }),
       "Practice no practice attempts · Boss/challenge solved 0 · Challenges 0 started / 0 completed"
     );
+  });
+
+  it("computes spawn interval and random fall time", () => {
+    // drops off -> never spawn
+    assert.equal(spawnIntervalMs(50, 0), Infinity);
+    // eases 2200ms -> 500ms as speed rises
+    assert.equal(spawnIntervalMs(0, 3), 2200);
+    assert.equal(spawnIntervalMs(100, 3), 500);
+    assert.equal(spawnIntervalMs(50, 3), 1350);
+
+    // random fall time: 3s..max, driven by the injected rng
+    assert.equal(randomFallTimeSec(10, () => 0), 3);
+    assert.equal(randomFallTimeSec(10, () => 1), 10);
+    assert.equal(randomFallTimeSec(10, () => 0.5), 6.5);
+    assert.equal(randomFallTimeSec(2, () => 0.9), 3); // max clamped up to 3
   });
 
   it("ramps Blitz drop-time and speed along the survival curve", () => {
