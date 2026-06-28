@@ -39,6 +39,7 @@ const {
   formatSessionLevelProgress,
   formatSessionSummary,
   formatSessionOperationStats,
+  formatSessionLogDetails,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
@@ -187,6 +188,25 @@ describe("difficulty ranges", () => {
         ended: { readiness: 70, masteredCount: 5, universeCount: 8 },
       }),
       "L3 40% -> 70% (+10%; 2/8 -> 5/8 mastered)"
+    );
+  });
+
+  it("formats the session-log row details line", () => {
+    assert.equal(
+      formatSessionLogDetails({
+        practice: { attempts: 10, correct: 8, accuracy: 0.8 },
+        assessment: { correct: 5, wrong: 1, missed: 2 },
+        challenges: { started: 3, completed: 2 },
+      }),
+      "Practice: 8/10 correct (80%) · Boss/challenge solved: 5 · stress misses/wrongs: 3 · Challenges: 3 started, 2 completed"
+    );
+    assert.equal(
+      formatSessionLogDetails({
+        practice: { attempts: 0 },
+        assessment: { correct: 0, wrong: 0, missed: 0 },
+        challenges: { started: 0, completed: 0 },
+      }),
+      "Practice: no practice attempts · Boss/challenge solved: 0 · stress misses/wrongs: 0 · Challenges: none"
     );
   });
 

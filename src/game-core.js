@@ -1027,6 +1027,21 @@ function formatSessionOperationStats(operation) {
   return pieces;
 }
 
+// The middot-joined details line under each row in the Session Log list.
+function formatSessionLogDetails(session) {
+  const stress = session.assessment.missed + session.assessment.wrong;
+  const challenges =
+    session.challenges.started || session.challenges.completed
+      ? `Challenges: ${session.challenges.started} started, ${session.challenges.completed} completed`
+      : "Challenges: none";
+  return [
+    `Practice: ${formatSessionAccuracy(session.practice)}`,
+    `Boss/challenge solved: ${session.assessment.correct}`,
+    `stress misses/wrongs: ${stress}`,
+    challenges,
+  ].join(" · ");
+}
+
 // The middot-joined summary line at the top of a session report.
 function formatSessionSummary(session) {
   return [
@@ -1119,6 +1134,7 @@ globalThis.RainMathCore = {
   formatSessionLevelProgress,
   formatSessionSummary,
   formatSessionOperationStats,
+  formatSessionLogDetails,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,

@@ -16,6 +16,7 @@ const {
   formatSessionLevelProgress,
   formatSessionSummary,
   formatSessionOperationStats,
+  formatSessionLogDetails,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
@@ -5250,17 +5251,7 @@ function buildSessionLogPopup() {
 
       const details = document.createElement("div");
       details.className = "session-log-details";
-      const practice = `Practice: ${formatSessionAccuracy(session.practice)}`;
-      const bossSolved = session.assessment.correct > 0
-        ? `Boss/challenge solved: ${session.assessment.correct}`
-        : "Boss/challenge solved: 0";
-      const bossPressure = session.assessment.wrong + session.assessment.missed > 0
-        ? `stress misses/wrongs: ${session.assessment.missed + session.assessment.wrong}`
-        : "stress misses/wrongs: 0";
-      const challenges = session.challenges.started || session.challenges.completed
-        ? `Challenges: ${session.challenges.started} started, ${session.challenges.completed} completed`
-        : "Challenges: none";
-      details.textContent = [practice, bossSolved, bossPressure, challenges].join(" · ");
+      details.textContent = formatSessionLogDetails(session);
 
       row.appendChild(top);
       row.appendChild(details);
