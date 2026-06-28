@@ -17,6 +17,7 @@ const operationDefaults = {
   factor: { enabled: false, difficulty: 1, symbol: "n!", label: "n!" },
 };
 
+/** @returns {import('./types.js').OpConfig} */
 function createDefaultOpConfig() {
   return Object.fromEntries(
     Object.entries(operationDefaults).map(([key, value]) => [key, { ...value }])
@@ -706,6 +707,12 @@ function generateFactorProblem(difficulty = 1, rng = Math.random) {
   return makeFactorProblem(n);
 }
 
+/**
+ * @param {import('./types.js').OpKey} opKey
+ * @param {import('./types.js').OpConfig} opConfig
+ * @param {() => number} [rng]
+ * @returns {import('./types.js').Problem}
+ */
 function generateProblem(opKey, opConfig, rng = Math.random) {
   const config = opConfig[opKey];
   const range = getDifficultyRange(opKey, config.difficulty);
@@ -1194,6 +1201,7 @@ function formatChallengeEntry(entry) {
 // The middot-joined detail line under each skill in the results popup:
 // "Level 3 · 12% to boss · 40 attempts · 5/8 seen · 3 mastered · 88% accuracy
 //  · 92% recent · 1.4s avg".
+/** @param {import('./types.js').SkillSummary} skill */
 function formatSkillDetails(skill) {
   const bossText = skill.bossReady
     ? "Boss ready"

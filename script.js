@@ -128,6 +128,7 @@ const bossHudStatusEl = document.getElementById("bossHudStatus");
 const bossHudMetaEl = document.getElementById("bossHudMeta");
 const breatherHudEl = document.getElementById("breatherHud");
 
+/** @type {import('./src/types.js').OpConfig} */
 const opConfig = createDefaultOpConfig();
 
 const BOSS_ANNOUNCE_MS = 1300;
@@ -241,6 +242,7 @@ const BOSS_PART_DEFS = [
   { id: "core", name: "Core", kind: "core", problemCount: 4, quartile: 3 },
 ];
 
+/** @type {import('./src/types.js').Drop[]} */
 let drops = [];
 let splashes = [];
 let score = 0;
@@ -280,6 +282,7 @@ let starfield = [];
 // Captures the just-completed full-boss run for the victory summary popup.
 let lastBossVictory = null;
 let factorTargetId = null; // id of the targeted factor drop, or null
+/** @type {import('./src/types.js').BossMode|null} */
 let bossMode = null;
 let tutorialStepIndex = 0;
 let tutorialFromWelcome = false;

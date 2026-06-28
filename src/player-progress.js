@@ -418,6 +418,10 @@ function getRequiredAttemptsForReady(universeCount) {
   return Math.max(MIN_ATTEMPTS_FOR_READY, Math.ceil(universeCount * 1.25));
 }
 
+/**
+ * @param {number} [nowMs]
+ * @returns {import('./types.js').StoredProfile}
+ */
 function createDefaultProfile(nowMs = Date.now()) {
   const skills = {};
   for (const opKey of Object.keys(operationDefaults)) {
@@ -1944,6 +1948,10 @@ function summarizeSessionLog(profile, limit = SESSION_LOG_LIMIT) {
     });
 }
 
+/**
+ * @param {import('./types.js').StoredProfile} profile
+ * @returns {import('./types.js').ProfileSummary}
+ */
 function summarizeProfile(profile) {
   const skills = {};
   const currentSpeedPercent = normalizeSpeedPercent(profile.settings?.speed);
