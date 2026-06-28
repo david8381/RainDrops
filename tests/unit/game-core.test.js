@@ -44,6 +44,7 @@ const {
   formatAccuracyText,
   getCourseProgressPercent,
   formatSIStatsKey,
+  formatStatsKeyLabel,
   computeShareChecksum,
   verifyShareChecksum,
   encodeShareString,
@@ -292,6 +293,14 @@ describe("difficulty ranges", () => {
     assert.equal(verifyShareChecksum(payload, salt), true); // intact
     assert.equal(verifyShareChecksum({ ...payload, name: "Eve" }, salt), false); // tampered
     assert.equal(verifyShareChecksum(content, salt), true); // legacy blob with no id is accepted
+  });
+
+  it("resolves stats-key display labels per operation", () => {
+    assert.equal(formatStatsKeyLabel("si", "k,m"), "kilo → milli");
+    assert.equal(formatStatsKeyLabel("add", "2,3"), "2,3"); // arithmetic key passes through
+    // op-specific keys delegate to that op's problem-from-key text
+    assert.equal(formatStatsKeyLabel("pow", getPowUniverse(1)[0].statsKey), makePowProblemFromKey(getPowUniverse(1)[0].statsKey).text);
+    assert.equal(formatStatsKeyLabel("shapes", getShapesUniverse()[0].statsKey), makeShapeProblemFromKey(getShapesUniverse()[0].statsKey).text);
   });
 
   it("computes course progress percent and formats SI stats keys", () => {

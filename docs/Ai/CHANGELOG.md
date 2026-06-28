@@ -4,6 +4,7 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-27
+- Extracted the per-operation stats-key → display-label resolution (SI prefix pairs, shapes/powers/factors-of-10 problem text, or the raw key for arithmetic) into a pure `formatStatsKeyLabel(opKey, statsKey)` in `game-core.js`, unit-tested; `buildListStats` now calls it instead of an inline 5-way ternary. Cleanup step 17; no behavior change.
 - Moved the share-link base64url codecs (`encodeShareString`/`decodeShareString` for the plain-JSON fallback and `bytesToB64url`/`b64urlToBytes` for the compressed path) into `game-core.js` with round-trip unit tests (url-safe alphabet, bad-input → null, byte round-trip). Cleanup step 16; no behavior change.
 - Moved the share-link tamper-evidence checksum logic into `game-core.js` as salt-parameterized `computeShareChecksum(content, salt)` / `verifyShareChecksum(payload, salt)` (plus the canonical `shareContentString`), with deterministic unit tests (intact passes, tampered fails, legacy no-id accepted). `script.js` keeps `SHARE_SALT` and thin `makeShareId`/`isShareChecksumValid` wrappers; its now-dead `hashString` import was removed. Cleanup step 15; no behavior change.
 - Moved two pure stats/display helpers into `game-core.js`: `getCourseProgressPercent(level)` (op-chit course %) and `formatSIStatsKey(key)` (turns an SI stats key like "k,m" into "kilo → milli"), both unit-tested. Cleanup step 14; no behavior change.

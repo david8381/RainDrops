@@ -1110,6 +1110,16 @@ function formatSIStatsKey(key) {
   return `${from} → ${to}`;
 }
 
+// Display label for a stored stats key, per operation: SI prefix pairs, shape /
+// powers / factors-of-10 problem text, or the key itself for plain arithmetic.
+function formatStatsKeyLabel(opKey, statsKey) {
+  if (opKey === "si") return formatSIStatsKey(statsKey);
+  if (opKey === "shapes") return makeShapeProblemFromKey(statsKey).text;
+  if (opKey === "pow") return makePowProblemFromKey(statsKey).text;
+  if (opKey === "f10") return formatF10StatsKey(statsKey);
+  return statsKey;
+}
+
 // Short accuracy label for a stats cell/row: "75% (3/4)", an em-dash when
 // nothing has been attempted, or a "Placed out" form for placement credit.
 function formatAccuracyText(asked, correct, placedOut = false) {
@@ -1310,6 +1320,7 @@ globalThis.RainMathCore = {
   formatAccuracyText,
   getCourseProgressPercent,
   formatSIStatsKey,
+  formatStatsKeyLabel,
   formatReadinessPercent,
   formatReadyText,
   canOpenLevelChoices,

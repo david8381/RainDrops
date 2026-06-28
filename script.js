@@ -43,6 +43,7 @@ const {
   getSIReferenceRows,
   getCourseProgressPercent,
   formatSIStatsKey,
+  formatStatsKeyLabel,
   computeShareChecksum,
   verifyShareChecksum,
   encodeShareString,
@@ -6488,15 +6489,7 @@ function buildListStats(opKey, stats) {
     row.className = "stats-f10-row";
     row.style.borderLeft = `4px solid ${getAccuracyColor(entry.asked, entry.correct, opKey, text)}`;
     row.classList.toggle("stats-row-placed-out", isProblemPlacedOut(opKey, text));
-    const label = opKey === "si"
-      ? formatSIStatsKey(text)
-      : opKey === "shapes"
-        ? makeShapeProblemFromKey(text).text
-        : opKey === "pow"
-          ? makePowProblemFromKey(text).text
-          : opKey === "f10"
-            ? formatF10StatsKey(text)
-            : text;
+    const label = formatStatsKeyLabel(opKey, text);
     attachStatsTooltip(row, getStatsTooltip(opKey, text, label, entry.asked, entry.correct));
 
     const problem = document.createElement("span");
