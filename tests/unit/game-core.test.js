@@ -46,6 +46,10 @@ const {
   formatSIStatsKey,
   computeShareChecksum,
   verifyShareChecksum,
+  encodeShareString,
+  decodeShareString,
+  bytesToB64url,
+  b64urlToBytes,
   formatReadinessPercent,
   formatReadyText,
   canOpenLevelChoices,
@@ -261,6 +265,18 @@ describe("difficulty ranges", () => {
     assert.equal(shouldPromptBossAttempt({ bossReady: true }), true);
     assert.equal(shouldPromptBossAttempt({ bossReady: true, bossAttemptedForLevel: true }), false);
     assert.equal(shouldPromptBossAttempt({ bossReady: false }), false);
+  });
+
+  it("round-trips share blobs through the base64url codecs", () => {
+    const obj = { name: "Adä", v: 1, sessionLog: [{ id: "s1", n: 5 }] }; // unicode-safe
+    const enc = encodeShareString(obj);
+    assert.ok(!/[+/=]/.test(enc)); // url-safe alphabet, no padding
+    assert.deepEqual(decodeShareString(enc), obj);
+    assert.equal(decodeShareString("!!!not base64!!!"), null); // bad input -> null
+    assert.equal(decodeShareString(""), null);
+
+    const bytes = new Uint8Array([0, 1, 250, 99, 255]);
+    assert.deepEqual(b64urlToBytes(bytesToB64url(bytes)), bytes);
   });
 
   it("computes and verifies the share tamper checksum", () => {

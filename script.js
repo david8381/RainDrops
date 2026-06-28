@@ -45,6 +45,10 @@ const {
   formatSIStatsKey,
   computeShareChecksum,
   verifyShareChecksum,
+  encodeShareString,
+  decodeShareString,
+  bytesToB64url,
+  b64urlToBytes,
   matchesFactorDrop,
   normalizeTypedValue,
   parseNumericAnswer,
@@ -4921,36 +4925,6 @@ function buildSharedReportPayload(profile = progressProfile, sessionId = null) {
   };
   content.id = makeShareId(content);
   return content;
-}
-
-// URL-safe base64 of the (unicode) JSON — the plain fallback when the browser
-// has no CompressionStream.
-function encodeShareString(obj) {
-  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(obj))));
-  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function decodeShareString(str) {
-  if (!str) return null;
-  try {
-    const b64 = str.replace(/-/g, "+").replace(/_/g, "/");
-    return JSON.parse(decodeURIComponent(escape(atob(b64))));
-  } catch {
-    return null;
-  }
-}
-
-function bytesToB64url(bytes) {
-  let bin = "";
-  for (const b of bytes) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function b64urlToBytes(b64) {
-  const bin = atob(b64.replace(/-/g, "+").replace(/_/g, "/"));
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
-  return out;
 }
 
 async function deflateRawToB64url(str) {

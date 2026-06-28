@@ -1258,10 +1258,45 @@ function verifyShareChecksum(payload, salt) {
   return computeShareChecksum(payload, salt) === expected;
 }
 
+// URL-safe base64 of unicode JSON (the plain fallback when the browser has no
+// CompressionStream), and its inverse. decode returns null on any bad input.
+function encodeShareString(obj) {
+  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(obj))));
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function decodeShareString(str) {
+  if (!str) return null;
+  try {
+    const b64 = str.replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(decodeURIComponent(escape(atob(b64))));
+  } catch {
+    return null;
+  }
+}
+
+// Raw bytes <-> URL-safe base64 (used for the compressed share path).
+function bytesToB64url(bytes) {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function b64urlToBytes(b64) {
+  const bin = atob(b64.replace(/-/g, "+").replace(/_/g, "/"));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
 globalThis.RainMathCore = {
   SUPERSCRIPTS,
   computeShareChecksum,
   verifyShareChecksum,
+  encodeShareString,
+  decodeShareString,
+  bytesToB64url,
+  b64urlToBytes,
   formatPercent,
   formatDuration,
   formatResponseTime,
