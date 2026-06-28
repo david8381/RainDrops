@@ -15,6 +15,7 @@ const {
   formatSessionAccuracy,
   formatSessionLevelProgress,
   formatSessionSummary,
+  getSessionReportLevels,
   formatSessionOperationStats,
   formatSessionLogDetails,
   formatAccuracyText,
@@ -5312,14 +5313,7 @@ function buildSessionReportPopup(sessionId) {
 
       const mastery = document.createElement("div");
       mastery.className = "session-report-mastery";
-      const levels = Array.isArray(operation.levels) && operation.levels.length > 0
-        ? operation.levels
-        : [{
-          level: operation.started.level,
-          started: operation.started,
-          ended: operation.ended,
-          masteryDelta: operation.masteryDelta,
-        }];
+      const levels = getSessionReportLevels(operation);
       const masteryTitle = document.createElement("div");
       masteryTitle.className = "session-report-mastery-title";
       masteryTitle.textContent = "Mastery by level";

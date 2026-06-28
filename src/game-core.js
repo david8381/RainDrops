@@ -1118,6 +1118,22 @@ function formatSessionLogDetails(session) {
   ].join(" · ");
 }
 
+// The per-level rows for an operation in a session report: its recorded levels,
+// or a single synthesized row from the operation's start/end when none exist.
+function getSessionReportLevels(operation) {
+  if (Array.isArray(operation.levels) && operation.levels.length > 0) {
+    return operation.levels;
+  }
+  return [
+    {
+      level: operation.started.level,
+      started: operation.started,
+      ended: operation.ended,
+      masteryDelta: operation.masteryDelta,
+    },
+  ];
+}
+
 // The middot-joined summary line at the top of a session report.
 function formatSessionSummary(session) {
   return [
@@ -1209,6 +1225,7 @@ globalThis.RainMathCore = {
   formatSessionAccuracy,
   formatSessionLevelProgress,
   formatSessionSummary,
+  getSessionReportLevels,
   formatSessionOperationStats,
   formatSessionLogDetails,
   formatAccuracyText,

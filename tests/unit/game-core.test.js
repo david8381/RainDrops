@@ -38,6 +38,7 @@ const {
   formatSessionAccuracy,
   formatSessionLevelProgress,
   formatSessionSummary,
+  getSessionReportLevels,
   formatSessionOperationStats,
   formatSessionLogDetails,
   formatAccuracyText,
@@ -307,6 +308,35 @@ describe("difficulty ranges", () => {
         challenges: { started: 0, completed: 0 },
       }),
       ["Correct/missed: 5/0", "Practice attempts: 5"]
+    );
+  });
+
+  it("resolves session-report levels, synthesizing one when none recorded", () => {
+    // recorded levels pass through unchanged
+    const recorded = [{ level: 1 }, { level: 2 }];
+    assert.equal(getSessionReportLevels({ levels: recorded }), recorded);
+
+    // no levels -> a single synthesized row from started/ended/masteryDelta
+    assert.deepEqual(
+      getSessionReportLevels({
+        started: { level: 3, readiness: 40 },
+        ended: { readiness: 70 },
+        masteryDelta: 10,
+      }),
+      [
+        {
+          level: 3,
+          started: { level: 3, readiness: 40 },
+          ended: { readiness: 70 },
+          masteryDelta: 10,
+        },
+      ]
+    );
+
+    // empty levels array also falls back
+    assert.equal(
+      getSessionReportLevels({ levels: [], started: { level: 5 }, ended: {}, masteryDelta: 0 }).length,
+      1
     );
   });
 
