@@ -16,6 +16,7 @@ const {
   getProfileList,
   getSkillUniverseProblems,
   getSkillUniverseSize,
+  buildStatsTooltip,
   mirrorLegacyProblemStats,
   isBossMasteredProblem,
   problemCurrentAccuracy,
@@ -828,5 +829,38 @@ describe("player progress profile", () => {
     assert.equal(profile.skills.add.currentLevel, 6);
     assert.equal(profile.skills.mul.currentLevel, 8);
     assert.equal(getPressureTier(profile.settings.speed).key, "quick");
+  });
+
+  it("builds the stats-cell hover tooltip from a problem record", () => {
+    // no record yet, falls back to asked/correct and reports no attempts
+    assert.equal(
+      buildStatsTooltip(null, { label: "2 + 3 = 5", asked: 0, correct: 0 }),
+      "2 + 3 = 5\nNo attempts yet\nCorrect: 0"
+    );
+
+    // a real record expands into the full multi-line breakdown
+    const tip = buildStatsTooltip(
+      { attempts: 4, correct: 3, wrong: 1, missed: 0, helped: 0 },
+      { label: "6 × 7 = 42" }
+    );
+    const lines = tip.split("\n");
+    assert.equal(lines[0], "6 × 7 = 42");
+    assert.ok(lines.includes("Attempts: 4"));
+    assert.ok(lines.includes("Correct: 3"));
+    assert.ok(lines.includes("Wrong: 1"));
+    assert.ok(lines.some((l) => l.startsWith("Lifetime accuracy: ")));
+    assert.ok(lines.some((l) => l.startsWith("Boss mastered: ")));
+
+    // "Helped" only appears when there were helped attempts
+    assert.ok(
+      !buildStatsTooltip({ attempts: 2, correct: 2, wrong: 0, missed: 0, helped: 0 }, {
+        label: "x",
+      }).includes("Helped")
+    );
+    assert.ok(
+      buildStatsTooltip({ attempts: 3, correct: 2, wrong: 0, missed: 1, helped: 2 }, {
+        label: "x",
+      }).includes("Helped: 2")
+    );
   });
 });

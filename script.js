@@ -51,8 +51,8 @@ const {
   getPressureTier,
   getProfileList,
   getSkillUniverseProblems,
-  isBossMasteredProblem,
   isPlacementPlacedOut,
+  buildStatsTooltip,
   mirrorLegacyProblemStats,
   problemCurrentAccuracy,
   problemMastery: getProgressProblemMastery,
@@ -4615,42 +4615,13 @@ function getAccuracyText(asked, correct, opKey = null, statsKey = null) {
   return formatAccuracyText(asked, correct, isProblemPlacedOut(opKey, statsKey));
 }
 
-function formatStatsPercent(value) {
-  return `${Math.round(clamp(0, 1, value) * 100)}%`;
-}
-
 function getProgressProblem(opKey, statsKey) {
   return progressProfile.skills?.[opKey]?.problems?.[statsKey] || null;
 }
 
 function getStatsTooltip(opKey, statsKey, label, asked, correct) {
   const problem = getProgressProblem(opKey, statsKey);
-  const placedOut = isPlacementPlacedOut(problem);
-  const attempts = problem?.attempts ?? asked;
-  const correctCount = problem?.correct ?? correct;
-  const wrong = problem?.wrong ?? 0;
-  const missed = problem?.missed ?? 0;
-  const helped = problem?.helped ?? 0;
-  const lifetime = attempts > 0 ? correctCount / attempts : 0;
-  const current = problem ? problemCurrentAccuracy(problem) : lifetime;
-  const bossMastered = problem ? isBossMasteredProblem(problem) : attempts >= 3 && lifetime >= 0.9;
-  const lines = [
-    label,
-    placedOut ? "Placed out by Test Me" : null,
-    attempts > 0 ? `Attempts: ${attempts}` : "No attempts yet",
-    `Correct: ${correctCount}`,
-  ].filter(Boolean);
-  if (attempts > 0) {
-    lines.push(`Wrong: ${wrong}`);
-    lines.push(`Missed: ${missed}`);
-    if (helped > 0) lines.push(`Helped: ${helped}`);
-    lines.push(`Lifetime accuracy: ${formatStatsPercent(lifetime)}`);
-    lines.push(`Current accuracy: ${formatStatsPercent(current)}`);
-    lines.push(`Boss mastered: ${bossMastered ? "yes" : "no"} (needs 3 attempts and 90% current accuracy)`);
-  } else if (placedOut) {
-    lines.push("Boss mastered: yes (placement credit)");
-  }
-  return lines.join("\n");
+  return buildStatsTooltip(problem, { label, asked, correct });
 }
 
 function closeStatsTooltip() {

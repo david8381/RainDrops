@@ -1592,6 +1592,39 @@ function isBossMasteredProblem(problem) {
   return problemCurrentAccuracy(problem) >= BOSS_MASTERY_MIN_ACCURACY;
 }
 
+// Multi-line hover text for a stats cell, given the stored problem record (or
+// null) plus the cell's label and fallback asked/correct counts. Lives here
+// because it leans on the placement / current-accuracy / boss-mastery helpers.
+function buildStatsTooltip(problem, { label, asked = 0, correct = 0 } = {}) {
+  const pct = (value) => `${Math.round(clamp(0, 1, value) * 100)}%`;
+  const placedOut = isPlacementPlacedOut(problem);
+  const attempts = problem?.attempts ?? asked;
+  const correctCount = problem?.correct ?? correct;
+  const wrong = problem?.wrong ?? 0;
+  const missed = problem?.missed ?? 0;
+  const helped = problem?.helped ?? 0;
+  const lifetime = attempts > 0 ? correctCount / attempts : 0;
+  const current = problem ? problemCurrentAccuracy(problem) : lifetime;
+  const bossMastered = problem ? isBossMasteredProblem(problem) : attempts >= 3 && lifetime >= 0.9;
+  const lines = [
+    label,
+    placedOut ? "Placed out by Test Me" : null,
+    attempts > 0 ? `Attempts: ${attempts}` : "No attempts yet",
+    `Correct: ${correctCount}`,
+  ].filter(Boolean);
+  if (attempts > 0) {
+    lines.push(`Wrong: ${wrong}`);
+    lines.push(`Missed: ${missed}`);
+    if (helped > 0) lines.push(`Helped: ${helped}`);
+    lines.push(`Lifetime accuracy: ${pct(lifetime)}`);
+    lines.push(`Current accuracy: ${pct(current)}`);
+    lines.push(`Boss mastered: ${bossMastered ? "yes" : "no"} (needs 3 attempts and 90% current accuracy)`);
+  } else if (placedOut) {
+    lines.push("Boss mastered: yes (placement credit)");
+  }
+  return lines.join("\n");
+}
+
 function recentAccuracy(recent) {
   if (!recent || recent.length === 0) return 0;
   const score = recent.reduce((sum, entry) => sum + OUTCOME_WEIGHTS[normalizeOutcome(entry.outcome)], 0);
@@ -2034,6 +2067,7 @@ globalThis.RainMathProgress = {
   hasLevelAdvanceForLevel,
   mirrorLegacyProblemStats,
   problemCurrentAccuracy,
+  buildStatsTooltip,
   problemMastery,
   isBossMasteredProblem,
   isPlacementPlacedOut,
