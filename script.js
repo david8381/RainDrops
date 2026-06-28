@@ -42,6 +42,7 @@ const {
   formatSkillDetails,
   formatPracticeNext,
   formatPlacementResult,
+  resolvePlacementOutcome,
   generateProblem,
   generateWeightedProblem: generateCoreWeightedProblem,
   getDifficultyRange,
@@ -5616,15 +5617,23 @@ function handlePlacementDropFinished(drop, correct, outcome = correct ? "correct
   placementState.pendingDropMs = PLACEMENT_NEXT_DROP_MS;
   updateScoreDisplay();
 
-  // Shield resolves the level: full → climb, empty → recommend this level.
-  if (placementState.shield >= PLACEMENT_SHIELD_MAX) {
+  // Shield resolves the level (decision logic lives in game-core, unit-tested).
+  const decision = resolvePlacementOutcome(
+    {
+      shield: placementState.shield,
+      level: placementState.level,
+      levelAsked: placementState.levelAsked,
+    },
+    {
+      shieldMax: PLACEMENT_SHIELD_MAX,
+      shieldStart: PLACEMENT_SHIELD_START,
+      attemptCap: PLACEMENT_LEVEL_ATTEMPT_CAP,
+    }
+  );
+  if (decision.action === "climb") {
     climbPlacementLevel();
-  } else if (placementState.shield <= 0) {
-    finishPlacementRun({ recommendedLevel: placementState.level, reason: "shield collapsed" });
-  } else if (placementState.levelAsked >= PLACEMENT_LEVEL_ATTEMPT_CAP) {
-    // Borderline after the cap: climb if net-positive, otherwise stop here.
-    if (placementState.shield > PLACEMENT_SHIELD_START) climbPlacementLevel();
-    else finishPlacementRun({ recommendedLevel: placementState.level, reason: "reached attempt cap" });
+  } else if (decision.action === "finish") {
+    finishPlacementRun({ recommendedLevel: decision.recommendedLevel, reason: decision.reason });
   }
 }
 

@@ -63,6 +63,7 @@ import {
   formatSkillDetails,
   formatPracticeNext,
   formatPlacementResult,
+  resolvePlacementOutcome,
   isComposite,
   isPrime,
   hashString,
@@ -411,6 +412,28 @@ describe("difficulty ranges", () => {
       }),
       "Practice no practice attempts · Boss/challenge solved 0 · Challenges 0 started / 0 completed"
     );
+  });
+
+  it("resolves the Test Me placement outcome from shield/level/attempts", () => {
+    const cfg = { shieldMax: 6, shieldStart: 3, attemptCap: 10 };
+    const decide = (shield, level, levelAsked) =>
+      resolvePlacementOutcome({ shield, level, levelAsked }, cfg);
+
+    // full shield -> climb
+    assert.deepEqual(decide(6, 4, 2), { action: "climb" });
+    assert.deepEqual(decide(7, 4, 2), { action: "climb" });
+    // empty shield -> finish, recommend this level
+    assert.deepEqual(decide(0, 4, 5), { action: "finish", recommendedLevel: 4, reason: "shield collapsed" });
+    // mid shield, under the attempt cap -> keep going
+    assert.deepEqual(decide(4, 4, 5), { action: "continue" });
+    // at the cap, net-positive (above the start shield) -> climb
+    assert.deepEqual(decide(4, 4, 10), { action: "climb" });
+    // at the cap, not net-positive -> finish here
+    assert.deepEqual(decide(3, 4, 10), {
+      action: "finish",
+      recommendedLevel: 4,
+      reason: "reached attempt cap",
+    });
   });
 
   it("formats the Test Me placement-result card text", () => {

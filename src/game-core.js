@@ -1257,6 +1257,31 @@ function formatPlacementResult(placementState, opName) {
   return { level, title, body, details };
 }
 
+/**
+ * Decide what a Test Me placement run does after an answer is resolved, from the
+ * current shield value, the level being probed, and how many problems have been
+ * asked at this level. Pure: the caller executes the returned action.
+ *  - shield full        → climb to the next level
+ *  - shield empty       → finish, recommending this level
+ *  - past the attempt cap → climb if net-positive (above the start shield), else finish here
+ *  - otherwise          → continue asking
+ * @param {{shield:number, level:number, levelAsked:number}} state
+ * @param {{shieldMax:number, shieldStart:number, attemptCap:number}} cfg
+ * @returns {{action:"climb"|"finish"|"continue", recommendedLevel?:number, reason?:string}}
+ */
+function resolvePlacementOutcome(state, cfg) {
+  const { shield, level, levelAsked } = state;
+  const { shieldMax, shieldStart, attemptCap } = cfg;
+  if (shield >= shieldMax) return { action: "climb" };
+  if (shield <= 0) return { action: "finish", recommendedLevel: level, reason: "shield collapsed" };
+  if (levelAsked >= attemptCap) {
+    return shield > shieldStart
+      ? { action: "climb" }
+      : { action: "finish", recommendedLevel: level, reason: "reached attempt cap" };
+  }
+  return { action: "continue" };
+}
+
 // Canonical string of the verified share-content fields (everything except the
 // id that carries the checksum). Must be rebuilt in this exact order on both
 // sides for the tamper check to line up.
@@ -1347,6 +1372,7 @@ export {
   formatSkillDetails,
   formatPracticeNext,
   formatPlacementResult,
+  resolvePlacementOutcome,
   advanceFactorDrop,
   clamp,
   createDefaultOpConfig,
