@@ -19,8 +19,10 @@ const operationDefaults = {
 
 /** @returns {import('./types.js').OpConfig} */
 function createDefaultOpConfig() {
-  return Object.fromEntries(
-    Object.entries(operationDefaults).map(([key, value]) => [key, { ...value }])
+  return /** @type {import('./types.js').OpConfig} */ (
+    Object.fromEntries(
+      Object.entries(operationDefaults).map(([key, value]) => [key, { ...value }])
+    )
   );
 }
 
@@ -717,11 +719,14 @@ function generateProblem(opKey, opConfig, rng = Math.random) {
   const config = opConfig[opKey];
   const range = getDifficultyRange(opKey, config.difficulty);
 
-  if (opKey === "factor") return generateFactorProblem(config.difficulty, rng);
-  if (opKey === "shapes") return generateShapesProblem(config.difficulty, rng);
-  if (opKey === "pow") return generatePowProblem(config.difficulty, rng);
-  if (opKey === "si") return generateSIProblem(config.difficulty, rng);
-  if (opKey === "f10") return generateFactorsOfTenProblem(config.difficulty, rng);
+  // The sub-generators return valid Problems; cast to settle opKey (a string
+  // literal TS widens to `string`) back to the OpKey union.
+  const P = (p) => /** @type {import('./types.js').Problem} */ (p);
+  if (opKey === "factor") return P(generateFactorProblem(config.difficulty, rng));
+  if (opKey === "shapes") return P(generateShapesProblem(config.difficulty, rng));
+  if (opKey === "pow") return P(generatePowProblem(config.difficulty, rng));
+  if (opKey === "si") return P(generateSIProblem(config.difficulty, rng));
+  if (opKey === "f10") return P(generateFactorsOfTenProblem(config.difficulty, rng));
 
   const op = operators[opKey];
   let a = 0;

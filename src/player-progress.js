@@ -124,6 +124,11 @@ function getPressureTierForSpeed(speedPercent = 30) {
   return PRESSURE_TIERS.find((tier) => speed >= tier.min && speed <= tier.max) || PRESSURE_TIERS[1];
 }
 
+/**
+ * Resolve a pressure tier from a tier key, a speed percentage, or a tier object.
+ * @param {string|number|{key?:string}|null} [value]
+ * @returns {{key:string}&Record<string,*>}
+ */
 function getPressureTier(value = "steady") {
   if (value && typeof value === "object" && value.key) return getPressureTier(value.key);
   if (typeof value === "number") return getPressureTierForSpeed(value);
@@ -423,7 +428,7 @@ function getRequiredAttemptsForReady(universeCount) {
  * @returns {import('./types.js').StoredProfile}
  */
 function createDefaultProfile(nowMs = Date.now()) {
-  const skills = {};
+  const skills = /** @type {Record<import('./types.js').OpKey, import('./types.js').StoredSkill>} */ ({});
   for (const opKey of Object.keys(operationDefaults)) {
     skills[opKey] = createEmptySkill(opKey, nowMs);
   }
@@ -440,8 +445,10 @@ function createDefaultProfile(nowMs = Date.now()) {
       rate: 3,
       pressureTier: getPressureTierForSpeed(30).key,
       textSize: "normal",
-      difficulties: Object.fromEntries(
-        Object.entries(operationDefaults).map(([key, value]) => [key, value.difficulty])
+      difficulties: /** @type {Record<import('./types.js').OpKey, number>} */ (
+        Object.fromEntries(
+          Object.entries(operationDefaults).map(([key, value]) => [key, value.difficulty])
+        )
       ),
     },
     skills,
@@ -1599,6 +1606,10 @@ function isBossMasteredProblem(problem) {
 // Multi-line hover text for a stats cell, given the stored problem record (or
 // null) plus the cell's label and fallback asked/correct counts. Lives here
 // because it leans on the placement / current-accuracy / boss-mastery helpers.
+/**
+ * @param {import('./types.js').ProblemStat|null|undefined} problem
+ * @param {{label?:string, asked?:number, correct?:number}} [opts]
+ */
 function buildStatsTooltip(problem, { label, asked = 0, correct = 0 } = {}) {
   const pct = (value) => `${Math.round(clamp(0, 1, value) * 100)}%`;
   const placedOut = isPlacementPlacedOut(problem);
@@ -1776,6 +1787,7 @@ function getWeakProblems(skill, limit = 4) {
     .slice(0, limit);
 }
 
+/** @returns {import('./types.js').PracticeSuggestion[]} */
 function getUnseenProblems(skill, limit = 4) {
   const seen = new Set(Object.keys(skill.problems));
   return getSkillUniverseProblems(skill.opKey, skill.currentLevel)
@@ -1795,7 +1807,7 @@ function getPracticeSuggestions(skill, limit = 4) {
     .slice(0, reviewQuota)
     .map((problem) => ({ ...problem, kind: "review" }));
 
-  const suggestions = [...review];
+  const suggestions = /** @type {import('./types.js').PracticeSuggestion[]} */ ([...review]);
   const used = new Set(suggestions.map((problem) => problem.statsKey));
   const unseenNeeded = limit - suggestions.length;
   for (const problem of getUnseenProblems(skill, unseenNeeded + reviewQuota)) {
@@ -1953,7 +1965,7 @@ function summarizeSessionLog(profile, limit = SESSION_LOG_LIMIT) {
  * @returns {import('./types.js').ProfileSummary}
  */
 function summarizeProfile(profile) {
-  const skills = {};
+  const skills = /** @type {Record<import('./types.js').OpKey, import('./types.js').SkillSummary>} */ ({});
   const currentSpeedPercent = normalizeSpeedPercent(profile.settings?.speed);
   const currentSpawnRate = normalizeLoad(profile.settings?.rate);
   const currentPressureTier = getPressureTier(currentSpeedPercent);

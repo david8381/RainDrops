@@ -12,6 +12,7 @@ The app has no production build step. These commands install only developer test
 - `npm run dev`: same server with live-reload (edit a file → the open tab auto-refreshes). Live-reload is dev-only and injected solely in this mode, so `npm start` and the Playwright test server stay byte-identical (`tests/support/static-server.mjs`, gated behind `LIVERELOAD=1`).
 
 ## Daily Commands
+- `npm run typecheck`: Type-check the core modules (`src/game-core.js`, `src/player-progress.js`, `src/types.js`) via their JSDoc types (TypeScript `--checkJs`, no emit, no runtime change). Must stay at **0 errors** — it's a guardrail against wrong object shapes. `script.js` is intentionally excluded for now (see `tsconfig.json`). Part of `test:ci`.
 - `npm run test:unit`: Run deterministic Node unit tests for `src/game-core.js` and `src/player-progress.js`.
 - `npm run test:e2e`: Run Playwright browser tests against a local static server.
 - `npm test`: Run unit tests, then browser tests.

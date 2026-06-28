@@ -203,8 +203,21 @@
  * @property {number} recentAccuracy        0–1 recent-weighted.
  * @property {number|null} averageResponseMs
  * @property {number} [blitzUnlockedLevel]
- * @property {Array}  practiceSuggestions   Weak/unseen facts to drill next.
+ * @property {PracticeSuggestion[]} practiceSuggestions   Weak/unseen facts to drill next.
  * @property {Array}  challengeBestsByLevel Per-level Blitz/Wave/Worksheet bests.
+ */
+
+/**
+ * A "practice next" suggestion. Review items (already-attempted weak facts)
+ * carry attempt stats; "new" items (unseen facts) do not. Consumers
+ * (`formatPracticeNext`) use only the common fields.
+ * @typedef {Object} PracticeSuggestion
+ * @property {"review"|"new"} kind
+ * @property {string} statsKey
+ * @property {string} text
+ * @property {number} mastery     0–100 (0 for unseen).
+ * @property {number} [attempts]
+ * @property {number} [correct]
  */
 
 /**

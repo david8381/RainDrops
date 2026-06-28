@@ -1,0 +1,17 @@
+{
+  "//": "Type-checking only (no emit). Validates the JSDoc types on the clean core modules. Run with `npm run typecheck`. script.js is intentionally excluded for now — it would surface a flood of errors that is its own project.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "strictNullChecks": false,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/game-core.js", "src/player-progress.js", "src/types.js"]
+}
