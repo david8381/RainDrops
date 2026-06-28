@@ -2,6 +2,10 @@ import * as RainMathCore from "./src/game-core.js";
 import * as RainMathProgress from "./src/player-progress.js";
 import { RainMathText } from "./src/text/english.js";
 import { initAudio, playPop, playMiss, playWrongInput } from "./src/audio.js";
+import {
+  buildLoginPopup as buildLoginPopupView,
+  closeLoginPopup,
+} from "./src/popups/login-popup.js";
 
 const {
   advanceFactorDrop: advanceFactorDropCore,
@@ -5475,7 +5479,7 @@ function buildWelcomeMenu({ firstVisit = false } = {}) {
   loginBtn.textContent = getText("welcome.fullLoginMenu");
   loginBtn.addEventListener("click", () => {
     closeWelcomeMenu({ focus: false });
-    buildLoginPopup();
+    openLoginPopup();
   });
 
   actions.appendChild(playBtn);
@@ -6152,143 +6156,24 @@ function formatProfileUpdatedAt(value) {
   return `Updated ${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
 }
 
-function buildLoginPopup() {
-  closeWelcomeMenu({ focus: false });
-  closeTutorialOverlay({ focus: false });
-  closePlacementOverlay({ focus: false });
-  closeShareBadgePopup();
-  closeLoginPopup();
-  closeStatsPopup();
-  closeResultsPopup();
-
-  const overlay = document.createElement("div");
-  overlay.className = "overlay login-overlay";
-  overlay.id = "loginOverlay";
-  overlay.setAttribute("role", "dialog");
-  overlay.setAttribute("aria-modal", "true");
-  overlay.setAttribute("aria-label", "Select player");
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) closeLoginPopup();
+// Login popup lives in src/popups/login-popup.js. openLoginPopup() builds the
+// engine context it needs.
+function openLoginPopup() {
+  buildLoginPopupView({
+    getProgressProfile: () => progressProfile,
+    getActiveProfileName,
+    formatProfileUpdatedAt,
+    heartbeatActiveSession,
+    activateProfile,
+    closeOtherPopups: () => {
+      closeWelcomeMenu({ focus: false });
+      closeTutorialOverlay({ focus: false });
+      closePlacementOverlay({ focus: false });
+      closeShareBadgePopup();
+      closeStatsPopup();
+      closeResultsPopup();
+    },
   });
-
-  const card = document.createElement("div");
-  card.className = "card login-card";
-
-  const header = document.createElement("div");
-  header.className = "login-header";
-  const title = document.createElement("h2");
-  title.textContent = "Players";
-  const active = document.createElement("div");
-  active.className = "login-active";
-  active.textContent = `Current: ${getActiveProfileName()}`;
-  header.appendChild(title);
-  header.appendChild(active);
-  card.appendChild(header);
-
-  const list = document.createElement("div");
-  list.className = "login-list";
-  const profiles = getProfileList();
-  profiles.forEach((profile) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "login-profile-btn";
-    btn.classList.toggle("active", profile.active);
-    btn.setAttribute("aria-pressed", profile.active ? "true" : "false");
-    btn.addEventListener("click", () => {
-      heartbeatActiveSession();
-      saveProfile(progressProfile);
-      const selected = switchStoredProfile(profile.id);
-      activateProfile(selected);
-      closeLoginPopup();
-    });
-
-    const name = document.createElement("span");
-    name.className = "login-profile-name";
-    name.textContent = profile.name;
-    const meta = document.createElement("span");
-    meta.className = "login-profile-meta";
-    meta.textContent = profile.active ? "Active" : formatProfileUpdatedAt(profile.updatedAt);
-    btn.appendChild(name);
-    btn.appendChild(meta);
-    list.appendChild(btn);
-  });
-  card.appendChild(list);
-
-  const form = document.createElement("form");
-  form.className = "login-create";
-  const label = document.createElement("label");
-  label.setAttribute("for", "profileNameInput");
-  label.textContent = "Create player";
-  const row = document.createElement("div");
-  row.className = "login-create-row";
-  const input = document.createElement("input");
-  input.id = "profileNameInput";
-  input.type = "text";
-  input.maxLength = 40;
-  input.autocomplete = "off";
-  input.placeholder = "Name";
-  const createBtn = document.createElement("button");
-  createBtn.type = "submit";
-  createBtn.className = "primary";
-  createBtn.textContent = "Create";
-  const error = document.createElement("div");
-  error.className = "login-error";
-  error.setAttribute("role", "alert");
-
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const name = input.value.trim();
-    if (!name) {
-      error.textContent = "Enter a player name.";
-      input.focus();
-      return;
-    }
-    heartbeatActiveSession();
-    saveProfile(progressProfile);
-    const created = createStoredProfile(name);
-    activateProfile(created);
-    closeLoginPopup();
-  });
-
-  row.appendChild(input);
-  row.appendChild(createBtn);
-  form.appendChild(label);
-  form.appendChild(row);
-  form.appendChild(error);
-  card.appendChild(form);
-
-  const actions = document.createElement("div");
-  actions.className = "login-actions";
-
-  const clearBtn = document.createElement("button");
-  clearBtn.type = "button";
-  clearBtn.className = "login-clear";
-  clearBtn.textContent = "Clear Current Stats";
-  clearBtn.addEventListener("click", () => {
-    heartbeatActiveSession();
-    const resetProfile = resetStoredProfile();
-    activateProfile(resetProfile);
-    closeLoginPopup();
-  });
-
-  const closeBtn = document.createElement("button");
-  closeBtn.type = "button";
-  closeBtn.className = "login-close";
-  closeBtn.textContent = "Close";
-  closeBtn.addEventListener("click", closeLoginPopup);
-
-  actions.appendChild(clearBtn);
-  actions.appendChild(closeBtn);
-  card.appendChild(actions);
-
-  overlay.appendChild(card);
-  document.body.appendChild(overlay);
-  input.focus();
-}
-
-function closeLoginPopup() {
-  const existing = document.getElementById("loginOverlay");
-  if (existing) existing.remove();
 }
 
 function buildGridStats(opKey, stats) {
@@ -6845,7 +6730,7 @@ if (testMeLink) {
 if (loginLink) {
   loginLink.addEventListener("click", (e) => {
     e.preventDefault();
-    buildLoginPopup();
+    openLoginPopup();
   });
 }
 if (resultsLink) {
@@ -6953,7 +6838,7 @@ function setupTouchKeypad() {
     if (touchLoginLink) {
       touchLoginLink.addEventListener("click", (e) => {
         e.preventDefault();
-        buildLoginPopup();
+        openLoginPopup();
       });
     }
     const touchSessionLogLink = document.getElementById("touchSessionLogLink");
