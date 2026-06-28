@@ -4,6 +4,7 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-27
+- Moved two pure stats/display helpers into `game-core.js`: `getCourseProgressPercent(level)` (op-chit course %) and `formatSIStatsKey(key)` (turns an SI stats key like "k,m" into "kilo → milli"), both unit-tested. Cleanup step 14; no behavior change.
 - Extracted the session-report per-operation level resolution (use recorded `levels`, else synthesize one row from started/ended/masteryDelta) into a pure `getSessionReportLevels(operation)` in `game-core.js`, unit-tested. Cleanup step 13; no behavior change.
 - Extracted the pure text kernels of the challenge replay buttons (`formatBlitzBestText`, `formatWaveBestText`, `formatBossReplayBestText` — turning a level + stored best into the button label) into `game-core.js`, unit-tested; the `formatBlitz/Wave/BossReplayText` wrappers in `script.js` keep the profile lookup and delegate. Cleanup step 12; no behavior change.
 - Moved the Blitz/Wave challenge-result formatters (`formatDropSeconds`, `formatBlitzResult`, `formatWaveResult`) into `game-core.js`, unit-tested; `script.js` consumes them via the destructure. Cleanup step 11; no behavior change.

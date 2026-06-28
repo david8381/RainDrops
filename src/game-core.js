@@ -1091,6 +1091,25 @@ function formatBossReplayBestText(level, best) {
   return `Worksheet L${level} ${formatDuration(best.durationMs)}`;
 }
 
+// Course progress (0-100%) for an op chit, from its current level out of 10.
+function getCourseProgressPercent(level) {
+  return clamp(0, 100, Math.round((clamp(1, 10, level) / 10) * 100));
+}
+
+// Turns an SI stats key like "k,m" into a readable "kilo → milli" label.
+function formatSIStatsKey(key) {
+  const siPrefixNames = {
+    k: "kilo", "": "base", c: "centi", m: "milli", h: "hecto", da: "deca",
+    d: "deci", M: "mega", "μ": "micro", G: "giga", n: "nano", T: "tera",
+    p: "pico", base: "(base)",
+  };
+  const parts = key.split(",");
+  if (parts.length !== 2) return key;
+  const from = siPrefixNames[parts[0]] || parts[0] || "(base)";
+  const to = siPrefixNames[parts[1]] || parts[1] || "(base)";
+  return `${from} → ${to}`;
+}
+
 // Short accuracy label for a stats cell/row: "75% (3/4)", an em-dash when
 // nothing has been attempted, or a "Placed out" form for placement credit.
 function formatAccuracyText(asked, correct, placedOut = false) {
@@ -1229,6 +1248,8 @@ globalThis.RainMathCore = {
   formatSessionOperationStats,
   formatSessionLogDetails,
   formatAccuracyText,
+  getCourseProgressPercent,
+  formatSIStatsKey,
   formatReadinessPercent,
   formatReadyText,
   canOpenLevelChoices,

@@ -41,6 +41,8 @@ const {
   getSelectionWeight,
   getSIPrefixesForDifficulty,
   getSIReferenceRows,
+  getCourseProgressPercent,
+  formatSIStatsKey,
   hashString,
   matchesFactorDrop,
   normalizeTypedValue,
@@ -4139,10 +4141,6 @@ function formatBadgeText(opKey, skill) {
   return level ? `Recap L${level}` : "";
 }
 
-function getCourseProgressPercent(level) {
-  return clamp(0, 100, Math.round((clamp(1, 10, level) / 10) * 100));
-}
-
 function formatOpChitTip(opKey, baseTip) {
   const level = opConfig[opKey]?.difficulty || 1;
   const progress = getCourseProgressPercent(level);
@@ -6501,17 +6499,6 @@ function buildSIReferenceTable() {
 
   wrap.appendChild(table);
   return wrap;
-}
-
-function formatSIStatsKey(key) {
-  const siPrefixNames = { k: "kilo", "": "base", c: "centi", m: "milli",
-    h: "hecto", da: "deca", d: "deci", M: "mega", "\u03bc": "micro",
-    G: "giga", n: "nano", T: "tera", p: "pico", base: "(base)" };
-  const parts = key.split(",");
-  if (parts.length !== 2) return key;
-  const from = siPrefixNames[parts[0]] || parts[0] || "(base)";
-  const to = siPrefixNames[parts[1]] || parts[1] || "(base)";
-  return `${from} → ${to}`;
 }
 
 function buildListStats(opKey, stats) {

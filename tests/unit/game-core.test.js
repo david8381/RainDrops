@@ -42,6 +42,8 @@ const {
   formatSessionOperationStats,
   formatSessionLogDetails,
   formatAccuracyText,
+  getCourseProgressPercent,
+  formatSIStatsKey,
   formatReadinessPercent,
   formatReadyText,
   canOpenLevelChoices,
@@ -257,6 +259,18 @@ describe("difficulty ranges", () => {
     assert.equal(shouldPromptBossAttempt({ bossReady: true }), true);
     assert.equal(shouldPromptBossAttempt({ bossReady: true, bossAttemptedForLevel: true }), false);
     assert.equal(shouldPromptBossAttempt({ bossReady: false }), false);
+  });
+
+  it("computes course progress percent and formats SI stats keys", () => {
+    assert.equal(getCourseProgressPercent(1), 10);
+    assert.equal(getCourseProgressPercent(5), 50);
+    assert.equal(getCourseProgressPercent(10), 100);
+    assert.equal(getCourseProgressPercent(0), 10); // clamps level to 1..10
+    assert.equal(getCourseProgressPercent(99), 100);
+
+    assert.equal(formatSIStatsKey("k,m"), "kilo → milli");
+    assert.equal(formatSIStatsKey("base,M"), "(base) → mega");
+    assert.equal(formatSIStatsKey("weird"), "weird"); // not a 2-part key, passes through
   });
 
   it("formats the short accuracy label for stats cells", () => {
