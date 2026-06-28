@@ -1235,8 +1235,33 @@ function formatPlacementResult(placementState, opName) {
   return { level, title, body, details };
 }
 
+// Canonical string of the verified share-content fields (everything except the
+// id that carries the checksum). Must be rebuilt in this exact order on both
+// sides for the tamper check to line up.
+function shareContentString(p) {
+  return JSON.stringify({ note: p.note, v: p.v, name: p.name, sessionLog: p.sessionLog });
+}
+
+// Tamper-evidence checksum for a share blob: cyrb53 of the canonical content
+// plus a caller-supplied salt. Not real security (the salt lives in client JS),
+// just a deterrent against decode-edit-re-encode.
+function computeShareChecksum(content, salt) {
+  return hashString(shareContentString(content) + salt);
+}
+
+// The checksum is hidden as the trailing "-segment" of the blob's id. A legacy
+// blob with no string id is accepted; otherwise the recomputed checksum must
+// match what the id carries.
+function verifyShareChecksum(payload, salt) {
+  if (!payload || typeof payload.id !== "string") return true;
+  const expected = payload.id.split("-").pop();
+  return computeShareChecksum(payload, salt) === expected;
+}
+
 globalThis.RainMathCore = {
   SUPERSCRIPTS,
+  computeShareChecksum,
+  verifyShareChecksum,
   formatPercent,
   formatDuration,
   formatResponseTime,

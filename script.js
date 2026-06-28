@@ -43,7 +43,8 @@ const {
   getSIReferenceRows,
   getCourseProgressPercent,
   formatSIStatsKey,
-  hashString,
+  computeShareChecksum,
+  verifyShareChecksum,
   matchesFactorDrop,
   normalizeTypedValue,
   parseNumericAnswer,
@@ -4896,22 +4897,15 @@ async function copyTextToClipboard(text, statusEl, okMsg = "Copied.") {
 // re-encodes will not know to recompute the hash hidden in the id.
 const SHARE_SALT = "rm.aurora.v1";
 
-// Canonical string of the verified content fields (everything except the id that
-// carries the checksum). Must be rebuilt in this exact order on both sides.
-function shareContentString(p) {
-  return JSON.stringify({ note: p.note, v: p.v, name: p.name, sessionLog: p.sessionLog });
-}
-
 // The checksum is disguised as the trailing segment of a plausible export id, so
 // a tamperer editing scores/name won't realize a sibling field must be updated.
+// (Canonical content string + checksum logic live in game-core.)
 function makeShareId(content) {
-  return `rm${Date.now().toString(36)}-${hashString(shareContentString(content) + SHARE_SALT)}`;
+  return `rm${Date.now().toString(36)}-${computeShareChecksum(content, SHARE_SALT)}`;
 }
 
 function isShareChecksumValid(payload) {
-  if (!payload || typeof payload.id !== "string") return true; // legacy/no-id link: accept
-  const expected = payload.id.split("-").pop();
-  return hashString(shareContentString(payload) + SHARE_SALT) === expected;
+  return verifyShareChecksum(payload, SHARE_SALT);
 }
 
 function buildSharedReportPayload(profile = progressProfile, sessionId = null) {

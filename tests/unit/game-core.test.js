@@ -44,6 +44,8 @@ const {
   formatAccuracyText,
   getCourseProgressPercent,
   formatSIStatsKey,
+  computeShareChecksum,
+  verifyShareChecksum,
   formatReadinessPercent,
   formatReadyText,
   canOpenLevelChoices,
@@ -259,6 +261,21 @@ describe("difficulty ranges", () => {
     assert.equal(shouldPromptBossAttempt({ bossReady: true }), true);
     assert.equal(shouldPromptBossAttempt({ bossReady: true, bossAttemptedForLevel: true }), false);
     assert.equal(shouldPromptBossAttempt({ bossReady: false }), false);
+  });
+
+  it("computes and verifies the share tamper checksum", () => {
+    const salt = "rm.aurora.v1";
+    const content = { note: "hi", v: 1, name: "Ada", sessionLog: [{ id: "s1", x: 5 }] };
+    const checksum = computeShareChecksum(content, salt);
+
+    // deterministic and salt-sensitive
+    assert.equal(computeShareChecksum(content, salt), checksum);
+    assert.notEqual(computeShareChecksum(content, "other-salt"), checksum);
+
+    const payload = { ...content, id: `rmabc123-${checksum}` };
+    assert.equal(verifyShareChecksum(payload, salt), true); // intact
+    assert.equal(verifyShareChecksum({ ...payload, name: "Eve" }, salt), false); // tampered
+    assert.equal(verifyShareChecksum(content, salt), true); // legacy blob with no id is accepted
   });
 
   it("computes course progress percent and formats SI stats keys", () => {
