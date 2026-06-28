@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import "../../src/game-core.js";
-
-const {
+import {
   advanceFactorDrop,
   clamp,
   createDefaultOpConfig,
@@ -76,7 +74,7 @@ const {
   recordProblemResult,
   shiftDecimal,
   weightedPick,
-} = globalThis.RainMathCore;
+} from "../../src/game-core.js";
 
 function sequenceRng(values) {
   let index = 0;

@@ -10,7 +10,7 @@ Rain Math is a browser-based math game where falling raindrops are cleared by ty
 
 - `npm start` serves the site at `http://127.0.0.1:4173/` (the same static host Playwright uses). Open that URL to play locally — this matches production (GitHub Pages serves over HTTP).
 - `npm run dev` serves with live-reload: edit a file and the open browser tab auto-refreshes. (Live-reload is injected only in this mode — `npm start` and the test server are unaffected.)
-- Opening `index.html` directly via `file://` also works today, but prefer the server: it matches production and avoids `file://`-only quirks (e.g. `crypto.subtle` is unavailable there). Note: once the planned ES-module migration lands, `file://` will stop working and the server becomes required.
+- The app is built from native ES modules (`script.js` imports `src/game-core.js`, `src/player-progress.js`, `src/text/english.js`), so it must be served over HTTP. Opening `index.html` directly via `file://` does **not** work (ES modules don't load on `file://`) — always use `npm start` / `npm run dev`.
 
 ## Testing
 

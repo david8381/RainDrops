@@ -1,3 +1,7 @@
+import * as RainMathCore from "./src/game-core.js";
+import * as RainMathProgress from "./src/player-progress.js";
+import { RainMathText } from "./src/text/english.js";
+
 const {
   advanceFactorDrop: advanceFactorDropCore,
   clamp,
@@ -59,7 +63,7 @@ const {
   resetProblemStats,
   lerp,
   weightedPick,
-} = globalThis.RainMathCore;
+} = RainMathCore;
 
 const {
   BOSS_READY_SCORE,
@@ -92,9 +96,9 @@ const {
   summarizeSessionLog,
   switchStoredProfile,
   syncSettings,
-} = globalThis.RainMathProgress;
+} = RainMathProgress;
 
-const TEXT = globalThis.RainMathText || {};
+const TEXT = RainMathText || {};
 
 // ============================================================
 // 1. Constants and State
@@ -7351,6 +7355,11 @@ function makeTestDrop(overrides = {}) {
 function installTestHooks() {
   const params = new URLSearchParams(window.location.search);
   if (!params.has("test")) return;
+
+  // Under ES modules the core/progress APIs are no longer global; re-expose them
+  // for browser-side test instrumentation (e.g. e2e reads window.RainMathProgress).
+  window.RainMathCore = RainMathCore;
+  window.RainMathProgress = RainMathProgress;
 
   window.__RAIN_MATH_TEST__ = {
     reset({ clearStats = true } = {}) {

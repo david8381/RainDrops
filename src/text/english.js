@@ -1,7 +1,6 @@
-// English text catalog for Rain Math.
-// Keep this file as a plain script, not fetched JSON, so index.html still works
-// when opened directly from disk with file://.
-globalThis.RainMathText = {
+// English text catalog for Rain Math. ES module — loaded over HTTP (the app is
+// served via `npm start` / GitHub Pages), not fetched JSON.
+export const RainMathText = {
   locale: "en",
   common: {
     back: "Back",

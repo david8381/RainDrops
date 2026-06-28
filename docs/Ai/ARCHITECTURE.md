@@ -9,9 +9,11 @@ Dev-only tooling exists for tests: Node's built-in test runner covers core logic
 - `index.html`: Game markup, operation chits, controls, canvas, input bar, touch keypad, menu/test-me/login/log/donate/feedback links, feedback form, and overlays.
 - `styles.css`: Dark theme, desktop layout, responsive behavior, stats popup styling, and touch-device layout.
 - `script.js`: Browser state, animation loop, canvas drawing, boss-mode state machine, Test Me placement flow, Recap (share) popup, audio, DOM updates, login/stats/log/report popups, event listeners, touch keypad wiring, and gated `?test=1` hooks. The Session Log/Report popups render from a swappable source (`getReportProfile()` returns `reportViewProfile || progressProfile`), so a shared `#report=` link decodes a read-only profile snapshot and reuses the same popups (no duplicate rendering).
-- `src/game-core.js`: DOM-free game rules exposed as `globalThis.RainMathCore`: operation defaults, difficulty ranges, problem generation, mastery weighting, numeric normalization, SI helpers, and factorization helpers.
-- `src/player-progress.js`: Local profile/readiness logic exposed as `globalThis.RainMathProgress`: profile schema, multi-profile localStorage persistence, single-profile migration, per-problem outcomes, saved Speed/Drops/Text Size settings, derived pressure-tier practice stats, saved current levels, mastery-advance records, boss-completion records, Blitz/Wave/Worksheet challenge attempts and bests, per-session/per-operation report data, level-universe sizing, readiness scoring, practice suggestions, and boss recommendation flags.
-- `src/text/english.js`: Plain-script English text catalog exposed as `globalThis.RainMathText`. It currently owns welcome-menu and Tutorial copy plus their button labels, deliberately avoiding `fetch()`/JSON so direct `file://` loading still works.
+- `src/game-core.js`: DOM-free game rules; an ES module (`export`) imported by `script.js` and `player-progress.js`: operation defaults, difficulty ranges, problem generation, mastery weighting, numeric normalization, SI helpers, factorization helpers, and the pure stats/report/share display formatters.
+- `src/player-progress.js`: Local profile/readiness logic; an ES module that `import`s game-core and exports: profile schema, multi-profile localStorage persistence, single-profile migration, per-problem outcomes, saved Speed/Drops/Text Size settings, derived pressure-tier practice stats, saved current levels, mastery-advance records, boss-completion records, Blitz/Wave/Worksheet challenge attempts and bests, per-session/per-operation report data, level-universe sizing, readiness scoring, practice suggestions, boss recommendation flags, and the stats-tooltip builder.
+- `src/text/english.js`: English text catalog; an ES module exporting `RainMathText` (welcome-menu and Tutorial copy plus button labels).
+
+The app is served over HTTP (`npm start` / GitHub Pages); native ES modules do not load from `file://`. In test mode (`?test=1`) `script.js` re-exposes `window.RainMathCore` / `window.RainMathProgress` for browser-side test instrumentation.
 
 ## Test Files
 - `tests/unit/game-core.test.js`: Deterministic tests for math, problem generation, weighting, and factorization.
@@ -22,8 +24,8 @@ Dev-only tooling exists for tests: Node's built-in test runner covers core logic
 - `.github/workflows/tests.yml`: CI test workflow.
 
 ## Runtime Flow
-1. The browser loads `index.html`, then the core/progress/text helper scripts, then `script.js`.
-2. `src/game-core.js` publishes pure rules to `globalThis.RainMathCore`; `src/player-progress.js` publishes local profile helpers to `globalThis.RainMathProgress`.
+1. The browser loads `index.html`, which loads `script.js` as a single `<script type="module">`; `script.js` imports `src/game-core.js`, `src/player-progress.js`, and `src/text/english.js` (the browser resolves the module graph).
+2. `src/game-core.js` exports the pure rules; `src/player-progress.js` imports them and exports the local profile helpers; `script.js` imports both as namespaces (`RainMathCore`, `RainMathProgress`) and destructures the names it needs.
 3. `script.js` creates mutable browser state, reads the active local profile from localStorage, and mirrors durable progress into legacy `problemStats` for weighted generation.
 4. `init()` sizes the canvas, syncs controls/settings into the profile, sets up touch UI when needed, optionally installs test hooks for `?test=1`, shows the welcome menu on first non-test visits, focuses the hidden answer input when no menu is open, and starts `requestAnimationFrame(tick)`.
 5. `tick()` spawns drops and updates motion according to the Speed and Drops controls. Speed controls fall velocity and spawn interval; Drops controls the active-drop cap. Weighted problem generation favors unmastered, low-accuracy, and under-attempted current-level problems. Space-triggered Breather mode pauses normal spawning and drop motion until all currently visible unrevealed drops are cleared.

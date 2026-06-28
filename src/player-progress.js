@@ -1,4 +1,15 @@
-(() => {
+import {
+  expDiffToConversion,
+  getDifficultyRange,
+  getF10Universe,
+  getFactorUniverse,
+  getShapesUniverse,
+  getPowUniverse,
+  getSIPrefixesForDifficulty,
+  operationDefaults,
+  clamp,
+} from "./game-core.js";
+
 const STORAGE_KEY = "rainMath.profile.v1";
 const PROFILE_STORE_KEY = "rainMath.profiles.v1";
 const PROFILE_VERSION = 3;
@@ -84,17 +95,6 @@ const PRESSURE_TIERS = [
   },
 ];
 
-const {
-  expDiffToConversion,
-  getDifficultyRange,
-  getF10Universe,
-  getFactorUniverse,
-  getShapesUniverse,
-  getPowUniverse,
-  getSIPrefixesForDifficulty,
-  operationDefaults,
-  clamp,
-} = globalThis.RainMathCore;
 
 const OUTCOME_WEIGHTS = {
   correct: 1,
@@ -2018,7 +2018,7 @@ function mirrorLegacyProblemStats(profile, targetStats) {
   return targetStats;
 }
 
-globalThis.RainMathProgress = {
+export {
   BOSS_READY_SCORE,
   MIN_ACCURACY_FOR_READY,
   MIN_ATTEMPTS_FOR_READY,
@@ -2092,4 +2092,3 @@ globalThis.RainMathProgress = {
   summarizeSpeedTierStats,
   syncSettings,
 };
-})();

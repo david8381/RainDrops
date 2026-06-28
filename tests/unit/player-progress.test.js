@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import "../../src/game-core.js";
-import "../../src/player-progress.js";
+import { createProblemStats } from "../../src/game-core.js";
 
-const {
+import {
   BOSS_READY_SCORE,
   PROFILE_STORE_KEY,
   STORAGE_KEY,
@@ -42,7 +41,7 @@ const {
   summarizeSessionLog,
   switchStoredProfile,
   syncSettings,
-} = globalThis.RainMathProgress;
+} from "../../src/player-progress.js";
 
 function createMemoryStorage(initial = {}) {
   const data = { ...initial };
@@ -796,7 +795,7 @@ describe("player progress profile", () => {
 
   it("mirrors durable profile stats into legacy problemStats", () => {
     const profile = createDefaultProfile();
-    const target = globalThis.RainMathCore.createProblemStats();
+    const target = createProblemStats();
     recordProgressEvent(profile, {
       opKey: "si",
       statsKey: "k,base",

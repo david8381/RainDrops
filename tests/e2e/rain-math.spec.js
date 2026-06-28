@@ -1,6 +1,4 @@
 import { expect, test } from "../support/fixtures.js";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 
 async function openApp(page) {
   await page.route("https://fonts.googleapis.com/**", (route) => route.abort());
@@ -49,12 +47,13 @@ test("loads without page errors and paints the canvas", async ({ page }) => {
   expect(hasPaintedPixel).toBe(true);
 });
 
-test("loads directly from index.html and operation chits respond", async ({ page }) => {
+test("boots over HTTP through the welcome flow and operation chits respond", async ({ page }) => {
   await page.route("https://fonts.googleapis.com/**", (route) => route.abort());
   await page.route("https://fonts.gstatic.com/**", (route) => route.abort());
   await page.route("**/gc.zgo.at/**", (route) => route.abort());
 
-  await page.goto(pathToFileURL(resolve("index.html")).href);
+  // Real boot path (no ?test=1): the app is an ES module served over HTTP.
+  await page.goto("/");
   if (await page.locator("#welcomeOverlay").isVisible()) {
     await page.locator("#welcomePlay").click();
   }

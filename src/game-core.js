@@ -1,4 +1,3 @@
-(() => {
 const operators = {
   add: { symbol: "+", fn: (a, b) => a + b },
   sub: { symbol: "-", fn: (a, b) => a - b },
@@ -1299,7 +1298,7 @@ function b64urlToBytes(b64) {
   return out;
 }
 
-globalThis.RainMathCore = {
+export {
   SUPERSCRIPTS,
   computeShareChecksum,
   verifyShareChecksum,
@@ -1393,4 +1392,3 @@ globalThis.RainMathCore = {
   hashString,
   weightedPick,
 };
-})();
