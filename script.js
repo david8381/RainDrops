@@ -22,6 +22,9 @@ const {
   formatReadyText,
   canOpenLevelChoices,
   shouldPromptBossAttempt,
+  formatDropSeconds,
+  formatBlitzResult,
+  formatWaveResult,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
@@ -3790,11 +3793,6 @@ const opDisplayNames = {
 };
 
 
-function formatDropSeconds(seconds) {
-  if (!Number.isFinite(seconds)) return "--";
-  return `${Math.max(0, seconds).toFixed(1)}s drops`;
-}
-
 // When an operation first reaches mastery, interrupt briefly with a choice. The
 // game loop pauses under modal overlays, so this does not cost drops.
 function maybeOfferBoss(opKey) {
@@ -3891,21 +3889,6 @@ function closeBossVictoryPopup() {
 
 // End-of-run celebration after a full boss clear: congratulations, the three
 // stage results (Wave 1 / Wave 2 / Worksheet), and a button to move on.
-function formatBlitzResult(result) {
-  if (!result) return "—";
-  const duration = Number.isFinite(result.durationMs) ? formatDuration(result.durationMs) : "—";
-  const dropTime = Number.isFinite(result.fastestDropSeconds) ? ` · ${formatDropSeconds(result.fastestDropSeconds)}` : "";
-  const solved = Number.isFinite(result.clearedCount) ? ` · ${result.clearedCount} solved` : "";
-  return `${duration}${dropTime}${solved}`;
-}
-
-function formatWaveResult(result) {
-  if (!result) return "—";
-  const load = Number.isFinite(result.maxLoadCleared) ? result.maxLoadCleared : 0;
-  const solved = Number.isFinite(result.clearedCount) ? ` · ${result.clearedCount} solved` : "";
-  return `${load} at once${solved}`;
-}
-
 function closeShareBadgePopup() {
   const existing = document.getElementById("shareBadgeOverlay");
   if (existing) existing.remove();

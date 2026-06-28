@@ -1048,6 +1048,30 @@ function shouldPromptBossAttempt(skill) {
   return Boolean(skill?.bossReady && !skill?.bossAttemptedForLevel && !skill?.levelAdvancedForLevel);
 }
 
+// Challenge-result summaries (Blitz survival time + fastest drop + solved;
+// Wave max simultaneous load + solved). Em-dash when nothing was recorded.
+function formatDropSeconds(seconds) {
+  if (!Number.isFinite(seconds)) return "--";
+  return `${Math.max(0, seconds).toFixed(1)}s drops`;
+}
+
+function formatBlitzResult(result) {
+  if (!result) return "—";
+  const duration = Number.isFinite(result.durationMs) ? formatDuration(result.durationMs) : "—";
+  const dropTime = Number.isFinite(result.fastestDropSeconds)
+    ? ` · ${formatDropSeconds(result.fastestDropSeconds)}`
+    : "";
+  const solved = Number.isFinite(result.clearedCount) ? ` · ${result.clearedCount} solved` : "";
+  return `${duration}${dropTime}${solved}`;
+}
+
+function formatWaveResult(result) {
+  if (!result) return "—";
+  const load = Number.isFinite(result.maxLoadCleared) ? result.maxLoadCleared : 0;
+  const solved = Number.isFinite(result.clearedCount) ? ` · ${result.clearedCount} solved` : "";
+  return `${load} at once${solved}`;
+}
+
 // Short accuracy label for a stats cell/row: "75% (3/4)", an em-dash when
 // nothing has been attempted, or a "Placed out" form for placement credit.
 function formatAccuracyText(asked, correct, placedOut = false) {
@@ -1173,6 +1197,9 @@ globalThis.RainMathCore = {
   formatReadyText,
   canOpenLevelChoices,
   shouldPromptBossAttempt,
+  formatDropSeconds,
+  formatBlitzResult,
+  formatWaveResult,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,

@@ -45,6 +45,9 @@ const {
   formatReadyText,
   canOpenLevelChoices,
   shouldPromptBossAttempt,
+  formatDropSeconds,
+  formatBlitzResult,
+  formatWaveResult,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
@@ -194,6 +197,22 @@ describe("difficulty ranges", () => {
       }),
       "L3 40% -> 70% (+10%; 2/8 -> 5/8 mastered)"
     );
+  });
+
+  it("formats Blitz and Wave challenge results", () => {
+    assert.equal(formatDropSeconds(1.25), "1.3s drops");
+    assert.equal(formatDropSeconds(NaN), "--");
+
+    assert.equal(
+      formatBlitzResult({ durationMs: 65000, fastestDropSeconds: 1.2, clearedCount: 30 }),
+      "1:05 · 1.2s drops · 30 solved"
+    );
+    assert.equal(formatBlitzResult({ durationMs: 5000 }), "5.0s"); // optional parts omitted
+    assert.equal(formatBlitzResult(null), "—");
+
+    assert.equal(formatWaveResult({ maxLoadCleared: 4, clearedCount: 12 }), "4 at once · 12 solved");
+    assert.equal(formatWaveResult({ maxLoadCleared: 3 }), "3 at once");
+    assert.equal(formatWaveResult(null), "—");
   });
 
   it("formats skill readiness text and level-choice predicates", () => {
