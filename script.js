@@ -3,6 +3,13 @@ import * as RainMathProgress from "./src/player-progress.js";
 import { RainMathText } from "./src/text/english.js";
 import { initAudio, playPop, playMiss, playWrongInput } from "./src/audio.js";
 import {
+  initSplashes,
+  resetSplashes,
+  createSplash,
+  updateSplashes,
+  drawSplashes,
+} from "./src/engine/splashes.js";
+import {
   buildLoginPopup as buildLoginPopupView,
   closeLoginPopup,
 } from "./src/popups/login-popup.js";
@@ -119,6 +126,7 @@ const TEXT = RainMathText || {};
 
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
+initSplashes(ctx);
 const scoreEl = document.getElementById("score");
 const scoreLabelEl = document.querySelector(".stats .label");
 const answerInput = document.getElementById("answer");
@@ -252,7 +260,6 @@ const BOSS_PART_DEFS = [
 
 /** @type {import('./src/types.js').Drop[]} */
 let drops = [];
-let splashes = [];
 let score = 0;
 let gameSpeed = 30;
 let dropLimit = 3;
@@ -383,7 +390,7 @@ function resetRunState({ resume = true, focus = true } = {}) {
   isBreatherMode = false;
   factorTargetId = null;
   drops = [];
-  splashes = [];
+  resetSplashes();
   laser = null;
   resetPlayerShipVisuals();
   score = 0;
@@ -1254,7 +1261,7 @@ function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficul
   closeLoginPopup();
   clearAmbiguousTimer();
   drops = [];
-  splashes = [];
+  resetSplashes();
   laser = null;
   resetPlayerShipVisuals();
   factorTargetId = null;
@@ -2894,57 +2901,7 @@ function drawBossStunOverlay() {
 // 8. Splash Effects
 // ============================================================
 
-function createSplash(drop) {
-  const baseColor = "125, 211, 252";
-  const count = 6;
-  for (let i = 0; i < count; i += 1) {
-    const angle = (Math.PI * 2 * i) / count + Math.random() * 0.4;
-    const speed = 0.02 + Math.random() * 0.08;
-    splashes.push({
-      x: drop.x + Math.cos(angle) * 6,
-      y: drop.y + Math.sin(angle) * 6,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed - 0.08,
-      rx: 2 + Math.random() * 3,
-      ry: 3 + Math.random() * 4,
-      rotation: Math.random() * Math.PI,
-      life: 380 + Math.random() * 180,
-      maxLife: 520,
-      gravity: 0.00035 + Math.random() * 0.00025,
-      color: `rgba(${baseColor}, {a})`,
-    });
-  }
-}
-
-function updateSplashes(dt) {
-  const next = [];
-  for (const splash of splashes) {
-    splash.life -= dt;
-    splash.y += splash.vy * dt;
-    splash.x += splash.vx * dt;
-    splash.vy += splash.gravity * dt;
-    if (splash.life > 0) next.push(splash);
-  }
-  splashes = next;
-}
-
-function drawSplashes() {
-  for (const splash of splashes) {
-    const alpha = Math.max(0, splash.life / splash.maxLife);
-    ctx.fillStyle = splash.color.replace("{a}", alpha.toFixed(2));
-    ctx.beginPath();
-    ctx.ellipse(
-      splash.x,
-      splash.y,
-      splash.rx,
-      splash.ry,
-      splash.rotation,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
-  }
-}
+// Splash particle effects live in src/engine/splashes.js (imported at the top).
 
 // ============================================================
 // 8b. Laser and Player Ship
@@ -7056,7 +7013,7 @@ function installTestHooks() {
         progressProfile = resetStoredProfile();
       }
       drops = [];
-      splashes = [];
+      resetSplashes();
       laser = null;
       resetPlayerShipVisuals();
       bossMode = null;
