@@ -64,6 +64,9 @@ import {
   formatPracticeNext,
   formatPlacementResult,
   resolvePlacementOutcome,
+  smoothProgress,
+  blitzDropSeconds,
+  blitzSpeedPercent,
   isComposite,
   isPrime,
   hashString,
@@ -412,6 +415,28 @@ describe("difficulty ranges", () => {
       }),
       "Practice no practice attempts · Boss/challenge solved 0 · Challenges 0 started / 0 completed"
     );
+  });
+
+  it("ramps Blitz drop-time and speed along the survival curve", () => {
+    assert.equal(smoothProgress(0), 0);
+    assert.equal(smoothProgress(1), 1);
+    assert.equal(smoothProgress(0.5), 0.5);
+    assert.equal(smoothProgress(2), 1); // clamps input
+
+    const cfg = { startDropSeconds: 5.4, baselineDropSeconds: 2.2, minDropSeconds: 0.85, startSpeed: 20 };
+
+    // start: full drop-time, start speed
+    assert.equal(blitzDropSeconds(0, cfg), 5.4);
+    assert.equal(blitzSpeedPercent(0, cfg), 20);
+    // after one ramp unit: baseline drop-time, full speed
+    assert.equal(blitzDropSeconds(1, cfg), 2.2);
+    assert.equal(blitzSpeedPercent(1, cfg), 100);
+    // overdrive: drop-time keeps shrinking, speed adds +25/unit
+    assert.ok(blitzDropSeconds(2, cfg) < 2.2 && blitzDropSeconds(2, cfg) > cfg.minDropSeconds);
+    assert.equal(blitzSpeedPercent(2, cfg), 125);
+    assert.equal(blitzSpeedPercent(3, cfg), 150);
+    // deep overdrive is floored at minDropSeconds
+    assert.equal(blitzDropSeconds(1000, cfg), cfg.minDropSeconds);
   });
 
   it("resolves the Test Me placement outcome from shield/level/attempts", () => {

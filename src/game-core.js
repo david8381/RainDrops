@@ -1282,6 +1282,39 @@ function resolvePlacementOutcome(state, cfg) {
   return { action: "continue" };
 }
 
+// Smoothstep easing over [0,1] (clamps its input).
+function smoothProgress(value) {
+  const t = clamp(0, 1, value);
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Blitz fall-time (seconds per drop) at a given elapsed ramp position. Eases
+ * start→baseline across the first ramp unit, then keeps shrinking (overdrive)
+ * on a log curve, floored at minDropSeconds.
+ * @param {number} rampUnits  elapsedMs / rampMs (0 at start, 1 after one ramp).
+ * @param {{startDropSeconds:number, baselineDropSeconds:number, minDropSeconds:number}} cfg
+ * @returns {number}
+ */
+function blitzDropSeconds(rampUnits, cfg) {
+  const baselineSeconds = lerp(cfg.startDropSeconds, cfg.baselineDropSeconds, smoothProgress(rampUnits));
+  const overdriveUnits = Math.max(0, rampUnits - 1);
+  if (overdriveUnits <= 0) return baselineSeconds;
+  const overdriveReduction = Math.log1p(overdriveUnits * 1.4) * 0.55;
+  return Math.max(cfg.minDropSeconds, baselineSeconds - overdriveReduction);
+}
+
+/**
+ * Blitz fall-speed percent at a given elapsed ramp position: eases start→100,
+ * then adds +25 per overdrive unit.
+ * @param {number} rampUnits
+ * @param {{startSpeed:number}} cfg
+ * @returns {number}
+ */
+function blitzSpeedPercent(rampUnits, cfg) {
+  return Math.round(lerp(cfg.startSpeed, 100, smoothProgress(rampUnits)) + Math.max(0, rampUnits - 1) * 25);
+}
+
 // Canonical string of the verified share-content fields (everything except the
 // id that carries the checksum). Must be rebuilt in this exact order on both
 // sides for the tamper check to line up.
@@ -1373,6 +1406,9 @@ export {
   formatPracticeNext,
   formatPlacementResult,
   resolvePlacementOutcome,
+  smoothProgress,
+  blitzDropSeconds,
+  blitzSpeedPercent,
   advanceFactorDrop,
   clamp,
   createDefaultOpConfig,

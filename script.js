@@ -43,6 +43,9 @@ const {
   formatPracticeNext,
   formatPlacementResult,
   resolvePlacementOutcome,
+  smoothProgress,
+  blitzDropSeconds,
+  blitzSpeedPercent,
   generateProblem,
   generateWeightedProblem: generateCoreWeightedProblem,
   getDifficultyRange,
@@ -1485,11 +1488,6 @@ function getBlitzElapsedRampUnits() {
   return Math.max(0, (bossMode.challengeElapsedMs || bossMode.blitzElapsedMs || 0) / BLITZ_RAMP_MS);
 }
 
-function smoothProgress(value) {
-  const t = clamp(0, 1, value);
-  return t * t * (3 - 2 * t);
-}
-
 function getBlitzRampProgress() {
   return smoothProgress(getBlitzProgress());
 }
@@ -1505,18 +1503,18 @@ function getBlitzSurvivalMs() {
 }
 
 function getBlitzDropSeconds() {
-  const baselineSeconds = lerp(BLITZ_START_DROP_SECONDS, BLITZ_BASELINE_DROP_SECONDS, getBlitzRampProgress());
-  const overdriveUnits = Math.max(0, getBlitzElapsedRampUnits() - 1);
-  if (overdriveUnits <= 0) return baselineSeconds;
-  const overdriveReduction = Math.log1p(overdriveUnits * 1.4) * 0.55;
-  return Math.max(BLITZ_MIN_DROP_SECONDS, baselineSeconds - overdriveReduction);
+  return blitzDropSeconds(getBlitzElapsedRampUnits(), {
+    startDropSeconds: BLITZ_START_DROP_SECONDS,
+    baselineDropSeconds: BLITZ_BASELINE_DROP_SECONDS,
+    minDropSeconds: BLITZ_MIN_DROP_SECONDS,
+  });
 }
 
 function getBlitzSpeedPercent() {
   if (bossMode?.challengeType === "wave") {
     return clamp(25, 65, Math.round(Number.isFinite(bossMode.waveTwoSpeedPercent) ? bossMode.waveTwoSpeedPercent : WAVE_TWO_BASE_SPEED));
   }
-  return Math.round(lerp(BLITZ_START_SPEED, 100, getBlitzRampProgress()) + Math.max(0, getBlitzElapsedRampUnits() - 1) * 25);
+  return blitzSpeedPercent(getBlitzElapsedRampUnits(), { startSpeed: BLITZ_START_SPEED });
 }
 
 function getBlitzDropLimit() {
