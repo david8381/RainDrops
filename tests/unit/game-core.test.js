@@ -41,6 +41,10 @@ const {
   formatSessionOperationStats,
   formatSessionLogDetails,
   formatAccuracyText,
+  formatReadinessPercent,
+  formatReadyText,
+  canOpenLevelChoices,
+  shouldPromptBossAttempt,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
@@ -190,6 +194,33 @@ describe("difficulty ranges", () => {
       }),
       "L3 40% -> 70% (+10%; 2/8 -> 5/8 mastered)"
     );
+  });
+
+  it("formats skill readiness text and level-choice predicates", () => {
+    assert.equal(formatReadinessPercent({ readiness: 87.6 }), "88%");
+    assert.equal(formatReadinessPercent(null), "0%");
+
+    // mastered (with boss-attempted check), unlocked, and plain mastered forms
+    assert.equal(
+      formatReadyText({ readiness: 100, bossAttemptedForLevel: true }),
+      "Mastered: 100% ✓"
+    );
+    assert.equal(
+      formatReadyText({ readiness: 80, levelAdvancedForLevel: true, bossReady: false }),
+      "Unlocked: 80%"
+    );
+    assert.equal(formatReadyText({ readiness: 60 }), "Mastered: 60%");
+
+    // level choices open once boss is ready / attempted / advanced
+    assert.equal(canOpenLevelChoices({ bossReady: true }), true);
+    assert.equal(canOpenLevelChoices({ levelAdvancedForLevel: true }), true);
+    assert.equal(canOpenLevelChoices({}), false);
+    assert.equal(canOpenLevelChoices(null), false);
+
+    // boss prompt only when ready and not yet attempted or advanced
+    assert.equal(shouldPromptBossAttempt({ bossReady: true }), true);
+    assert.equal(shouldPromptBossAttempt({ bossReady: true, bossAttemptedForLevel: true }), false);
+    assert.equal(shouldPromptBossAttempt({ bossReady: false }), false);
   });
 
   it("formats the short accuracy label for stats cells", () => {

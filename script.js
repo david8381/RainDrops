@@ -18,6 +18,10 @@ const {
   formatSessionOperationStats,
   formatSessionLogDetails,
   formatAccuracyText,
+  formatReadinessPercent,
+  formatReadyText,
+  canOpenLevelChoices,
+  shouldPromptBossAttempt,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
@@ -3785,29 +3789,10 @@ const opDisplayNames = {
   factor: "Prime Factors",
 };
 
-function formatReadinessPercent(skill) {
-  return `${Math.round(skill?.readiness || 0)}%`;
-}
 
 function formatDropSeconds(seconds) {
   if (!Number.isFinite(seconds)) return "--";
   return `${Math.max(0, seconds).toFixed(1)}s drops`;
-}
-
-function formatReadyText(skill) {
-  if (skill?.levelAdvancedForLevel && !skill?.bossReady) {
-    return `Unlocked: ${formatReadinessPercent(skill)}`;
-  }
-  const suffix = skill?.bossAttemptedForLevel ? " ✓" : "";
-  return `Mastered: ${formatReadinessPercent(skill)}${suffix}`;
-}
-
-function canOpenLevelChoices(skill) {
-  return Boolean(skill?.bossReady || skill?.bossAttemptedForLevel || skill?.levelAdvancedForLevel);
-}
-
-function shouldPromptBossAttempt(skill) {
-  return Boolean(skill?.bossReady && !skill?.bossAttemptedForLevel && !skill?.levelAdvancedForLevel);
 }
 
 // When an operation first reaches mastery, interrupt briefly with a choice. The

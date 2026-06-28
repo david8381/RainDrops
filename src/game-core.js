@@ -1027,6 +1027,27 @@ function formatSessionOperationStats(operation) {
   return pieces;
 }
 
+// Skill-state display/predicate helpers, operating on a summarized skill.
+function formatReadinessPercent(skill) {
+  return `${Math.round(skill?.readiness || 0)}%`;
+}
+
+function formatReadyText(skill) {
+  if (skill?.levelAdvancedForLevel && !skill?.bossReady) {
+    return `Unlocked: ${formatReadinessPercent(skill)}`;
+  }
+  const suffix = skill?.bossAttemptedForLevel ? " ✓" : "";
+  return `Mastered: ${formatReadinessPercent(skill)}${suffix}`;
+}
+
+function canOpenLevelChoices(skill) {
+  return Boolean(skill?.bossReady || skill?.bossAttemptedForLevel || skill?.levelAdvancedForLevel);
+}
+
+function shouldPromptBossAttempt(skill) {
+  return Boolean(skill?.bossReady && !skill?.bossAttemptedForLevel && !skill?.levelAdvancedForLevel);
+}
+
 // Short accuracy label for a stats cell/row: "75% (3/4)", an em-dash when
 // nothing has been attempted, or a "Placed out" form for placement credit.
 function formatAccuracyText(asked, correct, placedOut = false) {
@@ -1148,6 +1169,10 @@ globalThis.RainMathCore = {
   formatSessionOperationStats,
   formatSessionLogDetails,
   formatAccuracyText,
+  formatReadinessPercent,
+  formatReadyText,
+  canOpenLevelChoices,
+  shouldPromptBossAttempt,
   formatChallengeEntry,
   formatSkillDetails,
   formatPracticeNext,
