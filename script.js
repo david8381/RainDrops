@@ -1244,7 +1244,6 @@ function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficul
   const pressure = getCurrentPressure();
   exitBreatherMode();
   closeStatsPopup();
-  closeResultsPopup();
   closeLoginPopup();
   clearAmbiguousTimer();
   drops = [];
@@ -4652,132 +4651,6 @@ function closeStatsPopup() {
   closeStatsTooltip();
 }
 
-// ============================================================
-// 13c. Results Popup
-// ============================================================
-
-function buildChallengeRow(skill) {
-  if (!skill.blitzUnlockedLevel) return null;
-  const row = document.createElement("div");
-  row.className = "results-pressure-row";
-
-  const label = document.createElement("span");
-  label.className = "results-pressure-label";
-  label.textContent = "Challenges:";
-  row.appendChild(label);
-
-  const list = document.createElement("div");
-  list.className = "results-challenge-levels";
-  const levels = skill.challengeBestsByLevel || [];
-  levels.forEach((entry) => {
-    const { played, text } = formatChallengeEntry(entry);
-    const chip = document.createElement("span");
-    chip.className = `results-pressure-chip${played ? " is-cleared" : ""}`;
-    chip.textContent = text;
-    list.appendChild(chip);
-  });
-  row.appendChild(list);
-
-  return row;
-}
-
-function buildResultsPopup() {
-  closeResultsPopup();
-  closeSessionLogPopup();
-  closeSessionReportPopup();
-
-  const summary = summarizeProfile(progressProfile);
-  const overlay = document.createElement("div");
-  overlay.className = "overlay results-overlay";
-  overlay.id = "resultsOverlay";
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) closeResultsPopup();
-  });
-
-  const card = document.createElement("div");
-  card.className = "card results-card";
-
-  const header = document.createElement("div");
-  header.className = "results-header";
-  const title = document.createElement("h2");
-  title.textContent = "Learning Results";
-  const overall = document.createElement("div");
-  overall.className = "results-overall";
-  overall.textContent = `${summary.overallReadiness}% overall readiness`;
-  header.appendChild(title);
-  header.appendChild(overall);
-  card.appendChild(header);
-
-  const sub = document.createElement("p");
-  sub.className = "results-sub";
-  sub.textContent = `Mastered % is the share of current-level problems with at least 3 attempts and at least 90% current accuracy. Boss unlocks at ${BOSS_READY_SCORE}%.`;
-  card.appendChild(sub);
-
-  const list = document.createElement("div");
-  list.className = "results-list";
-
-  for (const opKey of Object.keys(opConfig)) {
-    const skill = summary.skills[opKey];
-    const row = document.createElement("div");
-    row.className = "results-row";
-
-    const top = document.createElement("div");
-    top.className = "results-row-top";
-
-    const name = document.createElement("div");
-    name.className = "results-name";
-    name.textContent = opDisplayNames[opKey] || opKey;
-
-    const readiness = document.createElement("div");
-    readiness.className = "results-readiness";
-    readiness.textContent = `${skill.readiness}%`;
-
-    top.appendChild(name);
-    top.appendChild(readiness);
-
-    const meter = document.createElement("div");
-    meter.className = "results-meter";
-    const fill = document.createElement("div");
-    fill.className = "results-meter-fill";
-    fill.style.width = `${skill.readiness}%`;
-    meter.appendChild(fill);
-
-    const details = document.createElement("div");
-    details.className = "results-details";
-    details.textContent = formatSkillDetails(skill);
-
-    row.appendChild(top);
-    row.appendChild(meter);
-    row.appendChild(details);
-    const challengeRow = buildChallengeRow(skill);
-    if (challengeRow) row.appendChild(challengeRow);
-
-    if (skill.practiceSuggestions.length > 0) {
-      const weak = document.createElement("div");
-      weak.className = "results-weak";
-      weak.textContent = formatPracticeNext(skill.practiceSuggestions);
-      row.appendChild(weak);
-    }
-
-    list.appendChild(row);
-  }
-
-  card.appendChild(list);
-
-  const closeBtn = document.createElement("button");
-  closeBtn.className = "primary";
-  closeBtn.textContent = "Close";
-  closeBtn.addEventListener("click", closeResultsPopup);
-  card.appendChild(closeBtn);
-
-  overlay.appendChild(card);
-  document.body.appendChild(overlay);
-}
-
-function closeResultsPopup() {
-  const existing = document.getElementById("resultsOverlay");
-  if (existing) existing.remove();
-}
 
 function formatSessionStartedAt(value) {
   const date = new Date(value);
@@ -5019,7 +4892,6 @@ function buildSessionLogPopup() {
   closeTutorialOverlay({ focus: false });
   closeLoginPopup();
   closeStatsPopup();
-  closeResultsPopup();
   closeSessionLogPopup();
   closeSessionReportPopup();
   const viewing = isViewingSharedReport();
@@ -5380,7 +5252,6 @@ function buildWelcomeMenu({ firstVisit = false } = {}) {
   closeBossOffer();
   closeLoginPopup();
   closeStatsPopup();
-  closeResultsPopup();
   closeSessionLogPopup();
   closeSessionReportPopup();
 
@@ -5948,7 +5819,6 @@ function showPlacementOverlay() {
   closeTutorialOverlay({ focus: false });
   closeLoginPopup();
   closeStatsPopup();
-  closeResultsPopup();
   closeSessionLogPopup();
   closeSessionReportPopup();
   closeShareBadgePopup();
@@ -6171,7 +6041,6 @@ function openLoginPopup() {
       closePlacementOverlay({ focus: false });
       closeShareBadgePopup();
       closeStatsPopup();
-      closeResultsPopup();
     },
   });
 }
@@ -6498,7 +6367,6 @@ document.addEventListener("keydown", (event) => {
   }
   if (document.getElementById("resultsOverlay")) {
     if (event.key === "Escape") {
-      closeResultsPopup();
       event.preventDefault();
     }
     return;
@@ -6710,7 +6578,6 @@ const feedbackOverlay = document.getElementById("feedbackOverlay");
 const menuLink = document.getElementById("menuLink");
 const testMeLink = document.getElementById("testMeLink");
 const loginLink = document.getElementById("loginLink");
-const resultsLink = document.getElementById("resultsLink");
 const sessionLogLink = document.getElementById("sessionLogLink");
 const feedbackLink = document.getElementById("feedbackLink");
 const fbCancel = document.getElementById("fbCancel");
@@ -6731,12 +6598,6 @@ if (loginLink) {
   loginLink.addEventListener("click", (e) => {
     e.preventDefault();
     openLoginPopup();
-  });
-}
-if (resultsLink) {
-  resultsLink.addEventListener("click", (e) => {
-    e.preventDefault();
-    buildResultsPopup();
   });
 }
 if (sessionLogLink) {
