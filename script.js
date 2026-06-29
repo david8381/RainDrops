@@ -1,3 +1,4 @@
+import { state } from "./src/engine/state.js";
 import * as RainMathCore from "./src/game-core.js";
 import * as RainMathProgress from "./src/player-progress.js";
 import { RainMathText } from "./src/text/english.js";
@@ -141,8 +142,8 @@ const ctx = canvas.getContext("2d");
 initSplashes(ctx);
 initShip({
   ctx,
-  getCanvasSize: () => ({ w: canvasW, h: canvasH }),
-  getGameTime: () => gameTime,
+  getCanvasSize: () => ({ w: state.canvasW, h: state.canvasH }),
+  getGameTime: () => state.gameTime,
   getShieldState: getShieldRenderState,
   fillRoundRect,
 });
@@ -272,42 +273,14 @@ const BOSS_PART_DEFS = [
 ];
 
 /** @type {import('./src/types.js').Drop[]} */
-let drops = [];
-let score = 0;
-let gameSpeed = 30;
-let dropLimit = 3;
-let textSize = "normal";
-let spawnTimer = 0;
-let lastTime = 0;
-let isPaused = false;
-let isBreatherMode = false;
-let nextDropId = 0;
-let canvasW = 0;
-let canvasH = 0;
-let groundFlash = 0;
-let currentInput = "";
-let wrongSubmissionTimes = [];
-let cannonOverloadMs = 0;
-let cannonOverloadLevel = 0;
-let cannonOverloadLastAtMs = 0;
-let gameTime = 0;
-let ambiguousTimer = null;
-let canvasDpr = 1;
 const AMBIGUOUS_DELAY_MS = 400;
 // Tracks `${opKey}:${level}` we have already offered a boss for, so the unlock
 // toast appears once per op/level rather than on every subsequent correct answer.
 const bossOfferShown = new Set();
 // Parallax stars for the boss backdrop (lazily seeded once the canvas is sized).
-let starfield = [];
 // Captures the just-completed full-boss run for the victory summary popup.
-let lastBossVictory = null;
-let factorTargetId = null; // id of the targeted factor drop, or null
+ // id of the targeted factor drop, or null
 /** @type {import('./src/types.js').BossMode|null} */
-let bossMode = null;
-let tutorialStepIndex = 0;
-let tutorialFromWelcome = false;
-let placementState = null;
-let activeSessionId = null;
 
 const TUTORIAL_STEPS = Array.isArray(TEXT.tutorial?.steps) ? TEXT.tutorial.steps : [];
 
@@ -316,7 +289,7 @@ const TUTORIAL_STEPS = Array.isArray(TEXT.tutorial?.steps) ? TEXT.tutorial.steps
 // For f10: keyed by problem text.
 // Each entry: { asked: number, correct: number }
 const problemStats = createProblemStats();
-let progressProfile = readProfile();
+state.progressProfile = readProfile();
 
 function createSessionId() {
   const random = Math.random().toString(36).slice(2, 8);
@@ -324,20 +297,20 @@ function createSessionId() {
 }
 
 function startVisitSession({ persist = true } = {}) {
-  activeSessionId = createSessionId();
-  progressProfile = recordSessionStart(progressProfile, {
-    id: activeSessionId,
-    speed: gameSpeed,
-    rate: dropLimit,
-    textSize,
+  state.activeSessionId = createSessionId();
+  state.progressProfile = recordSessionStart(state.progressProfile, {
+    id: state.activeSessionId,
+    speed: state.gameSpeed,
+    rate: state.dropLimit,
+    textSize: state.textSize,
     userAgent: navigator.userAgent || "",
   });
-  if (persist) saveProfile(progressProfile);
+  if (persist) saveProfile(state.progressProfile);
 }
 
 function recordActiveSessionOutcome(drop, outcome) {
-  if (!activeSessionId || !drop?.opKey) return false;
-  progressProfile = recordSessionEvent(progressProfile, activeSessionId, {
+  if (!state.activeSessionId || !drop?.opKey) return false;
+  state.progressProfile = recordSessionEvent(state.progressProfile, state.activeSessionId, {
     outcome,
     opKey: drop.opKey,
     statsKey: drop.statsKey || drop.text,
@@ -349,23 +322,23 @@ function recordActiveSessionOutcome(drop, outcome) {
 }
 
 function recordActiveSessionChallenge(event = {}) {
-  if (!activeSessionId) return false;
-  progressProfile = recordSessionChallenge(progressProfile, activeSessionId, event);
+  if (!state.activeSessionId) return false;
+  state.progressProfile = recordSessionChallenge(state.progressProfile, state.activeSessionId, event);
   return true;
 }
 
 function heartbeatActiveSession({ persist = false } = {}) {
-  if (!activeSessionId) return;
-  progressProfile = recordSessionHeartbeat(progressProfile, activeSessionId);
-  if (persist) saveProfile(progressProfile);
+  if (!state.activeSessionId) return;
+  state.progressProfile = recordSessionHeartbeat(state.progressProfile, state.activeSessionId);
+  if (persist) saveProfile(state.progressProfile);
 }
 
 function applyProfileSettingsToControls() {
-  const settings = progressProfile.settings || {};
+  const settings = state.progressProfile.settings || {};
   const savedDifficulties = settings.difficulties || {};
-  const summary = summarizeProfile(progressProfile);
+  const summary = summarizeProfile(state.progressProfile);
   for (const opKey of Object.keys(opConfig)) {
-    const savedLevel = savedDifficulties[opKey] ?? progressProfile.skills?.[opKey]?.currentLevel;
+    const savedLevel = savedDifficulties[opKey] ?? state.progressProfile.skills?.[opKey]?.currentLevel;
     // Resume at least at the level after the highest cleared boss, so a
     // temporarily lowered selector (e.g. to replay a cleared level) does not
     // strand the player below their actual progress on reload.
@@ -373,50 +346,50 @@ function applyProfileSettingsToControls() {
     const resume = Math.max(Number.isFinite(savedLevel) ? savedLevel : 1, clearedNext);
     opConfig[opKey].difficulty = clamp(1, 10, Math.round(resume));
   }
-  gameSpeed = clamp(0, 100, Math.round(Number.isFinite(settings.speed) ? settings.speed : 30));
-  dropLimit = clamp(0, 10, Math.round(Number.isFinite(settings.rate) ? settings.rate : 3));
-  textSize = normalizeTextSizeSetting(settings.textSize);
+  state.gameSpeed = clamp(0, 100, Math.round(Number.isFinite(settings.speed) ? settings.speed : 30));
+  state.dropLimit = clamp(0, 10, Math.round(Number.isFinite(settings.rate) ? settings.rate : 3));
+  state.textSize = normalizeTextSizeSetting(settings.textSize);
 }
 
 applyProfileSettingsToControls();
-mirrorLegacyProblemStats(progressProfile, problemStats);
+mirrorLegacyProblemStats(state.progressProfile, problemStats);
 
 
 function resetRunState({ resume = true, focus = true } = {}) {
   clearAmbiguousTimer();
-  bossMode = null;
-  isBreatherMode = false;
-  factorTargetId = null;
-  drops = [];
+  state.bossMode = null;
+  state.isBreatherMode = false;
+  state.factorTargetId = null;
+  state.drops = [];
   resetSplashes();
   resetLaser();
   resetPlayerShipVisuals();
-  score = 0;
-  spawnTimer = 0;
-  lastTime = 0;
-  gameTime = 0;
-  groundFlash = 0;
-  currentInput = "";
+  state.score = 0;
+  state.spawnTimer = 0;
+  state.lastTime = 0;
+  state.gameTime = 0;
+  state.groundFlash = 0;
+  state.currentInput = "";
   answerInput.value = "";
   resetCannonOverload({ clearCooldown: true });
   updateScoreDisplay();
   updateKpDisplay();
   updateBossHud();
   updateBreatherHud();
-  if (resume && isPaused) {
+  if (resume && state.isPaused) {
     togglePause();
   }
   if (focus) answerInput.focus();
 }
 
 function activateProfile(nextProfile, { resetRun = true } = {}) {
-  progressProfile = nextProfile;
+  state.progressProfile = nextProfile;
   bossOfferShown.clear();
   closeBossOffer();
   applyProfileSettingsToControls();
   startVisitSession();
   resetProblemStats(problemStats);
-  mirrorLegacyProblemStats(progressProfile, problemStats);
+  mirrorLegacyProblemStats(state.progressProfile, problemStats);
   if (resetRun) resetRunState({ focus: false });
   updateOpChits();
   updateDifficultyDisplays();
@@ -444,11 +417,11 @@ function recordLearningResult(drop, outcome) {
   if (!drop || !drop.opKey) return;
   if (isBossActive() || isAssessmentTarget(drop)) {
     const sessionChanged = recordActiveSessionOutcome(drop, outcome);
-    if (sessionChanged) saveProfile(progressProfile);
+    if (sessionChanged) saveProfile(state.progressProfile);
     return;
   }
   recordProblemResult(drop, outcome === "correct");
-  progressProfile = recordProgressEvent(progressProfile, {
+  state.progressProfile = recordProgressEvent(state.progressProfile, {
     opKey: drop.opKey,
     statsKey: drop.statsKey || drop.text,
     text: drop.text,
@@ -459,19 +432,19 @@ function recordLearningResult(drop, outcome) {
     spawnRate: getActivePressure().rate,
   });
   recordActiveSessionOutcome(drop, outcome);
-  saveProfile(progressProfile);
+  saveProfile(state.progressProfile);
   updateReadinessDisplays();
   maybeOfferBoss(drop.opKey);
 }
 
 function getUnclearedDrops() {
-  return drops.filter((drop) => isDropVisible(drop) && !drop.revealed);
+  return state.drops.filter((drop) => isDropVisible(drop) && !drop.revealed);
 }
 
 function updateBreatherHud() {
   if (!breatherHudEl) return;
-  breatherHudEl.classList.toggle("hidden", !isBreatherMode);
-  if (isBreatherMode) {
+  breatherHudEl.classList.toggle("hidden", !state.isBreatherMode);
+  if (state.isBreatherMode) {
     const remaining = getUnclearedDrops().length;
     breatherHudEl.textContent = remaining > 0
       ? `Breather: clear ${remaining} to resume`
@@ -480,20 +453,20 @@ function updateBreatherHud() {
 }
 
 function maybeExitBreatherMode() {
-  if (!isBreatherMode) return;
+  if (!state.isBreatherMode) return;
   if (getUnclearedDrops().length > 0) {
     updateBreatherHud();
     return;
   }
-  isBreatherMode = false;
-  spawnTimer = 0;
-  lastTime = 0;
+  state.isBreatherMode = false;
+  state.spawnTimer = 0;
+  state.lastTime = 0;
   updateBreatherHud();
 }
 
 function enterBreatherMode() {
-  if (isPaused || isBossActive() || isBreatherMode || getUnclearedDrops().length === 0) return false;
-  isBreatherMode = true;
+  if (state.isPaused || isBossActive() || state.isBreatherMode || getUnclearedDrops().length === 0) return false;
+  state.isBreatherMode = true;
   clearAmbiguousTimer();
   answerInput.focus();
   updateBreatherHud();
@@ -501,8 +474,8 @@ function enterBreatherMode() {
 }
 
 function exitBreatherMode() {
-  if (!isBreatherMode) return;
-  isBreatherMode = false;
+  if (!state.isBreatherMode) return;
+  state.isBreatherMode = false;
   updateBreatherHud();
 }
 
@@ -510,14 +483,14 @@ function syncProgressSettings({ persist = true } = {}) {
   const difficulties = Object.fromEntries(
     Object.entries(opConfig).map(([opKey, config]) => [opKey, config.difficulty])
   );
-  progressProfile = syncSettings(progressProfile, {
-    pressureTier: getPressureTier(gameSpeed).key,
-    speed: gameSpeed,
-    rate: dropLimit,
-    textSize,
+  state.progressProfile = syncSettings(state.progressProfile, {
+    pressureTier: getPressureTier(state.gameSpeed).key,
+    speed: state.gameSpeed,
+    rate: state.dropLimit,
+    textSize: state.textSize,
     difficulties,
   });
-  if (persist) saveProfile(progressProfile);
+  if (persist) saveProfile(state.progressProfile);
 }
 
 // ============================================================
@@ -569,12 +542,12 @@ function normalizeTextSizeSetting(value) {
   return TEXT_SIZE_ORDER.includes(value) ? value : "normal";
 }
 
-function getTextSizeLabel(value = textSize) {
+function getTextSizeLabel(value = state.textSize) {
   return TEXT_SIZE_LABELS[normalizeTextSizeSetting(value)] || TEXT_SIZE_LABELS.normal;
 }
 
 function getTextScale() {
-  return TEXT_SIZE_SCALE[normalizeTextSizeSetting(textSize)] || 1;
+  return TEXT_SIZE_SCALE[normalizeTextSizeSetting(state.textSize)] || 1;
 }
 
 function getScaledFontSize(baseSize, maxSize = 32) {
@@ -607,7 +580,7 @@ function isNumLockKey(event) {
 function refocusAnswerInputSoon() {
   if (document.getElementById("welcomeOverlay") || document.getElementById("tutorialOverlay")) return;
   setTimeout(() => {
-    if (!isPaused && !isBossStunned()) answerInput.focus();
+    if (!state.isPaused && !isBossStunned()) answerInput.focus();
   }, 0);
 }
 
@@ -624,71 +597,71 @@ function getNumpadTextForLockedState(event) {
 }
 
 function isCannonOverloaded() {
-  return cannonOverloadMs > 0;
+  return state.cannonOverloadMs > 0;
 }
 
 function getCannonOverloadText() {
-  return `Cannon overloaded - wait ${(Math.max(0, cannonOverloadMs) / 1000).toFixed(1)}s`;
+  return `Cannon overloaded - wait ${(Math.max(0, state.cannonOverloadMs) / 1000).toFixed(1)}s`;
 }
 
 function clearCurrentAnswerInput() {
   clearAmbiguousTimer();
   answerInput.value = "";
-  currentInput = "";
+  state.currentInput = "";
   updateKpDisplay();
 }
 
 function resetCannonOverload({ clearCooldown = false, resetLevel = true } = {}) {
-  wrongSubmissionTimes = [];
+  state.wrongSubmissionTimes = [];
   if (clearCooldown || resetLevel) {
-    cannonOverloadLevel = 0;
-    cannonOverloadLastAtMs = 0;
+    state.cannonOverloadLevel = 0;
+    state.cannonOverloadLastAtMs = 0;
   }
   if (clearCooldown) {
-    cannonOverloadMs = 0;
+    state.cannonOverloadMs = 0;
   }
 }
 
 function triggerCannonOverload(nowMs = performance.now()) {
-  const repeated = cannonOverloadLastAtMs > 0 && nowMs - cannonOverloadLastAtMs <= CANNON_OVERLOAD_REPEAT_WINDOW_MS;
-  cannonOverloadLevel = repeated ? Math.min(cannonOverloadLevel + 1, 3) : 0;
-  cannonOverloadLastAtMs = nowMs;
-  cannonOverloadMs = Math.min(
+  const repeated = state.cannonOverloadLastAtMs > 0 && nowMs - state.cannonOverloadLastAtMs <= CANNON_OVERLOAD_REPEAT_WINDOW_MS;
+  state.cannonOverloadLevel = repeated ? Math.min(state.cannonOverloadLevel + 1, 3) : 0;
+  state.cannonOverloadLastAtMs = nowMs;
+  state.cannonOverloadMs = Math.min(
     CANNON_OVERLOAD_MAX_MS,
-    CANNON_OVERLOAD_BASE_MS + cannonOverloadLevel * CANNON_OVERLOAD_STEP_MS
+    CANNON_OVERLOAD_BASE_MS + state.cannonOverloadLevel * CANNON_OVERLOAD_STEP_MS
   );
-  wrongSubmissionTimes = [];
+  state.wrongSubmissionTimes = [];
   clearCurrentAnswerInput();
   updateInputHint();
 }
 
 function registerWrongSubmission(nowMs = performance.now()) {
-  wrongSubmissionTimes = wrongSubmissionTimes
+  state.wrongSubmissionTimes = state.wrongSubmissionTimes
     .filter((time) => nowMs - time <= CANNON_OVERLOAD_WINDOW_MS);
-  wrongSubmissionTimes.push(nowMs);
-  if (wrongSubmissionTimes.length >= CANNON_OVERLOAD_THRESHOLD) {
+  state.wrongSubmissionTimes.push(nowMs);
+  if (state.wrongSubmissionTimes.length >= CANNON_OVERLOAD_THRESHOLD) {
     triggerCannonOverload(nowMs);
   }
 }
 
 function updateCannonOverload(dt = 0) {
   if (!isCannonOverloaded()) return;
-  cannonOverloadMs = Math.max(0, cannonOverloadMs - Math.max(0, dt));
+  state.cannonOverloadMs = Math.max(0, state.cannonOverloadMs - Math.max(0, dt));
   updateInputHint();
   updateKpDisplay();
 }
 
 function appendTypedText(text) {
-  if (!text || isPaused || isBossStunned()) return;
+  if (!text || state.isPaused || isBossStunned()) return;
   if (isCannonOverloaded()) {
     clearCurrentAnswerInput();
     updateInputHint();
     return;
   }
   answerInput.focus();
-  answerInput.value = currentInput + text;
-  currentInput = answerInput.value;
-  processInput(currentInput);
+  answerInput.value = state.currentInput + text;
+  state.currentInput = answerInput.value;
+  processInput(state.currentInput);
   updateKpDisplay();
 }
 
@@ -697,16 +670,16 @@ function appendTypedText(text) {
 // ============================================================
 
 function getCurrentPressure() {
-  const tier = getPressureTier(gameSpeed);
-  const speedRatio = gameSpeed / 100;
+  const tier = getPressureTier(state.gameSpeed);
+  const speedRatio = state.gameSpeed / 100;
   return {
     ...tier,
     key: tier.key,
     label: tier.label,
-    speed: gameSpeed,
-    rate: dropLimit,
-    maxActiveDrops: dropLimit,
-    waveMaxActive: clamp(1, 10, Math.max(1, dropLimit)),
+    speed: state.gameSpeed,
+    rate: state.dropLimit,
+    maxActiveDrops: state.dropLimit,
+    waveMaxActive: clamp(1, 10, Math.max(1, state.dropLimit)),
     waveDelayMinMs: Math.round(lerp(900, 260, speedRatio)),
     waveDelayMaxMs: Math.round(lerp(1400, 560, speedRatio)),
     bossSpeedMultiplier: lerp(0.55, 1.35, speedRatio),
@@ -715,26 +688,26 @@ function getCurrentPressure() {
 }
 
 function getActivePressure() {
-  return bossMode?.pressure || getCurrentPressure();
+  return state.bossMode?.pressure || getCurrentPressure();
 }
 
-function setPracticeControls({ speed = gameSpeed, drops = dropLimit } = {}, { persist = true } = {}) {
-  gameSpeed = clamp(0, 100, Math.round(Number.isFinite(speed) ? speed : gameSpeed));
-  dropLimit = clamp(0, 10, Math.round(Number.isFinite(drops) ? drops : dropLimit));
+function setPracticeControls({ speed = state.gameSpeed, drops = state.dropLimit } = {}, { persist = true } = {}) {
+  state.gameSpeed = clamp(0, 100, Math.round(Number.isFinite(speed) ? speed : state.gameSpeed));
+  state.dropLimit = clamp(0, 10, Math.round(Number.isFinite(drops) ? drops : state.dropLimit));
   if (persist) syncProgressSettings();
   updateControlDisplay();
   updateReadinessDisplays();
 }
 
 function setTextSize(value, { persist = true } = {}) {
-  textSize = normalizeTextSizeSetting(value);
+  state.textSize = normalizeTextSizeSetting(value);
   if (persist) syncProgressSettings();
   updateControlDisplay();
   drawDrops();
 }
 
 function cycleTextSize() {
-  const currentIndex = TEXT_SIZE_ORDER.indexOf(normalizeTextSizeSetting(textSize));
+  const currentIndex = TEXT_SIZE_ORDER.indexOf(normalizeTextSizeSetting(state.textSize));
   const next = TEXT_SIZE_ORDER[(currentIndex + 1) % TEXT_SIZE_ORDER.length];
   setTextSize(next);
 }
@@ -747,11 +720,11 @@ function getMaxFallTime() {
 }
 
 function getRandomBaseSpeed() {
-  return canvasH / randomFallTimeSec(getMaxFallTime());
+  return state.canvasH / randomFallTimeSec(getMaxFallTime());
 }
 
 function getSpeedMultiplier() {
-  return gameSpeed / 100;
+  return state.gameSpeed / 100;
 }
 
 function getBossSpeedMultiplier() {
@@ -759,11 +732,11 @@ function getBossSpeedMultiplier() {
 }
 
 function getSpawnInterval() {
-  return spawnIntervalMs(gameSpeed, dropLimit);
+  return spawnIntervalMs(state.gameSpeed, state.dropLimit);
 }
 
 function getMaxDrops() {
-  return dropLimit;
+  return state.dropLimit;
 }
 
 // ============================================================
@@ -814,16 +787,16 @@ function toggleOp(opKey) {
   // Clear any on-screen drops whose operation is no longer enabled (we are not
   // mixing across sets), but leave boss/challenge drops alone.
   if (!isControlLocked()) {
-    drops = drops.filter((drop) => opConfig[drop.opKey]?.enabled);
-    if (factorTargetId !== null && !drops.some((drop) => drop.id === factorTargetId)) {
-      factorTargetId = null;
+    state.drops = state.drops.filter((drop) => opConfig[drop.opKey]?.enabled);
+    if (state.factorTargetId !== null && !state.drops.some((drop) => drop.id === state.factorTargetId)) {
+      state.factorTargetId = null;
     }
   }
   updateOpChits();
 }
 
 function getProgressSkill(opKey) {
-  return summarizeProfile(progressProfile).skills[opKey];
+  return summarizeProfile(state.progressProfile).skills[opKey];
 }
 
 function showReadyRequired(opKey) {
@@ -853,23 +826,23 @@ function canAdvanceDifficulty(opKey, nextLevel) {
 }
 
 function markReadyForBoss(opKey) {
-  if (!progressProfile.skills?.[opKey]) return;
+  if (!state.progressProfile.skills?.[opKey]) return;
   const pressure = getCurrentPressure();
-  progressProfile = recordBossAttempt(progressProfile, opKey, {
+  state.progressProfile = recordBossAttempt(state.progressProfile, opKey, {
     pressureTier: pressure.key,
     speedPercent: pressure.speed,
     spawnRate: pressure.rate,
   });
-  saveProfile(progressProfile);
+  saveProfile(state.progressProfile);
   updateReadinessDisplays();
 }
 
 function recordMasteryAdvance(opKey, level = opConfig[opKey]?.difficulty) {
-  progressProfile = recordLevelAdvance(progressProfile, opKey, {
+  state.progressProfile = recordLevelAdvance(state.progressProfile, opKey, {
     level,
     result: "mastered",
   });
-  saveProfile(progressProfile);
+  saveProfile(state.progressProfile);
 }
 
 function advanceMasteredLevel(opKey) {
@@ -908,12 +881,12 @@ function setDifficulty(opKey, level, { force = false } = {}) {
 // ============================================================
 
 function getProfileMasteryForGeneration(opKey, statsKey) {
-  const problem = progressProfile.skills?.[opKey]?.problems?.[statsKey];
+  const problem = state.progressProfile.skills?.[opKey]?.problems?.[statsKey];
   return problem ? getProgressProblemMastery(problem) / 100 : null;
 }
 
 function generateFinishLevelProblem(opKey) {
-  const skill = progressProfile.skills?.[opKey];
+  const skill = state.progressProfile.skills?.[opKey];
   const candidates = getFinishLevelPracticeProblems(skill);
   if (candidates.length === 0 || Math.random() > FINISH_LEVEL_FOCUS_CHANCE) return null;
   const picked = weightedPick(
@@ -943,15 +916,15 @@ function pickRandomEnabledOp() {
 // ============================================================
 
 function isBossActive() {
-  return Boolean(bossMode?.active);
+  return Boolean(state.bossMode?.active);
 }
 
 function isPlacementActive() {
-  return Boolean(placementState?.active);
+  return Boolean(state.placementState?.active);
 }
 
 function isPlacementDrop(drop) {
-  return Boolean(isPlacementActive() && drop?.placementRunId === placementState.runId);
+  return Boolean(isPlacementActive() && drop?.placementRunId === state.placementState.runId);
 }
 
 function isControlLocked() {
@@ -959,7 +932,7 @@ function isControlLocked() {
 }
 
 function isBossStunned() {
-  return Boolean(bossMode?.active && bossMode.stunMs > 0);
+  return Boolean(state.bossMode?.active && state.bossMode.stunMs > 0);
 }
 
 function copyProblemToTarget(problem, target) {
@@ -1107,11 +1080,11 @@ function makeBossProblemFromPool(opKey, pool, usedKeys = new Set(), getKey = get
 
 function makeBossDrop(problem, bossKind, index = 0, total = 1) {
   const padding = 54;
-  const randomX = randInt(padding, Math.max(padding, canvasW - padding));
+  const randomX = randInt(padding, Math.max(padding, state.canvasW - padding));
   const span = Math.max(1, total - 1);
   const evenX = total === 1
-    ? canvasW / 2
-    : padding + ((canvasW - padding * 2) * index) / span;
+    ? state.canvasW / 2
+    : padding + ((state.canvasW - padding * 2) * index) / span;
   const isWave = bossKind?.startsWith("wave");
   const fallSeconds = bossKind === "bomb"
     ? getBossBombFallSeconds()
@@ -1119,10 +1092,10 @@ function makeBossDrop(problem, bossKind, index = 0, total = 1) {
       ? randInt(58, 88) / 10
       : 7.5;
   const drop = copyProblemToTarget(problem, {
-    id: nextDropId++,
+    id: state.nextDropId++,
     x: isWave ? randomX : evenX,
     y: isWave ? -30 - randInt(0, 80) : -30 - index * 6,
-    baseSpeed: canvasH / fallSeconds,
+    baseSpeed: state.canvasH / fallSeconds,
     bossKind,
   });
   return drop;
@@ -1167,7 +1140,7 @@ function buildBossParts(opKey, level = opConfig[opKey]?.difficulty) {
       kind: partDef.kind,
       destroyed: false,
       locked: partDef.id !== "shield",
-      x: canvasW / 2,
+      x: state.canvasW / 2,
       y: 90,
       w: 90,
       h: 42,
@@ -1193,7 +1166,7 @@ function buildBossParts(opKey, level = opConfig[opKey]?.difficulty) {
       destroyed: false,
       revealed: false,
       locked: part.locked,
-      x: canvasW / 2,
+      x: state.canvasW / 2,
       y: 90,
       w: 62,
       h: 30,
@@ -1206,8 +1179,8 @@ function buildBossParts(opKey, level = opConfig[opKey]?.difficulty) {
 // nodes. An empty part never fires a node-destroyed event, so collapse it here;
 // if that empties the core (or every part), the mothership is defeated.
 function collapseEmptyBossParts() {
-  if (!bossMode?.parts || bossMode.phase !== "boss") return;
-  for (const part of bossMode.parts) {
+  if (!state.bossMode?.parts || state.bossMode.phase !== "boss") return;
+  for (const part of state.bossMode.parts) {
     if (part.destroyed) continue;
     const live = part.problems.filter((problem) => !problem.destroyed).length;
     if (live > 0) break; // only leading/active empties are auto-cleared
@@ -1225,15 +1198,15 @@ function collapseEmptyBossParts() {
 // skipping any whose answer collides with an already-active node or bomb so a
 // typed answer can never clear the wrong target.
 function refillBossReveals() {
-  if (!bossMode?.parts || bossMode.phase !== "boss") return;
-  const activePart = bossMode.parts.find((part) => !part.destroyed && !part.locked);
+  if (!state.bossMode?.parts || state.bossMode.phase !== "boss") return;
+  const activePart = state.bossMode.parts.find((part) => !part.destroyed && !part.locked);
   if (!activePart) return;
 
   const activeKeys = new Set();
-  bossMode.parts.forEach((part) => part.problems.forEach((problem) => {
+  state.bossMode.parts.forEach((part) => part.problems.forEach((problem) => {
     if (problem.revealed && !problem.destroyed) activeKeys.add(getProblemAnswerKey(problem));
   }));
-  drops.filter((drop) => drop.bossKind === "bomb").forEach((drop) => activeKeys.add(getProblemAnswerKey(drop)));
+  state.drops.filter((drop) => drop.bossKind === "bomb").forEach((drop) => activeKeys.add(getProblemAnswerKey(drop)));
 
   let revealedCount = activePart.problems.filter((problem) => problem.revealed && !problem.destroyed).length;
   for (const problem of activePart.problems) {
@@ -1258,21 +1231,21 @@ function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficul
   closeStatsPopup();
   closeLoginPopup();
   clearAmbiguousTimer();
-  drops = [];
+  state.drops = [];
   resetSplashes();
   resetLaser();
   resetPlayerShipVisuals();
-  factorTargetId = null;
-  currentInput = "";
+  state.factorTargetId = null;
+  state.currentInput = "";
   answerInput.value = "";
   resetCannonOverload({ clearCooldown: true });
-  spawnTimer = 0;
-  lastTime = 0;
-  gameTime = 0;
-  groundFlash = 0;
-  score = 0;
+  state.spawnTimer = 0;
+  state.lastTime = 0;
+  state.gameTime = 0;
+  state.groundFlash = 0;
+  state.score = 0;
   const startsWithChallenge = mode === "full" || mode === "blitz" || mode === "wave";
-  bossMode = {
+  state.bossMode = {
     active: true,
     mode,
     opKey,
@@ -1326,7 +1299,7 @@ function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficul
     opKey,
     level,
   });
-  saveProfile(progressProfile);
+  saveProfile(state.progressProfile);
   updateBossPartLocks();
   updateScoreDisplay();
   updateKpDisplay();
@@ -1339,7 +1312,7 @@ function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficul
 }
 
 function getSelectedReplayLevel(opKey) {
-  const skill = summarizeProfile(progressProfile).skills[opKey];
+  const skill = summarizeProfile(state.progressProfile).skills[opKey];
   return canReplayChallenges(opKey, skill) ? opConfig[opKey].difficulty : 0;
 }
 
@@ -1365,44 +1338,44 @@ function startBossReplayMode(opKey) {
 }
 
 function startChallenge(type = "blitz") {
-  drops = [];
-  bossMode.phase = "challenge";
-  bossMode.challengeType = type === "wave" ? "wave" : "blitz";
-  bossMode.message = bossMode.challengeType === "wave"
+  state.drops = [];
+  state.bossMode.phase = "challenge";
+  state.bossMode.challengeType = type === "wave" ? "wave" : "blitz";
+  state.bossMode.message = state.bossMode.challengeType === "wave"
     ? "Wave 2: load ladder"
-    : bossMode.mode === "blitz"
+    : state.bossMode.mode === "blitz"
       ? "Blitz: shield endurance"
       : "Wave 1: shield endurance";
-  bossMode.challengeElapsedMs = 0;
-  bossMode.blitzElapsedMs = 0;
-  bossMode.blitzScore = 0;
-  bossMode.blitzClearedCount = 0;
-  bossMode.blitzShield = BLITZ_SHIELD_START;
-  bossMode.blitzShieldPulseMs = 0;
-  bossMode.blitzShieldHitMs = 0;
-  bossMode.blitzHits = 0;
-  bossMode.blitzFinalScore = 0;
-  bossMode.blitzFinalDurationMs = 0;
-  bossMode.blitzFinalDropSeconds = 0;
-  bossMode.challengeLoad = bossMode.challengeType === "wave" ? 1 : BLITZ_START_DROPS;
-  bossMode.waveMaxLoadCleared = 0;
-  bossMode.waveMaxLoadReached = bossMode.challengeType === "wave" ? 1 : bossMode.challengeLoad;
-  bossMode.waveRoundSpawned = 0;
-  bossMode.bombTimerMs = 250;
-  if (bossMode.challengeType === "wave" && !Number.isFinite(bossMode.waveTwoSpeedPercent)) {
-    bossMode.waveTwoSpeedPercent = WAVE_TWO_BASE_SPEED;
+  state.bossMode.challengeElapsedMs = 0;
+  state.bossMode.blitzElapsedMs = 0;
+  state.bossMode.blitzScore = 0;
+  state.bossMode.blitzClearedCount = 0;
+  state.bossMode.blitzShield = BLITZ_SHIELD_START;
+  state.bossMode.blitzShieldPulseMs = 0;
+  state.bossMode.blitzShieldHitMs = 0;
+  state.bossMode.blitzHits = 0;
+  state.bossMode.blitzFinalScore = 0;
+  state.bossMode.blitzFinalDurationMs = 0;
+  state.bossMode.blitzFinalDropSeconds = 0;
+  state.bossMode.challengeLoad = state.bossMode.challengeType === "wave" ? 1 : BLITZ_START_DROPS;
+  state.bossMode.waveMaxLoadCleared = 0;
+  state.bossMode.waveMaxLoadReached = state.bossMode.challengeType === "wave" ? 1 : state.bossMode.challengeLoad;
+  state.bossMode.waveRoundSpawned = 0;
+  state.bossMode.bombTimerMs = 250;
+  if (state.bossMode.challengeType === "wave" && !Number.isFinite(state.bossMode.waveTwoSpeedPercent)) {
+    state.bossMode.waveTwoSpeedPercent = WAVE_TWO_BASE_SPEED;
   }
   updateBossHud();
 }
 
 function startBossFight() {
-  drops = [];
-  bossMode.phase = "boss";
-  bossMode.message = bossMode.mode === "boss"
+  state.drops = [];
+  state.bossMode.phase = "boss";
+  state.bossMode.message = state.bossMode.mode === "boss"
     ? "Clear the worksheet ship"
     : "Take down the mothership";
-  bossMode.bombTimerMs = 900;
-  bossMode.bossStartedAtMs = performance.now();
+  state.bossMode.bombTimerMs = 900;
+  state.bossMode.bossStartedAtMs = performance.now();
   updateBossPartLocks();
   collapseEmptyBossParts();
   refillBossReveals();
@@ -1410,11 +1383,11 @@ function startBossFight() {
 }
 
 function updateBossPartLocks() {
-  if (!bossMode?.parts) return;
+  if (!state.bossMode?.parts) return;
   const order = ["shield", "guns", "wings", "core"];
   let locked = false;
   for (const id of order) {
-    const part = bossMode.parts.find((candidate) => candidate.id === id);
+    const part = state.bossMode.parts.find((candidate) => candidate.id === id);
     if (!part) continue;
     part.locked = locked;
     part.problems.forEach((problem) => {
@@ -1425,10 +1398,10 @@ function updateBossPartLocks() {
 }
 
 function updateBossPartPositions() {
-  if (!bossMode?.parts) return;
-  const shipW = Math.min(560, Math.max(340, canvasW * 0.74));
-  const shipH = Math.min(185, Math.max(138, canvasH * 0.32));
-  const left = (canvasW - shipW) / 2;
+  if (!state.bossMode?.parts) return;
+  const shipW = Math.min(560, Math.max(340, state.canvasW * 0.74));
+  const shipH = Math.min(185, Math.max(138, state.canvasH * 0.32));
+  const left = (state.canvasW - shipW) / 2;
   const top = 48;
   const positions = {
     shield: { x: left + shipW * 0.5, y: top + shipH * 0.2, w: 220, h: 54 },
@@ -1436,8 +1409,8 @@ function updateBossPartPositions() {
     wings: { x: left + shipW * 0.5, y: top + shipH * 0.66, w: shipW * 0.78, h: 58 },
     core: { x: left + shipW * 0.5, y: top + shipH * 0.52, w: 154, h: 62 },
   };
-  bossMode.shipBounds = { left, top, w: shipW, h: shipH };
-  for (const part of bossMode.parts) {
+  state.bossMode.shipBounds = { left, top, w: shipW, h: shipH };
+  for (const part of state.bossMode.parts) {
     Object.assign(part, positions[part.id] || positions.core);
     positionBossProblems(part);
   }
@@ -1450,7 +1423,7 @@ function positionBossProblems(part) {
   const count = liveProblems.length;
   if (count === 0) return;
 
-  const wide = ["si", "shapes", "pow"].includes(bossMode?.opKey);
+  const wide = ["si", "shapes", "pow"].includes(state.bossMode?.opKey);
   const nodeScale = Math.min(getTextScale(), 1.34);
   const nodeW = Math.round((wide ? 86 : 56) * nodeScale);
   const nodeH = Math.round(26 * Math.min(getTextScale(), 1.28));
@@ -1475,22 +1448,22 @@ function positionBossProblems(part) {
 }
 
 function getActiveBossParts() {
-  if (!bossMode?.active || bossMode.phase !== "boss") return [];
+  if (!state.bossMode?.active || state.bossMode.phase !== "boss") return [];
   updateBossPartLocks();
   updateBossPartPositions();
-  return bossMode.parts
+  return state.bossMode.parts
     .filter((part) => !part.destroyed && !part.locked)
     .flatMap((part) => part.problems.filter((problem) => !problem.destroyed && !problem.locked && problem.revealed));
 }
 
 function getBlitzProgress() {
-  if (!bossMode?.active) return 0;
-  return clamp(0, 1, (bossMode.challengeElapsedMs || bossMode.blitzElapsedMs || 0) / BLITZ_RAMP_MS);
+  if (!state.bossMode?.active) return 0;
+  return clamp(0, 1, (state.bossMode.challengeElapsedMs || state.bossMode.blitzElapsedMs || 0) / BLITZ_RAMP_MS);
 }
 
 function getBlitzElapsedRampUnits() {
-  if (!bossMode?.active) return 0;
-  return Math.max(0, (bossMode.challengeElapsedMs || bossMode.blitzElapsedMs || 0) / BLITZ_RAMP_MS);
+  if (!state.bossMode?.active) return 0;
+  return Math.max(0, (state.bossMode.challengeElapsedMs || state.bossMode.blitzElapsedMs || 0) / BLITZ_RAMP_MS);
 }
 
 function getBlitzRampProgress() {
@@ -1500,11 +1473,11 @@ function getBlitzRampProgress() {
 function getBlitzScore() {
   // Live solved count remains useful feedback, but saved challenge bests use
   // survival time for Blitz and max cleared load for Wave.
-  return Math.min(999, bossMode?.blitzClearedCount || 0);
+  return Math.min(999, state.bossMode?.blitzClearedCount || 0);
 }
 
 function getBlitzSurvivalMs() {
-  return Math.max(0, Math.round(bossMode?.challengeElapsedMs || bossMode?.blitzElapsedMs || 0));
+  return Math.max(0, Math.round(state.bossMode?.challengeElapsedMs || state.bossMode?.blitzElapsedMs || 0));
 }
 
 function getBlitzDropSeconds() {
@@ -1516,41 +1489,41 @@ function getBlitzDropSeconds() {
 }
 
 function getBlitzSpeedPercent() {
-  if (bossMode?.challengeType === "wave") {
-    return clamp(25, 65, Math.round(Number.isFinite(bossMode.waveTwoSpeedPercent) ? bossMode.waveTwoSpeedPercent : WAVE_TWO_BASE_SPEED));
+  if (state.bossMode?.challengeType === "wave") {
+    return clamp(25, 65, Math.round(Number.isFinite(state.bossMode.waveTwoSpeedPercent) ? state.bossMode.waveTwoSpeedPercent : WAVE_TWO_BASE_SPEED));
   }
   return blitzSpeedPercent(getBlitzElapsedRampUnits(), { startSpeed: BLITZ_START_SPEED });
 }
 
 function getBlitzDropLimit() {
-  if (bossMode?.challengeType === "wave") {
-    return clamp(1, WAVE_TWO_MAX_LOAD, Math.max(1, bossMode.challengeLoad || 1));
+  if (state.bossMode?.challengeType === "wave") {
+    return clamp(1, WAVE_TWO_MAX_LOAD, Math.max(1, state.bossMode.challengeLoad || 1));
   }
   return BLITZ_START_DROPS;
 }
 
 function getBlitzShieldRatio() {
-  if (!bossMode?.active || !["challenge", "challengeComplete"].includes(bossMode.phase)) return 0;
-  const max = bossMode.blitzShieldMax || BLITZ_SHIELD_MAX;
-  const shield = Number.isFinite(bossMode.blitzShield) ? bossMode.blitzShield : BLITZ_SHIELD_START;
+  if (!state.bossMode?.active || !["challenge", "challengeComplete"].includes(state.bossMode.phase)) return 0;
+  const max = state.bossMode.blitzShieldMax || BLITZ_SHIELD_MAX;
+  const shield = Number.isFinite(state.bossMode.blitzShield) ? state.bossMode.blitzShield : BLITZ_SHIELD_START;
   return max > 0 ? clamp(0, 1, shield / max) : 0;
 }
 
 function changeBlitzShield(delta, reason = "hit") {
-  if (!bossMode?.active || bossMode.phase !== "challenge") return;
-  const max = bossMode.blitzShieldMax || BLITZ_SHIELD_MAX;
-  const current = Number.isFinite(bossMode.blitzShield) ? bossMode.blitzShield : BLITZ_SHIELD_START;
+  if (!state.bossMode?.active || state.bossMode.phase !== "challenge") return;
+  const max = state.bossMode.blitzShieldMax || BLITZ_SHIELD_MAX;
+  const current = Number.isFinite(state.bossMode.blitzShield) ? state.bossMode.blitzShield : BLITZ_SHIELD_START;
   const next = clamp(0, max, current + delta);
-  bossMode.blitzShield = next;
+  state.bossMode.blitzShield = next;
 
   if (delta > 0) {
-    bossMode.blitzClearedCount += 1;
-    bossMode.blitzShieldPulseMs = BLITZ_SHIELD_PULSE_MS;
-    bossMode.message = next >= max ? "Shields at maximum" : `Shields reinforced +${delta}`;
+    state.bossMode.blitzClearedCount += 1;
+    state.bossMode.blitzShieldPulseMs = BLITZ_SHIELD_PULSE_MS;
+    state.bossMode.message = next >= max ? "Shields at maximum" : `Shields reinforced +${delta}`;
   } else if (delta < 0) {
-    bossMode.blitzHits += 1;
-    bossMode.blitzShieldHitMs = BLITZ_SHIELD_HIT_MS;
-    bossMode.message = reason === "wrong"
+    state.bossMode.blitzHits += 1;
+    state.bossMode.blitzShieldHitMs = BLITZ_SHIELD_HIT_MS;
+    state.bossMode.message = reason === "wrong"
       ? `Wrong answer: shields ${delta}`
       : `Bomb hit: shields ${delta}`;
   }
@@ -1563,11 +1536,11 @@ function changeBlitzShield(delta, reason = "hit") {
 }
 
 function getBossPartCount() {
-  if (!bossMode?.parts) return { remaining: 0, total: 0, problemsRemaining: 0, problemsTotal: 0 };
-  const total = bossMode.parts.length;
-  const remaining = bossMode.parts.filter((part) => !part.destroyed).length;
-  const problemsTotal = bossMode.parts.reduce((sum, part) => sum + part.problems.length, 0);
-  const problemsRemaining = bossMode.parts.reduce(
+  if (!state.bossMode?.parts) return { remaining: 0, total: 0, problemsRemaining: 0, problemsTotal: 0 };
+  const total = state.bossMode.parts.length;
+  const remaining = state.bossMode.parts.filter((part) => !part.destroyed).length;
+  const problemsTotal = state.bossMode.parts.reduce((sum, part) => sum + part.problems.length, 0);
+  const problemsRemaining = state.bossMode.parts.reduce(
     (sum, part) => sum + part.problems.filter((problem) => !problem.destroyed).length,
     0
   );
@@ -1575,14 +1548,14 @@ function getBossPartCount() {
 }
 
 function getBossWorksheetElapsedMs() {
-  if (!bossMode?.bossStartedAtMs) return 0;
-  return Math.max(0, performance.now() - bossMode.bossStartedAtMs);
+  if (!state.bossMode?.bossStartedAtMs) return 0;
+  return Math.max(0, performance.now() - state.bossMode.bossStartedAtMs);
 }
 
 function createBossDebris(part) {
-  if (!bossMode?.debris) return;
-  bossMode.debris.push({
-    id: `${part.id}-${Date.now()}-${bossMode.debris.length}`,
+  if (!state.bossMode?.debris) return;
+  state.bossMode.debris.push({
+    id: `${part.id}-${Date.now()}-${state.bossMode.debris.length}`,
     kind: part.kind,
     x: part.x,
     y: part.y,
@@ -1599,9 +1572,9 @@ function createBossDebris(part) {
 }
 
 function updateBossDebris(dt) {
-  if (!bossMode?.debris?.length) return;
-  const groundY = canvasH - 42;
-  bossMode.debris.forEach((piece) => {
+  if (!state.bossMode?.debris?.length) return;
+  const groundY = state.canvasH - 42;
+  state.bossMode.debris.forEach((piece) => {
     piece.life -= dt;
     if (!piece.grounded) {
       piece.x += (piece.vx * dt) / 1000;
@@ -1619,44 +1592,44 @@ function updateBossDebris(dt) {
       piece.rotation += piece.spin * dt;
     }
   });
-  bossMode.debris = bossMode.debris.filter((piece) => piece.life > 0);
+  state.bossMode.debris = state.bossMode.debris.filter((piece) => piece.life > 0);
 }
 
 function getBossBombFallSeconds() {
-  if (bossMode?.phase === "challenge") {
-    if (bossMode.challengeType === "wave") {
+  if (state.bossMode?.phase === "challenge") {
+    if (state.bossMode.challengeType === "wave") {
       return lerp(5.4, 3.8, getBlitzSpeedPercent() / 100);
     }
     return getBlitzDropSeconds();
   }
-  if (!bossMode?.parts) return 4.8;
-  const wingsAlive = bossMode.parts.some((part) => part.id === "wings" && !part.destroyed);
+  if (!state.bossMode?.parts) return 4.8;
+  const wingsAlive = state.bossMode.parts.some((part) => part.id === "wings" && !part.destroyed);
   return wingsAlive ? 4.8 : 6.0;
 }
 
 function getBossBombIntervalMs() {
-  if (bossMode?.phase === "challenge") {
-    if (bossMode.challengeType === "wave") {
+  if (state.bossMode?.phase === "challenge") {
+    if (state.bossMode.challengeType === "wave") {
       return waveBombIntervalMs(getBlitzDropLimit());
     }
     return blitzBombIntervalMs(getBlitzElapsedRampUnits());
   }
-  if (!bossMode?.parts) return 2200;
-  const gunsAlive = bossMode.parts.some((part) => part.id === "guns" && !part.destroyed);
-  const wingsAlive = bossMode.parts.some((part) => part.id === "wings" && !part.destroyed);
+  if (!state.bossMode?.parts) return 2200;
+  const gunsAlive = state.bossMode.parts.some((part) => part.id === "guns" && !part.destroyed);
+  const wingsAlive = state.bossMode.parts.some((part) => part.id === "wings" && !part.destroyed);
   const base = gunsAlive ? 3800 : 5200;
   return Math.max(2200, Math.round((base - (wingsAlive ? 450 : 0)) * getActivePressure().bombIntervalMultiplier));
 }
 
 function findBossProblemById(partId, problemId) {
-  const part = bossMode?.parts?.find((candidate) => candidate.id === partId);
+  const part = state.bossMode?.parts?.find((candidate) => candidate.id === partId);
   if (!part) return null;
   return part.problems.find((problem) => problem.id === problemId) || null;
 }
 
 function getBossMissileSourceNode(usedAnswers = new Set()) {
-  if (!bossMode?.parts || bossMode.phase !== "boss") return null;
-  const activePart = bossMode.parts.find((part) => !part.destroyed && !part.locked);
+  if (!state.bossMode?.parts || state.bossMode.phase !== "boss") return null;
+  const activePart = state.bossMode.parts.find((part) => !part.destroyed && !part.locked);
   if (!activePart) return null;
   const candidates = activePart.problems.filter((problem) => (
     problem.revealed
@@ -1669,72 +1642,72 @@ function getBossMissileSourceNode(usedAnswers = new Set()) {
 }
 
 function spawnBossBomb() {
-  if (!bossMode?.active || !["boss", "challenge"].includes(bossMode.phase)) return false;
+  if (!state.bossMode?.active || !["boss", "challenge"].includes(state.bossMode.phase)) return false;
   const interval = getBossBombIntervalMs();
   if (!Number.isFinite(interval)) return false;
-  const usedAnswers = new Set(drops.map((target) => getProblemAnswerKey(target)));
-  const sourceNode = bossMode.phase === "boss" ? getBossMissileSourceNode(usedAnswers) : null;
-  if (bossMode.phase === "boss" && !sourceNode) return false;
-  const problem = sourceNode || makeBossProblem(bossMode.opKey, usedAnswers, getProblemAnswerKey, bossMode.level);
+  const usedAnswers = new Set(state.drops.map((target) => getProblemAnswerKey(target)));
+  const sourceNode = state.bossMode.phase === "boss" ? getBossMissileSourceNode(usedAnswers) : null;
+  if (state.bossMode.phase === "boss" && !sourceNode) return false;
+  const problem = sourceNode || makeBossProblem(state.bossMode.opKey, usedAnswers, getProblemAnswerKey, state.bossMode.level);
   if (!problem) return false;
   const bomb = makeBossDrop(problem, "bomb", 0, 1);
   if (sourceNode) {
     bomb.bossSourcePartId = sourceNode.partId;
     bomb.bossSourceNodeId = sourceNode.id;
   }
-  bomb.x = sourceNode ? sourceNode.x : randInt(54, Math.max(54, canvasW - 54));
+  bomb.x = sourceNode ? sourceNode.x : randInt(54, Math.max(54, state.canvasW - 54));
   // Challenge bombs appear just inside the top so they are readable/answerable
   // immediately; worksheet missiles drop off visible ship nodes.
   bomb.y = sourceNode ? sourceNode.y + 18 : 8;
-  bomb.baseSpeed = canvasH / getBossBombFallSeconds();
-  drops.push(bomb);
+  bomb.baseSpeed = state.canvasH / getBossBombFallSeconds();
+  state.drops.push(bomb);
   return true;
 }
 
 function recordActiveChallengeAttempt(result = "survived") {
-  if (!bossMode?.active) return;
-  const type = bossMode.challengeType === "wave" ? "wave" : "blitz";
-  const clearedCount = bossMode.blitzClearedCount || 0;
+  if (!state.bossMode?.active) return;
+  const type = state.bossMode.challengeType === "wave" ? "wave" : "blitz";
+  const clearedCount = state.bossMode.blitzClearedCount || 0;
   const survivalMs = getBlitzSurvivalMs();
   const fastestDropSeconds = getBossBombFallSeconds();
-  const maxLoadCleared = Math.max(0, Math.round(bossMode.waveMaxLoadCleared || 0));
-  const maxLoadReached = Math.max(maxLoadCleared, Math.round(bossMode.waveMaxLoadReached || bossMode.challengeLoad || 0));
+  const maxLoadCleared = Math.max(0, Math.round(state.bossMode.waveMaxLoadCleared || 0));
+  const maxLoadReached = Math.max(maxLoadCleared, Math.round(state.bossMode.waveMaxLoadReached || state.bossMode.challengeLoad || 0));
   const primaryScore = type === "wave"
     ? maxLoadCleared
     : Math.max(0, Math.round(survivalMs / 1000));
-  bossMode.blitzFinalScore = primaryScore;
-  bossMode.blitzFinalSpeed = getBlitzSpeedPercent();
-  bossMode.blitzFinalDrops = getBlitzDropLimit();
-  bossMode.blitzFinalDurationMs = survivalMs;
-  bossMode.blitzFinalDropSeconds = fastestDropSeconds;
-  bossMode.blitzFinalShields = Math.max(0, Math.round(bossMode.blitzShield || 0));
+  state.bossMode.blitzFinalScore = primaryScore;
+  state.bossMode.blitzFinalSpeed = getBlitzSpeedPercent();
+  state.bossMode.blitzFinalDrops = getBlitzDropLimit();
+  state.bossMode.blitzFinalDurationMs = survivalMs;
+  state.bossMode.blitzFinalDropSeconds = fastestDropSeconds;
+  state.bossMode.blitzFinalShields = Math.max(0, Math.round(state.bossMode.blitzShield || 0));
   // Remember each challenge's natural metric for the end-of-run victory summary.
-  bossMode.fullRunScores = bossMode.fullRunScores || {};
-  bossMode.fullRunScores[type] = type === "wave"
+  state.bossMode.fullRunScores = state.bossMode.fullRunScores || {};
+  state.bossMode.fullRunScores[type] = type === "wave"
     ? { maxLoadCleared, maxLoadReached, clearedCount }
     : { durationMs: survivalMs, fastestDropSeconds, clearedCount };
   if (type === "blitz") {
     const progressPct = Math.round(getBlitzProgress() * 100);
-    bossMode.waveTwoSpeedPercent = clamp(32, 58, Math.round(34 + progressPct * 0.24));
+    state.bossMode.waveTwoSpeedPercent = clamp(32, 58, Math.round(34 + progressPct * 0.24));
   }
   if (type === "blitz") {
-    progressProfile = recordBlitzAttempt(progressProfile, bossMode.opKey, {
-      level: bossMode.level,
-      score: bossMode.blitzFinalScore,
+    state.progressProfile = recordBlitzAttempt(state.progressProfile, state.bossMode.opKey, {
+      level: state.bossMode.level,
+      score: state.bossMode.blitzFinalScore,
       durationMs: survivalMs,
-      speedPercent: bossMode.blitzFinalSpeed,
-      spawnRate: bossMode.blitzFinalDrops,
-      maxDropLimit: bossMode.blitzFinalDrops,
+      speedPercent: state.bossMode.blitzFinalSpeed,
+      spawnRate: state.bossMode.blitzFinalDrops,
+      maxDropLimit: state.bossMode.blitzFinalDrops,
       fastestDropSeconds,
       clearedCount,
       cleared: false,
       result,
     });
   } else {
-    progressProfile = recordChallengeAttempt(progressProfile, bossMode.opKey, {
+    state.progressProfile = recordChallengeAttempt(state.progressProfile, state.bossMode.opKey, {
       type,
-      level: bossMode.level,
-      score: bossMode.blitzFinalScore,
+      level: state.bossMode.level,
+      score: state.bossMode.blitzFinalScore,
       maxLoadCleared,
       maxLoadReached,
       clearedCount,
@@ -1742,54 +1715,54 @@ function recordActiveChallengeAttempt(result = "survived") {
       result,
     });
   }
-  if (bossMode.mode !== "full") {
+  if (state.bossMode.mode !== "full") {
     recordActiveSessionChallenge({
       action: "complete",
       type,
-      opKey: bossMode.opKey,
-      level: bossMode.level,
-      score: bossMode.blitzFinalScore,
+      opKey: state.bossMode.opKey,
+      level: state.bossMode.level,
+      score: state.bossMode.blitzFinalScore,
       result,
       cleared: false,
     });
   }
-  saveProfile(progressProfile);
+  saveProfile(state.progressProfile);
   updateReadinessDisplays();
 }
 
 function completeChallengeFailure() {
-  if (!bossMode?.active || bossMode.phase !== "challenge") return;
-  const type = bossMode.challengeType === "wave" ? "wave" : "blitz";
+  if (!state.bossMode?.active || state.bossMode.phase !== "challenge") return;
+  const type = state.bossMode.challengeType === "wave" ? "wave" : "blitz";
   recordActiveChallengeAttempt("shields-down");
-  bossMode.phase = "challengeComplete";
-  bossMode.burstMs = CHALLENGE_TRANSITION_MS;
-  bossMode.transitionMs = CHALLENGE_TRANSITION_MS;
-  drops = [];
-  if (bossMode.mode === "full" && type === "blitz") {
-    bossMode.message = "Shields are down. Super weapon sweeping the sky.";
-    bossMode.transitionAction = "wave";
-  } else if (bossMode.mode === "full" && type === "wave") {
-    bossMode.message = "Backup shields are down. Super weapon clears the path.";
-    bossMode.transitionAction = "boss";
+  state.bossMode.phase = "challengeComplete";
+  state.bossMode.burstMs = CHALLENGE_TRANSITION_MS;
+  state.bossMode.transitionMs = CHALLENGE_TRANSITION_MS;
+  state.drops = [];
+  if (state.bossMode.mode === "full" && type === "blitz") {
+    state.bossMode.message = "Shields are down. Super weapon sweeping the sky.";
+    state.bossMode.transitionAction = "wave";
+  } else if (state.bossMode.mode === "full" && type === "wave") {
+    state.bossMode.message = "Backup shields are down. Super weapon clears the path.";
+    state.bossMode.transitionAction = "boss";
   } else {
-    bossMode.message = type === "wave"
-      ? `Backup shields are down. Best load: ${bossMode.blitzFinalScore} at once`
-      : `Shields are down. Blitz lasted ${formatDuration(bossMode.blitzFinalDurationMs)}`;
-    bossMode.transitionAction = "end";
+    state.bossMode.message = type === "wave"
+      ? `Backup shields are down. Best load: ${state.bossMode.blitzFinalScore} at once`
+      : `Shields are down. Blitz lasted ${formatDuration(state.bossMode.blitzFinalDurationMs)}`;
+    state.bossMode.transitionAction = "end";
   }
   updateBossHud();
 }
 
 function applyBossStun() {
-  if (!bossMode?.active) return;
-  if (bossMode.phase === "challenge") {
+  if (!state.bossMode?.active) return;
+  if (state.bossMode.phase === "challenge") {
     changeBlitzShield(-BLITZ_MISTAKE_SHIELD_LOSS, "bomb");
     return;
   }
-  bossMode.stunMs = BOSS_STUN_MS;
-  bossMode.message = "Bomb hit: stunned";
+  state.bossMode.stunMs = BOSS_STUN_MS;
+  state.bossMode.message = "Bomb hit: stunned";
   answerInput.value = "";
-  currentInput = "";
+  state.currentInput = "";
   updateKpDisplay();
   updateBossHud();
 }
@@ -1797,49 +1770,49 @@ function applyBossStun() {
 // Wave 2 is a load ladder gated on clearing each round: spawn N bombs (staggered
 // so they are readable), wait until the whole batch is cleared, then step to N+1.
 function updateWaveTwoRound(activeBombs) {
-  const load = bossMode.challengeLoad;
-  bossMode.waveMaxLoadReached = Math.max(bossMode.waveMaxLoadReached || 0, load);
-  if (bossMode.waveRoundSpawned < load) {
-    if (bossMode.bombTimerMs <= 0) {
+  const load = state.bossMode.challengeLoad;
+  state.bossMode.waveMaxLoadReached = Math.max(state.bossMode.waveMaxLoadReached || 0, load);
+  if (state.bossMode.waveRoundSpawned < load) {
+    if (state.bossMode.bombTimerMs <= 0) {
       spawnBossBomb();
-      bossMode.waveRoundSpawned += 1;
-      bossMode.bombTimerMs = WAVE_TWO_SPAWN_STAGGER_MS;
+      state.bossMode.waveRoundSpawned += 1;
+      state.bossMode.bombTimerMs = WAVE_TWO_SPAWN_STAGGER_MS;
     }
-  } else if (activeBombs === 0 && bossMode.bombTimerMs <= 0) {
-    bossMode.waveMaxLoadCleared = Math.max(bossMode.waveMaxLoadCleared || 0, load);
-    bossMode.challengeLoad = Math.min(WAVE_TWO_MAX_LOAD, load + 1);
-    bossMode.waveMaxLoadReached = Math.max(bossMode.waveMaxLoadReached || 0, bossMode.challengeLoad);
-    bossMode.waveRoundSpawned = 0;
-    bossMode.bombTimerMs = WAVE_TWO_ROUND_GAP_MS;
-    bossMode.message = `Wave 2: ${bossMode.challengeLoad} at once`;
+  } else if (activeBombs === 0 && state.bossMode.bombTimerMs <= 0) {
+    state.bossMode.waveMaxLoadCleared = Math.max(state.bossMode.waveMaxLoadCleared || 0, load);
+    state.bossMode.challengeLoad = Math.min(WAVE_TWO_MAX_LOAD, load + 1);
+    state.bossMode.waveMaxLoadReached = Math.max(state.bossMode.waveMaxLoadReached || 0, state.bossMode.challengeLoad);
+    state.bossMode.waveRoundSpawned = 0;
+    state.bossMode.bombTimerMs = WAVE_TWO_ROUND_GAP_MS;
+    state.bossMode.message = `Wave 2: ${state.bossMode.challengeLoad} at once`;
   }
 }
 
 function updateBossMode(dt) {
-  if (!bossMode?.active) return;
-  bossMode.hudFreshMs = Math.max(0, (bossMode.hudFreshMs || 0) - dt);
+  if (!state.bossMode?.active) return;
+  state.bossMode.hudFreshMs = Math.max(0, (state.bossMode.hudFreshMs || 0) - dt);
   updateBossDebris(dt);
-  if (bossMode.phase === "challenge" || bossMode.phase === "challengeComplete") {
-    bossMode.blitzShieldPulseMs = Math.max(0, (bossMode.blitzShieldPulseMs || 0) - dt);
-    bossMode.blitzShieldHitMs = Math.max(0, (bossMode.blitzShieldHitMs || 0) - dt);
-    bossMode.burstMs = Math.max(0, (bossMode.burstMs || 0) - dt);
+  if (state.bossMode.phase === "challenge" || state.bossMode.phase === "challengeComplete") {
+    state.bossMode.blitzShieldPulseMs = Math.max(0, (state.bossMode.blitzShieldPulseMs || 0) - dt);
+    state.bossMode.blitzShieldHitMs = Math.max(0, (state.bossMode.blitzShieldHitMs || 0) - dt);
+    state.bossMode.burstMs = Math.max(0, (state.bossMode.burstMs || 0) - dt);
   }
 
-  if (bossMode.stunMs > 0) {
-    bossMode.stunMs = Math.max(0, bossMode.stunMs - dt);
-    if (bossMode.stunMs === 0 && bossMode.phase === "boss") {
-      bossMode.message = "Destroy the ship parts";
-      bossMode.bombTimerMs = Math.max(bossMode.bombTimerMs, 900);
+  if (state.bossMode.stunMs > 0) {
+    state.bossMode.stunMs = Math.max(0, state.bossMode.stunMs - dt);
+    if (state.bossMode.stunMs === 0 && state.bossMode.phase === "boss") {
+      state.bossMode.message = "Destroy the ship parts";
+      state.bossMode.bombTimerMs = Math.max(state.bossMode.bombTimerMs, 900);
     }
     updateBossHud();
     return;
   }
 
-  if (bossMode.phase === "announce") {
-    bossMode.announceMs -= dt;
-    if (bossMode.announceMs <= 0) {
-      if (bossMode.nextAction === "challenge") {
-        startChallenge(bossMode.challengeType);
+  if (state.bossMode.phase === "announce") {
+    state.bossMode.announceMs -= dt;
+    if (state.bossMode.announceMs <= 0) {
+      if (state.bossMode.nextAction === "challenge") {
+        startChallenge(state.bossMode.challengeType);
       } else {
         startBossFight();
       }
@@ -1847,31 +1820,31 @@ function updateBossMode(dt) {
     return;
   }
 
-  if (bossMode.phase === "challenge") {
-    bossMode.challengeElapsedMs += dt;
-    bossMode.blitzElapsedMs = bossMode.challengeElapsedMs;
-    bossMode.blitzScore = getBlitzScore();
-    bossMode.bombTimerMs -= dt;
-    const activeBombs = drops.filter((drop) => drop.bossKind === "bomb").length;
-    if (bossMode.challengeType === "wave") {
+  if (state.bossMode.phase === "challenge") {
+    state.bossMode.challengeElapsedMs += dt;
+    state.bossMode.blitzElapsedMs = state.bossMode.challengeElapsedMs;
+    state.bossMode.blitzScore = getBlitzScore();
+    state.bossMode.bombTimerMs -= dt;
+    const activeBombs = state.drops.filter((drop) => drop.bossKind === "bomb").length;
+    if (state.bossMode.challengeType === "wave") {
       updateWaveTwoRound(activeBombs);
-    } else if (bossMode.bombTimerMs <= 0 && activeBombs < getBlitzDropLimit()) {
+    } else if (state.bossMode.bombTimerMs <= 0 && activeBombs < getBlitzDropLimit()) {
       spawnBossBomb();
-      bossMode.bombTimerMs = getBossBombIntervalMs();
+      state.bossMode.bombTimerMs = getBossBombIntervalMs();
     }
     updateBossHud();
     return;
   }
 
-  if (bossMode.phase === "challengeComplete") {
-    bossMode.transitionMs -= dt;
-    if (bossMode.transitionMs <= 0) {
-      if (bossMode.transitionAction === "wave") {
+  if (state.bossMode.phase === "challengeComplete") {
+    state.bossMode.transitionMs -= dt;
+    if (state.bossMode.transitionMs <= 0) {
+      if (state.bossMode.transitionAction === "wave") {
         startChallenge("wave");
-      } else if (bossMode.transitionAction === "boss") {
+      } else if (state.bossMode.transitionAction === "boss") {
         startBossFight();
       } else {
-        bossMode = null;
+        state.bossMode = null;
         updateBossHud();
         updateControlDisplay();
         updateDifficultyDisplays();
@@ -1882,36 +1855,36 @@ function updateBossMode(dt) {
     return;
   }
 
-  if (bossMode.phase === "boss") {
+  if (state.bossMode.phase === "boss") {
     updateBossPartLocks();
     collapseEmptyBossParts();
-    if (bossMode?.phase !== "boss") return;
+    if (state.bossMode?.phase !== "boss") return;
     refillBossReveals();
-    bossMode.bombTimerMs -= dt;
-    if (bossMode.bombTimerMs <= 0) {
+    state.bossMode.bombTimerMs -= dt;
+    if (state.bossMode.bombTimerMs <= 0) {
       spawnBossBomb();
-      bossMode.bombTimerMs = getBossBombIntervalMs();
+      state.bossMode.bombTimerMs = getBossBombIntervalMs();
     }
     return;
   }
 
-  if (bossMode.phase === "victory") {
-    bossMode.victoryMs -= dt;
-    if (bossMode.victoryMs <= 0) {
+  if (state.bossMode.phase === "victory") {
+    state.bossMode.victoryMs -= dt;
+    if (state.bossMode.victoryMs <= 0) {
       // Celebrate a full boss clear with a victory summary of the run.
-      const showVictory = bossMode.mode === "full";
-      bossMode = null;
+      const showVictory = state.bossMode.mode === "full";
+      state.bossMode = null;
       updateBossHud();
       updateControlDisplay();
       updateDifficultyDisplays();
-      if (showVictory) showBossVictoryPopup(lastBossVictory);
+      if (showVictory) showBossVictoryPopup(state.lastBossVictory);
     }
   }
 }
 
 function handleBossProblemDestroyed(problem) {
   problem.destroyed = true;
-  const part = bossMode.parts.find((candidate) => candidate.id === problem.partId);
+  const part = state.bossMode.parts.find((candidate) => candidate.id === problem.partId);
   if (!part) return;
   const partCleared = part.problems.every((target) => target.destroyed);
   if (partCleared) {
@@ -1924,26 +1897,26 @@ function handleBossProblemDestroyed(problem) {
     return;
   }
   collapseEmptyBossParts();
-  if (bossMode?.phase !== "boss") return;
+  if (state.bossMode?.phase !== "boss") return;
   refillBossReveals();
   const { remaining, problemsRemaining } = getBossPartCount();
   if (partCleared) {
-    bossMode.message = remaining === 1 ? "Core exposed" : `${part.name} destroyed`;
+    state.bossMode.message = remaining === 1 ? "Core exposed" : `${part.name} destroyed`;
   } else {
-    bossMode.message = `${problemsRemaining} ship problems left`;
+    state.bossMode.message = `${problemsRemaining} ship problems left`;
   }
   updateBossHud();
 }
 
 function completeBossVictory() {
-  if (!bossMode?.active) return;
-  const { opKey, level, pressure, mode } = bossMode;
-  drops = [];
-  const durationMs = bossMode.bossStartedAtMs
-    ? Math.max(0, performance.now() - bossMode.bossStartedAtMs)
+  if (!state.bossMode?.active) return;
+  const { opKey, level, pressure, mode } = state.bossMode;
+  state.drops = [];
+  const durationMs = state.bossMode.bossStartedAtMs
+    ? Math.max(0, performance.now() - state.bossMode.bossStartedAtMs)
     : null;
-  bossMode.bossFinalDurationMs = durationMs;
-  progressProfile = recordChallengeAttempt(progressProfile, opKey, {
+  state.bossMode.bossFinalDurationMs = durationMs;
+  state.progressProfile = recordChallengeAttempt(state.progressProfile, opKey, {
     type: "boss",
     level,
     durationMs,
@@ -1962,35 +1935,35 @@ function completeBossVictory() {
     result: "cleared",
   });
   if (mode === "full") {
-    progressProfile = recordBossAttempt(progressProfile, opKey, {
+    state.progressProfile = recordBossAttempt(state.progressProfile, opKey, {
       pressureTier: pressure.key,
       speedPercent: pressure.speed,
       spawnRate: pressure.rate,
     });
-    saveProfile(progressProfile);
+    saveProfile(state.progressProfile);
     if (level < 10) {
       setDifficulty(opKey, level + 1, { force: true });
     } else {
       syncProgressSettings();
     }
   } else {
-    saveProfile(progressProfile);
+    saveProfile(state.progressProfile);
   }
   if (mode === "full") {
-    lastBossVictory = {
+    state.lastBossVictory = {
       opKey,
       level,
       advanced: level < 10,
-      wave1: bossMode.fullRunScores?.blitz ?? null,
-      wave2: bossMode.fullRunScores?.wave ?? null,
+      wave1: state.bossMode.fullRunScores?.blitz ?? null,
+      wave2: state.bossMode.fullRunScores?.wave ?? null,
       bossTimeMs: durationMs,
     };
   }
-  bossMode.phase = "victory";
-  bossMode.message = mode === "full"
+  state.bossMode.phase = "victory";
+  state.bossMode.message = mode === "full"
     ? level < 10 ? `Boss cleared: Level ${level + 1} unlocked` : "Boss cleared"
     : `Worksheet time: ${formatDuration(durationMs)}`;
-  bossMode.victoryMs = BOSS_VICTORY_MS;
+  state.bossMode.victoryMs = BOSS_VICTORY_MS;
   updateBossHud();
   updateReadinessDisplays();
   updateControlDisplay();
@@ -1998,53 +1971,53 @@ function completeBossVictory() {
 function updateBossHud() {
   updateScoreDisplay();
   if (!bossHudEl) return;
-  if (!bossMode?.active) {
+  if (!state.bossMode?.active) {
     bossHudEl.classList.add("hidden");
     bossHudEl.classList.remove("is-quiet", "is-stunned");
     return;
   }
-  if (bossMode.lastHudMessage !== bossMode.message) {
-    bossMode.lastHudMessage = bossMode.message;
-    bossMode.hudFreshMs = BOSS_HUD_FRESH_MS;
+  if (state.bossMode.lastHudMessage !== state.bossMode.message) {
+    state.bossMode.lastHudMessage = state.bossMode.message;
+    state.bossMode.hudFreshMs = BOSS_HUD_FRESH_MS;
   }
   bossHudEl.classList.remove("hidden");
   bossHudEl.classList.toggle("is-stunned", isBossStunned());
-  bossHudEl.classList.toggle("is-quiet", !isBossStunned() && (bossMode.hudFreshMs || 0) <= 0);
-  const opName = opDisplayNames[bossMode.opKey] || bossMode.opKey;
-  const titleMode = bossMode.mode === "wave"
+  bossHudEl.classList.toggle("is-quiet", !isBossStunned() && (state.bossMode.hudFreshMs || 0) <= 0);
+  const opName = opDisplayNames[state.bossMode.opKey] || state.bossMode.opKey;
+  const titleMode = state.bossMode.mode === "wave"
     ? "Wave 2"
-    : bossMode.mode === "blitz"
+    : state.bossMode.mode === "blitz"
       ? "Blitz"
-      : bossMode.mode === "boss"
+      : state.bossMode.mode === "boss"
         ? "Worksheet"
         : "Boss";
-  bossHudTitleEl.textContent = `${opName} ${titleMode} · Level ${bossMode.level}`;
-  bossHudStatusEl.textContent = bossMode.message;
+  bossHudTitleEl.textContent = `${opName} ${titleMode} · Level ${state.bossMode.level}`;
+  bossHudStatusEl.textContent = state.bossMode.message;
   if (isBossStunned()) {
-    bossHudMetaEl.textContent = `Stunned ${(bossMode.stunMs / 1000).toFixed(1)}s`;
+    bossHudMetaEl.textContent = `Stunned ${(state.bossMode.stunMs / 1000).toFixed(1)}s`;
     return;
   }
-  if (bossMode.phase === "challenge") {
-    const shield = Math.round(bossMode.blitzShield || 0);
-    const shieldMax = bossMode.blitzShieldMax || BLITZ_SHIELD_MAX;
-    if (bossMode.challengeType === "wave") {
-      bossHudMetaEl.textContent = `Shields ${shield}/${shieldMax} · Solved ${getBlitzScore()} · best ${bossMode.waveMaxLoadCleared || 0} at once · trying ${getBlitzDropLimit()} · fixed ${getBlitzSpeedPercent()}% speed`;
+  if (state.bossMode.phase === "challenge") {
+    const shield = Math.round(state.bossMode.blitzShield || 0);
+    const shieldMax = state.bossMode.blitzShieldMax || BLITZ_SHIELD_MAX;
+    if (state.bossMode.challengeType === "wave") {
+      bossHudMetaEl.textContent = `Shields ${shield}/${shieldMax} · Solved ${getBlitzScore()} · best ${state.bossMode.waveMaxLoadCleared || 0} at once · trying ${getBlitzDropLimit()} · fixed ${getBlitzSpeedPercent()}% speed`;
     } else {
       bossHudMetaEl.textContent = `Shields ${shield}/${shieldMax} · ${formatDuration(getBlitzSurvivalMs())} · ${formatDropSeconds(getBlitzDropSeconds())} · Solved ${getBlitzScore()}`;
     }
     return;
   }
-  if (bossMode.phase === "challengeComplete") {
-    bossHudMetaEl.textContent = bossMode.transitionAction === "end"
+  if (state.bossMode.phase === "challengeComplete") {
+    bossHudMetaEl.textContent = state.bossMode.transitionAction === "end"
       ? "Challenge recorded"
       : "Clearing the board";
     return;
   }
-  if (bossMode.phase === "boss" || bossMode.phase === "victory") {
+  if (state.bossMode.phase === "boss" || state.bossMode.phase === "victory") {
     const { remaining, total, problemsRemaining, problemsTotal } = getBossPartCount();
-    const bombs = drops.filter((drop) => drop.bossKind === "bomb").length;
+    const bombs = state.drops.filter((drop) => drop.bossKind === "bomb").length;
     const cleared = Math.max(0, problemsTotal - problemsRemaining);
-    const time = bossMode.phase === "boss" ? formatDuration(getBossWorksheetElapsedMs()) : formatDuration(bossMode.bossFinalDurationMs);
+    const time = state.bossMode.phase === "boss" ? formatDuration(getBossWorksheetElapsedMs()) : formatDuration(state.bossMode.bossFinalDurationMs);
     bossHudMetaEl.textContent = `${cleared}/${problemsTotal} cleared · ${time} · ${Math.max(0, remaining)}/${total} parts · ${bombs} missiles`;
     return;
   }
@@ -2056,7 +2029,7 @@ function updateBossHud() {
 // ============================================================
 
 function getActiveAnswers() {
-  return drops.map((drop) => drop.answer);
+  return state.drops.map((drop) => drop.answer);
 }
 
 function createDrop() {
@@ -2066,7 +2039,7 @@ function createDrop() {
   let problem = null;
   let attempts = 0;
   const activeAnswers = getActiveAnswers();
-  const activeFactorNums = drops.filter((d) => d.opKey === "factor").map((d) => d.factorOriginal);
+  const activeFactorNums = state.drops.filter((d) => d.opKey === "factor").map((d) => d.factorOriginal);
   while (attempts < 16) {
     const candidate = generateWeightedProblem(opKey);
     if (candidate.opKey === "factor") {
@@ -2084,13 +2057,13 @@ function createDrop() {
 
   const padding = 36;
   const left = padding;
-  const right = Math.max(padding + 20, canvasW - padding);
+  const right = Math.max(padding + 20, state.canvasW - padding);
   const x = randInt(left, right);
 
   const baseSpeed = getRandomBaseSpeed();
 
   const drop = {
-    id: nextDropId++,
+    id: state.nextDropId++,
     x,
     y: -20,
     baseSpeed,
@@ -2108,26 +2081,26 @@ function createDrop() {
     drop.factorCollected = { ...problem.factorCollected };
     drop.factorLastPrime = null;
   }
-  drops.push(drop);
+  state.drops.push(drop);
   return true;
 }
 
 function updateDrops(dt) {
-  if (!isBossActive() && !isPlacementActive() && gameSpeed === 0) return;
+  if (!isBossActive() && !isPlacementActive() && state.gameSpeed === 0) return;
 
   const mult = isBossActive() ? getBossSpeedMultiplier()
     : isPlacementActive() ? 1
       : getSpeedMultiplier();
-  for (const drop of drops) {
+  for (const drop of state.drops) {
     drop.y += (drop.baseSpeed * mult * dt) / 1000;
   }
 
-  const bottom = canvasH - 30;
+  const bottom = state.canvasH - 30;
   const survived = [];
   let missCount = 0;
   let endedBlitz = false;
 
-  for (const drop of drops) {
+  for (const drop of state.drops) {
     if (drop.y >= bottom) {
       if (!drop.revealed) {
         recordLearningResult(drop, "missed");
@@ -2137,30 +2110,30 @@ function updateDrops(dt) {
         missCount += 1;
         if (drop.bossKind === "bomb") {
           applyBossStun();
-          if (bossMode?.phase === "challengeComplete") {
+          if (state.bossMode?.phase === "challengeComplete") {
             endedBlitz = true;
             break;
           }
         }
       }
-      if (factorTargetId === drop.id) factorTargetId = null;
+      if (state.factorTargetId === drop.id) state.factorTargetId = null;
     } else {
       survived.push(drop);
     }
   }
 
   if (missCount > 0) {
-    groundFlash = 300;
+    state.groundFlash = 300;
     playMiss();
   }
 
   if (endedBlitz) {
-    drops = [];
+    state.drops = [];
     updateBossHud();
     return;
   }
 
-  drops = survived;
+  state.drops = survived;
   updateBossHud();
 }
 
@@ -2232,10 +2205,10 @@ function drawDrops() {
   drawStarfield();
 
   // Ground flash on miss
-  if (groundFlash > 0) {
-    const alpha = Math.min(1, groundFlash / 300) * 0.35;
+  if (state.groundFlash > 0) {
+    const alpha = Math.min(1, state.groundFlash / 300) * 0.35;
     ctx.fillStyle = `rgba(248, 113, 113, ${alpha.toFixed(2)})`;
-    ctx.fillRect(0, canvasH - 36, canvasW, 36);
+    ctx.fillRect(0, state.canvasH - 36, state.canvasW, 36);
   }
 
   drawSplashes();
@@ -2243,20 +2216,20 @@ function drawDrops() {
   drawBossShip();
   drawChallengeBurst();
 
-  const inputNum = currentInput !== "" ? Number(currentInput) : NaN;
+  const inputNum = state.currentInput !== "" ? Number(state.currentInput) : NaN;
   const hasNumMatch = !Number.isNaN(inputNum);
   const dropTextScale = Math.min(getTextScale(), 1.28);
 
-  for (const drop of drops) {
+  for (const drop of state.drops) {
     ctx.save();
     const dropTop = drop.y - 26 * dropTextScale;
     const dropBottom = drop.y + 22 * dropTextScale;
     const dropRadius = 22 * dropTextScale;
     const isFactor = drop.opKey === "factor";
     const factorComplete = isFactor && drop.factorComplete;
-    const isTargeted = isFactor && factorTargetId === drop.id;
+    const isTargeted = isFactor && state.factorTargetId === drop.id;
     const isHighlighted = !drop.revealed && !isFactor && (drop.opKey === "si"
-      ? currentInput === drop.answerText
+      ? state.currentInput === drop.answerText
       : hasNumMatch && drop.answer === inputNum);
 
     let fillColor, strokeColor, masteryShadowColor;
@@ -2368,22 +2341,22 @@ function drawDrops() {
 function drawChallengeStatus() {
   let lines;
   let low;
-  if (bossMode?.active && bossMode.phase === "challenge") {
-    const shield = Math.max(0, Math.round(bossMode.blitzShield || 0));
-    const shieldMax = bossMode.blitzShieldMax || BLITZ_SHIELD_MAX;
-    const isWave = bossMode.challengeType === "wave";
+  if (state.bossMode?.active && state.bossMode.phase === "challenge") {
+    const shield = Math.max(0, Math.round(state.bossMode.blitzShield || 0));
+    const shieldMax = state.bossMode.blitzShieldMax || BLITZ_SHIELD_MAX;
+    const isWave = state.bossMode.challengeType === "wave";
     lines = [
       `🛡 ${shield}/${shieldMax}`,
       isWave
-        ? `Best ${bossMode.waveMaxLoadCleared || 0} · Try ${bossMode.challengeLoad}`
+        ? `Best ${state.bossMode.waveMaxLoadCleared || 0} · Try ${state.bossMode.challengeLoad}`
         : `Blitz ${formatDuration(getBlitzSurvivalMs())}`,
     ];
     low = getBlitzShieldRatio() <= 0.28;
   } else if (isPlacementActive()) {
-    const shield = Math.max(0, Math.round(placementState.shield ?? PLACEMENT_SHIELD_START));
+    const shield = Math.max(0, Math.round(state.placementState.shield ?? PLACEMENT_SHIELD_START));
     lines = [
       `🛡 ${shield}/${PLACEMENT_SHIELD_MAX}`,
-      `Test Me · Level ${placementState.level}`,
+      `Test Me · Level ${state.placementState.level}`,
     ];
     low = shield / PLACEMENT_SHIELD_MAX <= 0.34;
   } else {
@@ -2399,8 +2372,8 @@ function drawChallengeStatus() {
   const lineH = 17;
   const boxW = widest + padX * 2;
   const boxH = lineH * lines.length + 10;
-  const cx = canvasW / 2;
-  const boxTop = canvasH - 20 - 44 - boxH;
+  const cx = state.canvasW / 2;
+  const boxTop = state.canvasH - 20 - 44 - boxH;
 
   ctx.fillStyle = "rgba(10, 14, 26, 0.74)";
   ctx.strokeStyle = low ? "rgba(248, 113, 113, 0.6)" : "rgba(96, 180, 240, 0.4)";
@@ -2440,11 +2413,11 @@ function strokeRoundRect(x, y, w, h, r) {
 // A parallax starfield shown during boss mode: stars drift downward at varied
 // speeds so it reads as flying forward toward the mothership between waves.
 function ensureStarfield() {
-  if (starfield.length) return;
+  if (state.starfield.length) return;
   for (let i = 0; i < 70; i += 1) {
-    starfield.push({
-      x: Math.random() * canvasW,
-      y: Math.random() * canvasH,
+    state.starfield.push({
+      x: Math.random() * state.canvasW,
+      y: Math.random() * state.canvasH,
       r: 0.5 + Math.random() * 1.6,
       speed: 20 + Math.random() * 90,
     });
@@ -2452,13 +2425,13 @@ function ensureStarfield() {
 }
 
 function updateStarfield(dt) {
-  if (!isBossActive() || !starfield.length) return;
+  if (!isBossActive() || !state.starfield.length) return;
   const sec = dt / 1000;
-  for (const star of starfield) {
+  for (const star of state.starfield) {
     star.y += star.speed * sec;
-    if (star.y > canvasH) {
+    if (star.y > state.canvasH) {
       star.y = 0;
-      star.x = Math.random() * canvasW;
+      star.x = Math.random() * state.canvasW;
     }
   }
 }
@@ -2468,7 +2441,7 @@ function drawStarfield() {
   ensureStarfield();
   ctx.save();
   ctx.fillStyle = "#cbd5e1";
-  for (const star of starfield) {
+  for (const star of state.starfield) {
     ctx.globalAlpha = 0.2 + (star.speed / 110) * 0.5;
     ctx.beginPath();
     ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
@@ -2482,15 +2455,15 @@ function drawStarfield() {
 // position for the fight. It is purely cosmetic — the idea is that the boss is
 // the one launching the waves.
 function drawLoomingBoss() {
-  if (!bossMode?.active || bossMode.mode !== "full") return;
-  if (!["announce", "challenge", "challengeComplete"].includes(bossMode.phase)) return;
+  if (!state.bossMode?.active || state.bossMode.mode !== "full") return;
+  if (!["announce", "challenge", "challengeComplete"].includes(state.bossMode.phase)) return;
 
   // Wave 1 barely shows the underside; Wave 2 comes noticeably closer.
-  const reveal = bossMode.challengeType === "wave" ? 0.34 : 0.14;
-  const w = Math.min(560, Math.max(340, canvasW * 0.74));
-  const h = Math.min(185, Math.max(138, canvasH * 0.32));
-  const left = (canvasW - w) / 2;
-  const top = -h * (1 - reveal) + Math.sin(gameTime / 700) * 6;
+  const reveal = state.bossMode.challengeType === "wave" ? 0.34 : 0.14;
+  const w = Math.min(560, Math.max(340, state.canvasW * 0.74));
+  const h = Math.min(185, Math.max(138, state.canvasH * 0.32));
+  const left = (state.canvasW - w) / 2;
+  const top = -h * (1 - reveal) + Math.sin(state.gameTime / 700) * 6;
 
   ctx.save();
   ctx.globalAlpha = 0.5;
@@ -2526,11 +2499,11 @@ function drawLoomingBoss() {
 }
 
 function drawBossShip() {
-  if (!bossMode?.active || !["boss", "victory"].includes(bossMode.phase)) return;
+  if (!state.bossMode?.active || !["boss", "victory"].includes(state.bossMode.phase)) return;
   updateBossPartPositions();
-  const { left, top, w, h } = bossMode.shipBounds;
+  const { left, top, w, h } = state.bossMode.shipBounds;
   const cx = left + w * 0.5;
-  const pulse = 0.5 + Math.sin(gameTime / 420) * 0.5;
+  const pulse = 0.5 + Math.sin(state.gameTime / 420) * 0.5;
 
   ctx.save();
   ctx.shadowColor = "rgba(96, 180, 240, 0.28)";
@@ -2596,11 +2569,11 @@ function drawBossShip() {
     ctx.fill();
   }
 
-  for (const part of bossMode.parts) {
+  for (const part of state.bossMode.parts) {
     drawBossPart(part);
   }
   // Second pass: draw problem nodes on top so no later part's body can cover them.
-  for (const part of bossMode.parts) {
+  for (const part of state.bossMode.parts) {
     if (part.destroyed || part.locked) continue;
     part.problems.filter((problem) => !problem.destroyed && problem.revealed).forEach(drawBossProblemNode);
   }
@@ -2609,18 +2582,18 @@ function drawBossShip() {
 }
 
 function drawChallengeBurst() {
-  if (!bossMode?.active || !bossMode.burstMs) return;
-  const rawProgress = clamp(0, 1, 1 - bossMode.burstMs / CHALLENGE_TRANSITION_MS);
+  if (!state.bossMode?.active || !state.bossMode.burstMs) return;
+  const rawProgress = clamp(0, 1, 1 - state.bossMode.burstMs / CHALLENGE_TRANSITION_MS);
   const progress = smoothProgress(rawProgress);
   const fadeIn = clamp(0, 1, rawProgress / 0.12);
   const fadeOut = clamp(0, 1, (1 - rawProgress) / 0.2);
   const alpha = Math.min(fadeIn, fadeOut);
-  const beamY = lerp(canvasH + 90, -70, progress);
-  const beamHeight = clamp(42, 78, canvasH * 0.09);
-  const beamCore = clamp(10, 18, canvasH * 0.02);
+  const beamY = lerp(state.canvasH + 90, -70, progress);
+  const beamHeight = clamp(42, 78, state.canvasH * 0.09);
+  const beamCore = clamp(10, 18, state.canvasH * 0.02);
   const glowTop = beamY - beamHeight * 2.4;
   const glowBottom = beamY + beamHeight * 1.8;
-  const shimmer = Math.sin(gameTime / 58) * 0.5 + 0.5;
+  const shimmer = Math.sin(state.gameTime / 58) * 0.5 + 0.5;
 
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
@@ -2633,7 +2606,7 @@ function drawChallengeBurst() {
   wash.addColorStop(0.68, "rgba(251, 191, 36, 0.22)");
   wash.addColorStop(1, "rgba(251, 191, 36, 0)");
   ctx.fillStyle = wash;
-  ctx.fillRect(0, glowTop, canvasW, glowBottom - glowTop);
+  ctx.fillRect(0, glowTop, state.canvasW, glowBottom - glowTop);
 
   const beam = ctx.createLinearGradient(0, beamY - beamHeight / 2, 0, beamY + beamHeight / 2);
   beam.addColorStop(0, "rgba(56, 189, 248, 0)");
@@ -2643,34 +2616,34 @@ function drawChallengeBurst() {
   beam.addColorStop(0.7, "rgba(253, 224, 71, 0.42)");
   beam.addColorStop(1, "rgba(253, 224, 71, 0)");
   ctx.fillStyle = beam;
-  ctx.fillRect(0, beamY - beamHeight / 2, canvasW, beamHeight);
+  ctx.fillRect(0, beamY - beamHeight / 2, state.canvasW, beamHeight);
 
   ctx.shadowColor = "rgba(125, 211, 252, 0.92)";
   ctx.shadowBlur = 28 + shimmer * 18;
   ctx.fillStyle = "rgba(255, 255, 255, 0.94)";
-  ctx.fillRect(0, beamY - beamCore / 2, canvasW, beamCore);
+  ctx.fillRect(0, beamY - beamCore / 2, state.canvasW, beamCore);
 
   ctx.shadowColor = "rgba(251, 191, 36, 0.72)";
   ctx.shadowBlur = 18;
   ctx.fillStyle = "rgba(251, 191, 36, 0.76)";
-  ctx.fillRect(0, beamY + beamCore * 0.78, canvasW, 3);
+  ctx.fillRect(0, beamY + beamCore * 0.78, state.canvasW, 3);
 
   ctx.shadowBlur = 0;
   ctx.globalAlpha = alpha * 0.44;
   ctx.strokeStyle = "rgba(186, 230, 253, 0.72)";
   ctx.lineWidth = 1;
-  for (let x = 18; x < canvasW; x += 48) {
-    const offset = Math.sin((gameTime + x * 7) / 140) * 8;
+  for (let x = 18; x < state.canvasW; x += 48) {
+    const offset = Math.sin((state.gameTime + x * 7) / 140) * 8;
     ctx.beginPath();
     ctx.moveTo(x + offset, Math.max(0, beamY - beamHeight * 2.2));
-    ctx.lineTo(x - offset * 0.35, Math.min(canvasH, beamY - beamHeight * 0.22));
+    ctx.lineTo(x - offset * 0.35, Math.min(state.canvasH, beamY - beamHeight * 0.22));
     ctx.stroke();
   }
 
   ctx.globalAlpha = alpha * 0.9;
   for (let i = 0; i < 18; i += 1) {
-    const x = ((i * 83 + gameTime * 0.08) % (canvasW + 80)) - 40;
-    const y = beamY + Math.sin((gameTime + i * 37) / 90) * beamHeight * 0.42;
+    const x = ((i * 83 + state.gameTime * 0.08) % (state.canvasW + 80)) - 40;
+    const y = beamY + Math.sin((state.gameTime + i * 37) / 90) * beamHeight * 0.42;
     const len = 10 + (i % 5) * 4;
     ctx.strokeStyle = i % 3 === 0 ? "rgba(254, 240, 138, 0.9)" : "rgba(125, 211, 252, 0.84)";
     ctx.lineWidth = i % 3 === 0 ? 2 : 1.2;
@@ -2682,7 +2655,7 @@ function drawChallengeBurst() {
 
   ctx.globalAlpha = alpha * 0.16;
   ctx.fillStyle = "rgba(240, 249, 255, 1)";
-  ctx.fillRect(0, 0, canvasW, canvasH);
+  ctx.fillRect(0, 0, state.canvasW, state.canvasH);
   ctx.restore();
 }
 
@@ -2757,8 +2730,8 @@ function drawBossPart(part) {
 }
 
 function drawBossDebris() {
-  if (!bossMode?.debris?.length) return;
-  bossMode.debris.forEach(drawBossDebrisPiece);
+  if (!state.bossMode?.debris?.length) return;
+  state.bossMode.debris.forEach(drawBossDebrisPiece);
 }
 
 function drawBossDebrisPiece(piece) {
@@ -2831,7 +2804,7 @@ function drawBossDebrisPiece(piece) {
 function drawBossProblemNode(problem) {
   const x = problem.x - problem.w / 2;
   const y = problem.y - problem.h / 2;
-  const isTargeted = factorTargetId === problem.id;
+  const isTargeted = state.factorTargetId === problem.id;
   const fill = problem.partKind === "core"
     ? "rgba(248, 113, 113, 0.92)"
     : "rgba(15, 23, 42, 0.9)";
@@ -2882,16 +2855,16 @@ function drawBossStunOverlay() {
   if (!isBossStunned()) return;
   ctx.save();
   ctx.fillStyle = "rgba(248, 113, 113, 0.16)";
-  ctx.fillRect(0, 0, canvasW, canvasH);
+  ctx.fillRect(0, 0, state.canvasW, state.canvasH);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.font = "700 24px Space Grotesk";
   ctx.lineWidth = 5;
   ctx.strokeStyle = "rgba(2, 6, 23, 0.9)";
   ctx.fillStyle = "#f8fafc";
-  const text = `Stunned ${(bossMode.stunMs / 1000).toFixed(1)}s`;
-  ctx.strokeText(text, canvasW / 2, canvasH / 2);
-  ctx.fillText(text, canvasW / 2, canvasH / 2);
+  const text = `Stunned ${(state.bossMode.stunMs / 1000).toFixed(1)}s`;
+  ctx.strokeText(text, state.canvasW / 2, state.canvasH / 2);
+  ctx.fillText(text, state.canvasW / 2, state.canvasH / 2);
   ctx.restore();
 }
 
@@ -2908,19 +2881,19 @@ function drawBossStunOverlay() {
 // Unified shield state for the player-base shield visual, shared by the boss
 // Wave 1/2 challenge and Test Me (which uses the same shield mechanic).
 function getShieldRenderState() {
-  if (bossMode?.active && ["challenge", "challengeComplete"].includes(bossMode.phase)) {
+  if (state.bossMode?.active && ["challenge", "challengeComplete"].includes(state.bossMode.phase)) {
     return {
-      ratio: bossMode.phase === "challengeComplete" ? 0 : getBlitzShieldRatio(),
-      pulse: clamp(0, 1, (bossMode.blitzShieldPulseMs || 0) / BLITZ_SHIELD_PULSE_MS),
-      hit: clamp(0, 1, (bossMode.blitzShieldHitMs || 0) / BLITZ_SHIELD_HIT_MS),
-      forceLow: bossMode.phase === "challengeComplete",
+      ratio: state.bossMode.phase === "challengeComplete" ? 0 : getBlitzShieldRatio(),
+      pulse: clamp(0, 1, (state.bossMode.blitzShieldPulseMs || 0) / BLITZ_SHIELD_PULSE_MS),
+      hit: clamp(0, 1, (state.bossMode.blitzShieldHitMs || 0) / BLITZ_SHIELD_HIT_MS),
+      forceLow: state.bossMode.phase === "challengeComplete",
     };
   }
   if (isPlacementActive()) {
     return {
-      ratio: clamp(0, 1, (placementState.shield ?? PLACEMENT_SHIELD_START) / PLACEMENT_SHIELD_MAX),
-      pulse: clamp(0, 1, (placementState.shieldPulseMs || 0) / BLITZ_SHIELD_PULSE_MS),
-      hit: clamp(0, 1, (placementState.shieldHitMs || 0) / BLITZ_SHIELD_HIT_MS),
+      ratio: clamp(0, 1, (state.placementState.shield ?? PLACEMENT_SHIELD_START) / PLACEMENT_SHIELD_MAX),
+      pulse: clamp(0, 1, (state.placementState.shieldPulseMs || 0) / BLITZ_SHIELD_PULSE_MS),
+      hit: clamp(0, 1, (state.placementState.shieldHitMs || 0) / BLITZ_SHIELD_HIT_MS),
       forceLow: false,
     };
   }
@@ -2937,13 +2910,13 @@ function isDropVisible(drop) {
 
 function isAnswerTargetVisible(target) {
   if (target.targetType === "bossProblem") {
-    return isBossActive() && bossMode.phase === "boss" && !target.destroyed && !target.locked;
+    return isBossActive() && state.bossMode.phase === "boss" && !target.destroyed && !target.locked;
   }
   return isDropVisible(target) && !target.revealed;
 }
 
 function getAnswerTargets() {
-  return [...drops, ...getActiveBossParts()];
+  return [...state.drops, ...getActiveBossParts()];
 }
 
 function isDropClickable(drop) {
@@ -3029,33 +3002,33 @@ function isInputPossible(inputValue) {
 // score.
 function getScoreReadout() {
   if (isPlacementActive()) {
-    const shield = Math.max(0, Math.round(placementState.shield ?? PLACEMENT_SHIELD_START));
+    const shield = Math.max(0, Math.round(state.placementState.shield ?? PLACEMENT_SHIELD_START));
     return {
       label: "Test Me",
-      value: `L${placementState.level} · 🛡 ${shield}/${PLACEMENT_SHIELD_MAX}`,
+      value: `L${state.placementState.level} · 🛡 ${shield}/${PLACEMENT_SHIELD_MAX}`,
     };
   }
-  if (!bossMode?.active) return { label: "Cleared", value: String(score) };
-  const phase = bossMode.phase;
+  if (!state.bossMode?.active) return { label: "Cleared", value: String(state.score) };
+  const phase = state.bossMode.phase;
   const isMothership = phase === "boss" || phase === "victory";
   // Stage label: standalone replays read Blitz/Wave/Boss; the full boss reads
   // Wave 1 (shield endurance), Wave 2 (load ladder), then Boss (mothership).
-  const label = bossMode.mode === "blitz" ? "Blitz"
-    : bossMode.mode === "wave" ? "Wave"
-      : isMothership ? (bossMode.mode === "boss" ? "Worksheet" : "Boss")
-        : bossMode.challengeType === "wave" ? "Wave 2" : "Wave 1";
+  const label = state.bossMode.mode === "blitz" ? "Blitz"
+    : state.bossMode.mode === "wave" ? "Wave"
+      : isMothership ? (state.bossMode.mode === "boss" ? "Worksheet" : "Boss")
+        : state.bossMode.challengeType === "wave" ? "Wave 2" : "Wave 1";
   if (isMothership) {
     const { problemsTotal, problemsRemaining } = getBossPartCount();
     const cleared = Math.max(0, problemsTotal - problemsRemaining);
-    const time = phase === "boss" ? getBossWorksheetElapsedMs() : bossMode.bossFinalDurationMs;
+    const time = phase === "boss" ? getBossWorksheetElapsedMs() : state.bossMode.bossFinalDurationMs;
     return { label, value: `${cleared}/${problemsTotal} · ${formatDuration(time)}` };
   }
   if (phase === "challenge" || phase === "challengeComplete") {
     // Wave 1 ramps drop time; Wave 2 ramps simultaneous load.
     return {
       label,
-      value: bossMode.challengeType === "wave"
-        ? `${bossMode.waveMaxLoadCleared || 0} best · trying ${bossMode.challengeLoad}`
+      value: state.bossMode.challengeType === "wave"
+        ? `${state.bossMode.waveMaxLoadCleared || 0} best · trying ${state.bossMode.challengeLoad}`
         : `${formatDuration(getBlitzSurvivalMs())} · ${formatDropSeconds(getBlitzDropSeconds())}`,
     };
   }
@@ -3076,12 +3049,12 @@ function handleCorrectAnswer(match) {
   if (isBossStunned()) return;
   clearAmbiguousTimer();
   resetCannonOverload();
-  if (factorTargetId === match.id) factorTargetId = null;
+  if (state.factorTargetId === match.id) state.factorTargetId = null;
   recordLearningResult(match, "correct");
-  if (bossMode?.phase === "challenge" && match.bossKind === "bomb") {
+  if (state.bossMode?.phase === "challenge" && match.bossKind === "bomb") {
     changeBlitzShield(BLITZ_CORRECT_SHIELD_GAIN, "correct");
   }
-  if (!isBossActive()) score += 1;
+  if (!isBossActive()) state.score += 1;
   if (isPlacementDrop(match)) {
     handlePlacementDropFinished(match, true, "correct");
   }
@@ -3089,8 +3062,8 @@ function handleCorrectAnswer(match) {
   if (match.targetType === "bossProblem") {
     handleBossProblemDestroyed(match);
   } else {
-    drops = drops.filter((d) => d.id !== match.id);
-    if (match.bossKind === "bomb" && bossMode?.phase === "boss" && match.bossSourceNodeId) {
+    state.drops = state.drops.filter((d) => d.id !== match.id);
+    if (match.bossKind === "bomb" && state.bossMode?.phase === "boss" && match.bossSourceNodeId) {
       const sourceNode = findBossProblemById(match.bossSourcePartId, match.bossSourceNodeId);
       if (sourceNode && !sourceNode.destroyed) {
         handleBossProblemDestroyed(sourceNode);
@@ -3101,7 +3074,7 @@ function handleCorrectAnswer(match) {
   fireLaser(match);
   playPop();
   answerInput.value = "";
-  currentInput = "";
+  state.currentInput = "";
   updateKpDisplay();
   maybeExitBreatherMode();
 }
@@ -3121,7 +3094,7 @@ function getWrongSubmissionTargets() {
 }
 
 function handleWrongInput({ targets = null } = {}) {
-  if (isPaused || isBossStunned()) return;
+  if (state.isPaused || isBossStunned()) return;
   if (isCannonOverloaded()) {
     clearCurrentAnswerInput();
     updateInputHint();
@@ -3131,7 +3104,7 @@ function handleWrongInput({ targets = null } = {}) {
   const visibleTargets = getAnswerTargets().filter((drop) => isAnswerTargetVisible(drop));
   const targetsToRecord = Array.isArray(targets)
     ? targets.filter(Boolean)
-    : bossMode?.phase === "challenge" && visibleTargets.length > 0
+    : state.bossMode?.phase === "challenge" && visibleTargets.length > 0
       ? [getMostUrgentVisibleTarget(visibleTargets)]
       : [];
   for (const drop of targetsToRecord) {
@@ -3142,14 +3115,14 @@ function handleWrongInput({ targets = null } = {}) {
   }
   if (targetsToRecord.some(isPlacementDrop)) {
     const placementIds = new Set(targetsToRecord.filter(isPlacementDrop).map((drop) => drop.id));
-    drops = drops.filter((drop) => !placementIds.has(drop.id));
+    state.drops = state.drops.filter((drop) => !placementIds.has(drop.id));
   }
   // A wrong typed answer does not drain shields — consistent with normal play,
   // where a wrong answer simply doesn't clear. Only landed bombs cost shields.
   playWrongInput();
   registerWrongSubmission();
   answerInput.value = "";
-  currentInput = "";
+  state.currentInput = "";
   updateKpDisplay();
   updateInputHint();
 }
@@ -3169,14 +3142,14 @@ function hasLongerMatch(value) {
 }
 
 function clearAmbiguousTimer() {
-  if (ambiguousTimer !== null) {
-    clearTimeout(ambiguousTimer);
-    ambiguousTimer = null;
+  if (state.ambiguousTimer !== null) {
+    clearTimeout(state.ambiguousTimer);
+    state.ambiguousTimer = null;
   }
 }
 
 function processInput(value) {
-  if (isPaused || isBossStunned()) return;
+  if (state.isPaused || isBossStunned()) return;
   if (!value) return;
   if (isCannonOverloaded()) {
     clearCurrentAnswerInput();
@@ -3199,7 +3172,7 @@ function processInput(value) {
     if (isValidDivisor && target.factorRemaining % typedNum === 0) {
       advanceFactorDrop(target, typedNum, { fromTargeting: true });
       answerInput.value = "";
-      currentInput = "";
+      state.currentInput = "";
     } else if (isValidDivisor && target.factorRemaining % typedNum !== 0) {
       // Valid number but doesn't divide remaining
       handleWrongInput({ targets: [target] });
@@ -3213,10 +3186,10 @@ function processInput(value) {
   const match = findDropMatch(value);
   if (match) {
     if (hasLongerMatch(value)) {
-      ambiguousTimer = setTimeout(() => {
-        ambiguousTimer = null;
-        const stillThere = drops.find((d) => d.id === match.id);
-        if (stillThere && currentInput === value) {
+      state.ambiguousTimer = setTimeout(() => {
+        state.ambiguousTimer = null;
+        const stillThere = state.drops.find((d) => d.id === match.id);
+        if (stillThere && state.currentInput === value) {
           handleCorrectAnswer(stillThere);
         }
       }, AMBIGUOUS_DELAY_MS);
@@ -3251,21 +3224,21 @@ function advanceFactorDrop(drop, divisor, { fromTargeting = false } = {}) {
 // ── Factor Targeting ──
 
 function isInFactorTargetMode() {
-  return factorTargetId !== null;
+  return state.factorTargetId !== null;
 }
 
 function getTargetedFactorDrop() {
-  if (factorTargetId === null) return null;
+  if (state.factorTargetId === null) return null;
   // Include boss ship nodes so a targeted node (even fully factored, awaiting
   // Enter) is still found; only destroyed/cleared targets release targeting.
-  const pool = isBossActive() ? [...getActiveBossParts(), ...drops] : drops;
-  const target = pool.find((d) => d.id === factorTargetId);
+  const pool = isBossActive() ? [...getActiveBossParts(), ...state.drops] : state.drops;
+  const target = pool.find((d) => d.id === state.factorTargetId);
   if (!target || target.destroyed) {
-    factorTargetId = null;
+    state.factorTargetId = null;
     return null;
   }
   if (!isBossActive() && target.revealed) {
-    factorTargetId = null;
+    state.factorTargetId = null;
     return null;
   }
   return target;
@@ -3277,10 +3250,10 @@ function getTargetedFactorDrop() {
 function getTargetableFactorProblems() {
   if (isBossActive()) {
     const nodes = getActiveBossParts().filter((p) => p.opKey === "factor" && !p.factorComplete);
-    const bombs = drops.filter((d) => d.bossKind === "bomb" && d.opKey === "factor" && isDropVisible(d) && !d.factorComplete);
+    const bombs = state.drops.filter((d) => d.bossKind === "bomb" && d.opKey === "factor" && isDropVisible(d) && !d.factorComplete);
     return [...nodes, ...bombs];
   }
-  return drops.filter((d) => d.opKey === "factor" && isDropVisible(d) && !d.revealed && !d.factorComplete);
+  return state.drops.filter((d) => d.opKey === "factor" && isDropVisible(d) && !d.revealed && !d.factorComplete);
 }
 
 function getVisibleFactorDrops() {
@@ -3306,17 +3279,17 @@ function getPrevFactorDrop(currentId) {
 }
 
 function enterFactorTargeting(drop) {
-  factorTargetId = drop ? drop.id : null;
+  state.factorTargetId = drop ? drop.id : null;
   answerInput.value = "";
-  currentInput = "";
+  state.currentInput = "";
   answerInput.focus();
   updateKpDisplay();
 }
 
 function exitFactorTargeting() {
-  factorTargetId = null;
+  state.factorTargetId = null;
   answerInput.value = "";
-  currentInput = "";
+  state.currentInput = "";
   answerInput.focus();
   updateKpDisplay();
 }
@@ -3331,66 +3304,66 @@ function exitFactorTargeting() {
 // manual to avoid surprises.
 function maybeAutoTargetFactor() {
   const factorActive = isBossActive()
-    ? bossMode.opKey === "factor"
+    ? state.bossMode.opKey === "factor"
     : (() => {
       const enabled = getEnabledOps();
       return enabled.length === 1 && enabled[0] === "factor";
     })();
   if (!factorActive) return;
-  if (factorTargetId !== null && getTargetedFactorDrop()) return; // keep a valid current target
+  if (state.factorTargetId !== null && getTargetedFactorDrop()) return; // keep a valid current target
   const candidates = getTargetableFactorProblems();
   if (candidates.length === 0) return;
   const target = getMostUrgentVisibleTarget(candidates) || candidates[0];
-  if (target) factorTargetId = target.id;
+  if (target) state.factorTargetId = target.id;
 }
 
 function tick(timestamp) {
-  if (!lastTime) lastTime = timestamp;
-  const dt = timestamp - lastTime;
-  lastTime = timestamp;
+  if (!state.lastTime) state.lastTime = timestamp;
+  const dt = timestamp - state.lastTime;
+  state.lastTime = timestamp;
   updateCannonOverload(dt);
 
-  if (!isPaused && !isGameplayOverlayOpen()) {
-    gameTime += dt;
+  if (!state.isPaused && !isGameplayOverlayOpen()) {
+    state.gameTime += dt;
 
     if (isBossActive()) {
       updateBossMode(dt);
       updateStarfield(dt);
     } else if (isPlacementActive()) {
       updatePlacementMode(dt);
-    } else if (isBreatherMode) {
+    } else if (state.isBreatherMode) {
       maybeExitBreatherMode();
-    } else if (dropLimit > 0) {
+    } else if (state.dropLimit > 0) {
       // Spawn drops
-      spawnTimer += dt;
+      state.spawnTimer += dt;
       const interval = getSpawnInterval();
       let spawns = 0;
-      while (spawnTimer >= interval && spawns < 2) {
-        if (drops.length >= getMaxDrops()) {
-          spawnTimer = Math.min(spawnTimer, interval);
+      while (state.spawnTimer >= interval && spawns < 2) {
+        if (state.drops.length >= getMaxDrops()) {
+          state.spawnTimer = Math.min(state.spawnTimer, interval);
           break;
         }
         const created = createDrop();
         if (!created) {
-          spawnTimer = 0;
+          state.spawnTimer = 0;
           break;
         }
-        spawnTimer -= interval;
+        state.spawnTimer -= interval;
         spawns += 1;
       }
-      if (spawnTimer >= interval) {
-        spawnTimer = 0;
+      if (state.spawnTimer >= interval) {
+        state.spawnTimer = 0;
       }
     }
 
-    if (!isBossStunned() && !isBreatherMode) {
+    if (!isBossStunned() && !state.isBreatherMode) {
       updateDrops(dt);
     }
     maybeAutoTargetFactor();
     updateSplashes(dt);
     updatePlayerShip(dt);
     updateLaser(dt);
-    if (groundFlash > 0) groundFlash = Math.max(0, groundFlash - dt);
+    if (state.groundFlash > 0) state.groundFlash = Math.max(0, state.groundFlash - dt);
     drawDrops();
   }
 
@@ -3427,15 +3400,15 @@ function isGameplayOverlayOpen() {
 
 function resizeCanvas() {
   const rect = canvas.getBoundingClientRect();
-  canvasDpr = window.devicePixelRatio || 1;
-  const width = Math.max(1, Math.round(rect.width * canvasDpr));
-  const height = Math.max(1, Math.round(rect.height * canvasDpr));
+  state.canvasDpr = window.devicePixelRatio || 1;
+  const width = Math.max(1, Math.round(rect.width * state.canvasDpr));
+  const height = Math.max(1, Math.round(rect.height * state.canvasDpr));
   if (canvas.width !== width) canvas.width = width;
   if (canvas.height !== height) canvas.height = height;
-  ctx.setTransform(canvasDpr, 0, 0, canvasDpr, 0, 0);
+  ctx.setTransform(state.canvasDpr, 0, 0, state.canvasDpr, 0, 0);
   resetCanvasPaintState();
-  canvasW = Math.max(1, rect.width);
-  canvasH = Math.max(1, rect.height);
+  state.canvasW = Math.max(1, rect.width);
+  state.canvasH = Math.max(1, rect.height);
 }
 
 // ============================================================
@@ -3569,13 +3542,13 @@ function closeShareBadgePopup() {
 }
 
 function getShareBadgeData(opKey, level) {
-  const skill = progressProfile.skills?.[opKey];
+  const skill = state.progressProfile.skills?.[opKey];
   if (!skill) return null;
   const blitz = getBlitzBest(skill, level);
   const wave = getChallengeBest(skill, "wave", level);
   const worksheet = getChallengeBest(skill, "boss", level);
-  const playerName = progressProfile.user?.name && progressProfile.user.name !== "Local Player"
-    ? progressProfile.user.name
+  const playerName = state.progressProfile.user?.name && state.progressProfile.user.name !== "Local Player"
+    ? state.progressProfile.user.name
     : "A Rain Math player";
   return {
     opKey,
@@ -3789,19 +3762,19 @@ function getReplayChallengeLevel(opKey, skill) {
 function formatBlitzText(opKey, skill) {
   const level = getReplayChallengeLevel(opKey, skill);
   if (!level) return "";
-  return formatBlitzBestText(level, getBlitzBest(progressProfile.skills?.[opKey], level));
+  return formatBlitzBestText(level, getBlitzBest(state.progressProfile.skills?.[opKey], level));
 }
 
 function formatWaveText(opKey, skill) {
   const level = getReplayChallengeLevel(opKey, skill);
   if (!level) return "";
-  return formatWaveBestText(level, getChallengeBest(progressProfile.skills?.[opKey], "wave", level));
+  return formatWaveBestText(level, getChallengeBest(state.progressProfile.skills?.[opKey], "wave", level));
 }
 
 function formatBossReplayText(opKey, skill) {
   const level = getReplayChallengeLevel(opKey, skill);
   if (!level) return "";
-  return formatBossReplayBestText(level, getChallengeBest(progressProfile.skills?.[opKey], "boss", level));
+  return formatBossReplayBestText(level, getChallengeBest(state.progressProfile.skills?.[opKey], "boss", level));
 }
 
 function formatBadgeText(opKey, skill) {
@@ -3904,7 +3877,7 @@ function buildDiffCards() {
   if (!container) return;
   container.innerHTML = "";
   const enabled = getEnabledOps();
-  const progressSummary = summarizeProfile(progressProfile);
+  const progressSummary = summarizeProfile(state.progressProfile);
   enabled.forEach((opKey) => {
     const config = opConfig[opKey];
     const range = getDifficultyRange(opKey, config.difficulty);
@@ -4074,7 +4047,7 @@ function buildDiffCards() {
       e.preventDefault();
       e.stopPropagation();
       initAudio();
-      const level = getReplayChallengeLevel(opKey, summarizeProfile(progressProfile).skills[opKey]);
+      const level = getReplayChallengeLevel(opKey, summarizeProfile(state.progressProfile).skills[opKey]);
       if (level) showShareBadge(opKey, level);
     });
 
@@ -4102,7 +4075,7 @@ function buildDiffCards() {
 }
 
 function updateReadinessDisplays() {
-  const progressSummary = summarizeProfile(progressProfile);
+  const progressSummary = summarizeProfile(state.progressProfile);
 
   document.querySelectorAll(".diff-ready[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
@@ -4246,7 +4219,7 @@ function getAccuracyText(asked, correct, opKey = null, statsKey = null) {
 }
 
 function getProgressProblem(opKey, statsKey) {
-  return progressProfile.skills?.[opKey]?.problems?.[statsKey] || null;
+  return state.progressProfile.skills?.[opKey]?.problems?.[statsKey] || null;
 }
 
 function getStatsTooltip(opKey, statsKey, label, asked, correct) {
@@ -4393,14 +4366,13 @@ function getSessionSummaryById(sessionId) {
 // When set, the Session Log / Report popups render this shared (read-only)
 // profile instead of the live one, so a parent opening a kid's share link sees
 // exactly the same popups. Only the data source differs.
-let reportViewProfile = null;
 
 function getReportProfile() {
-  return reportViewProfile || progressProfile;
+  return state.reportViewProfile || state.progressProfile;
 }
 
 function isViewingSharedReport() {
-  return Boolean(reportViewProfile);
+  return Boolean(state.reportViewProfile);
 }
 
 // Generic clipboard copy with a textarea fallback, shared by the recap and the
@@ -4449,7 +4421,7 @@ function isShareChecksumValid(payload) {
   return verifyShareChecksum(payload, SHARE_SALT);
 }
 
-function buildSharedReportPayload(profile = progressProfile, sessionId = null) {
+function buildSharedReportPayload(profile = state.progressProfile, sessionId = null) {
   const all = Array.isArray(profile?.sessionLog) ? profile.sessionLog : [];
   const sessions = sessionId ? all.filter((s) => s.id === sessionId) : all.slice(0, 10);
   const content = {
@@ -4496,7 +4468,7 @@ async function encodeSharePayload(payload) {
   return `0${encodeShareString(payload)}`;
 }
 
-async function getShareReportCode(profile = progressProfile, sessionId = null) {
+async function getShareReportCode(profile = state.progressProfile, sessionId = null) {
   return encodeSharePayload(buildSharedReportPayload(profile, sessionId));
 }
 
@@ -4516,7 +4488,7 @@ async function decodeShareReportCode(code) {
   }
 }
 
-async function getSharedReportLink(profile = progressProfile, sessionId = null) {
+async function getSharedReportLink(profile = state.progressProfile, sessionId = null) {
   const base = `${window.location.origin}${window.location.pathname}`;
   return `${base}#report=${await getShareReportCode(profile, sessionId)}`;
 }
@@ -4525,7 +4497,7 @@ async function getSharedReportLink(profile = progressProfile, sessionId = null) 
 // ("send it to their parents"), otherwise copy the link to the clipboard.
 async function shareReportWithParent(sessionId, statusEl) {
   if (statusEl) statusEl.textContent = "Preparing link…";
-  const url = await getSharedReportLink(progressProfile, sessionId);
+  const url = await getSharedReportLink(state.progressProfile, sessionId);
   if (navigator.share) {
     try {
       await navigator.share({ title: "Rain Math report", url });
@@ -4541,7 +4513,7 @@ async function shareReportWithParent(sessionId, statusEl) {
 function openSharedReportView(payload) {
   if (!payload || payload.v !== 1) return false;
   const sessions = Array.isArray(payload.sessionLog) ? payload.sessionLog : [];
-  reportViewProfile = {
+  state.reportViewProfile = {
     user: { name: typeof payload.name === "string" ? payload.name : "Player" },
     sessionLog: sessions,
     skills: {},
@@ -4554,7 +4526,7 @@ function openSharedReportView(payload) {
 }
 
 function exitSharedReportView() {
-  reportViewProfile = null;
+  state.reportViewProfile = null;
   closeSessionLogPopup();
   closeSessionReportPopup();
   if (window.location.hash) {
@@ -4664,13 +4636,13 @@ function buildSessionLogPopup() {
     sessions.forEach((session) => {
       const row = document.createElement("div");
       row.className = "session-log-row";
-      row.classList.toggle("is-current", session.id === activeSessionId);
+      row.classList.toggle("is-current", session.id === state.activeSessionId);
 
       const top = document.createElement("div");
       top.className = "session-log-row-top";
       const when = document.createElement("div");
       when.className = "session-log-when";
-      when.textContent = `${formatSessionStartedAt(session.startedAt)}${session.id === activeSessionId ? " · current" : ""}`;
+      when.textContent = `${formatSessionStartedAt(session.startedAt)}${session.id === state.activeSessionId ? " · current" : ""}`;
       const duration = document.createElement("div");
       duration.className = "session-log-duration";
       duration.textContent = formatDuration(session.durationMs);
@@ -4770,7 +4742,7 @@ function buildSessionReportPopup(sessionId) {
     shareBtn.addEventListener("click", () => shareReportWithParent(session.id, shareStatus));
     copyBtn.addEventListener("click", async () => {
       shareStatus.textContent = "Preparing link…";
-      copyTextToClipboard(await getSharedReportLink(progressProfile, session.id), shareStatus, "Link copied — paste it to a parent.");
+      copyTextToClipboard(await getSharedReportLink(state.progressProfile, session.id), shareStatus, "Link copied — paste it to a parent.");
     });
     share.append(shareBtn, copyBtn, shareStatus);
     card.appendChild(share);
@@ -4894,7 +4866,7 @@ function rebuildWelcomeMenu() {
 }
 
 function selectWelcomeProfile(profileId) {
-  saveProfile(progressProfile);
+  saveProfile(state.progressProfile);
   const selected = switchStoredProfile(profileId);
   activateProfile(selected);
   rebuildWelcomeMenu();
@@ -4954,7 +4926,7 @@ function buildWelcomeCreateForm() {
       input.focus();
       return;
     }
-    saveProfile(progressProfile);
+    saveProfile(state.progressProfile);
     const created = createStoredProfile(name);
     activateProfile(created);
     buildWelcomeMenu({ firstVisit: false });
@@ -5124,11 +5096,11 @@ function removePlacementOverlay() {
 
 function closePlacementOverlay({ focus = true } = {}) {
   removePlacementOverlay();
-  const runId = placementState?.runId;
+  const runId = state.placementState?.runId;
   if (runId) {
-    drops = drops.filter((drop) => drop.placementRunId !== runId);
+    state.drops = state.drops.filter((drop) => drop.placementRunId !== runId);
   }
-  placementState = null;
+  state.placementState = null;
   updateScoreDisplay();
   updateInputHint();
   updateOpChits();
@@ -5171,20 +5143,20 @@ function getPlacementFrontierProblems(opKey, level) {
 }
 
 function makePlacementDrop(entry) {
-  if (!placementState?.opKey) return null;
-  const problem = makeProblemFromUniverseEntry(placementState.opKey, entry, placementState.level)
-    || makePlacementProblem(placementState.opKey, placementState.level);
+  if (!state.placementState?.opKey) return null;
+  const problem = makeProblemFromUniverseEntry(state.placementState.opKey, entry, state.placementState.level)
+    || makePlacementProblem(state.placementState.opKey, state.placementState.level);
   if (!problem) return null;
   const padding = 42;
   const left = padding;
-  const right = Math.max(padding + 20, canvasW - padding);
+  const right = Math.max(padding + 20, state.canvasW - padding);
   const drop = {
-    id: nextDropId++,
+    id: state.nextDropId++,
     x: randInt(left, right),
     y: -24,
-    baseSpeed: Math.max(46, (canvasH + 60) / placementDropSeconds(placementState.opKey)),
-    placementRunId: placementState.runId,
-    placementLevel: placementState.level,
+    baseSpeed: Math.max(46, (state.canvasH + 60) / placementDropSeconds(state.placementState.opKey)),
+    placementRunId: state.placementState.runId,
+    placementLevel: state.placementState.level,
     placementEntry: { statsKey: entry.statsKey, text: entry.text, retry: Boolean(entry.retry) },
     createdAtMs: performance.now(),
   };
@@ -5198,19 +5170,19 @@ function makePlacementDrop(entry) {
 }
 
 function preparePlacementLevel(level) {
-  if (!placementState?.active) return;
+  if (!state.placementState?.active) return;
   const nextLevel = clamp(1, 10, Math.round(level || 1));
-  const queue = shuffleArray(getPlacementFrontierProblems(placementState.opKey, nextLevel));
-  placementState.level = nextLevel;
-  placementState.stage = "running";
-  placementState.queue = queue.map((entry) => ({ ...entry, retry: false }));
-  placementState.levelTotal = placementState.queue.length;
-  placementState.levelAsked = 0;
-  placementState.levelCorrect = 0;
-  placementState.levelMistakes = 0;
-  placementState.shield = PLACEMENT_SHIELD_START;
-  placementState.pendingDropMs = 0;
-  placementState.currentDropId = null;
+  const queue = shuffleArray(getPlacementFrontierProblems(state.placementState.opKey, nextLevel));
+  state.placementState.level = nextLevel;
+  state.placementState.stage = "running";
+  state.placementState.queue = queue.map((entry) => ({ ...entry, retry: false }));
+  state.placementState.levelTotal = state.placementState.queue.length;
+  state.placementState.levelAsked = 0;
+  state.placementState.levelCorrect = 0;
+  state.placementState.levelMistakes = 0;
+  state.placementState.shield = PLACEMENT_SHIELD_START;
+  state.placementState.pendingDropMs = 0;
+  state.placementState.currentDropId = null;
   updateScoreDisplay();
   updateInputHint();
 }
@@ -5223,10 +5195,10 @@ function startPlacementRun(opKey, level = 1) {
   for (const key of Object.keys(opConfig)) {
     opConfig[key].enabled = key === opKey;
   }
-  drops = [];
-  factorTargetId = null;
-  spawnTimer = 0;
-  placementState = {
+  state.drops = [];
+  state.factorTargetId = null;
+  state.spawnTimer = 0;
+  state.placementState = {
     active: true,
     stage: "running",
     runId: `placement-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -5249,8 +5221,8 @@ function startPlacementRun(opKey, level = 1) {
     pendingDropMs: 0,
     currentDropId: null,
   };
-  preparePlacementLevel(placementState.level);
-  isPaused = false;
+  preparePlacementLevel(state.placementState.level);
+  state.isPaused = false;
   if (pauseBtn) pauseBtn.textContent = "Pause";
   updateOpChits();
   updateControlDisplay();
@@ -5263,35 +5235,35 @@ function startPlacementForOp(opKey, level = 1) {
 }
 
 function queuePlacementRetry(drop) {
-  if (!placementState?.active || !drop) return;
+  if (!state.placementState?.active || !drop) return;
   const retry = {
     ...(drop.placementEntry || { statsKey: drop.statsKey || drop.text, text: drop.text }),
     retry: true,
   };
-  const firstSlot = Math.min(1, placementState.queue.length);
+  const firstSlot = Math.min(1, state.placementState.queue.length);
   for (let i = 0; i < PLACEMENT_RETRY_COUNT; i += 1) {
     if (i === 0) {
-      placementState.queue.splice(firstSlot, 0, { ...retry });
+      state.placementState.queue.splice(firstSlot, 0, { ...retry });
     } else {
-      placementState.queue.push({ ...retry });
+      state.placementState.queue.push({ ...retry });
     }
   }
 }
 
 function recordPlacementLevelSummary() {
-  if (!placementState?.active) return;
-  const accuracy = placementState.levelAsked > 0
-    ? placementState.levelCorrect / placementState.levelAsked
+  if (!state.placementState?.active) return;
+  const accuracy = state.placementState.levelAsked > 0
+    ? state.placementState.levelCorrect / state.placementState.levelAsked
     : 0;
-  const last = placementState.levelSummaries.at(-1);
-  if (last?.level === placementState.level && last.asked === placementState.levelAsked) {
+  const last = state.placementState.levelSummaries.at(-1);
+  if (last?.level === state.placementState.level && last.asked === state.placementState.levelAsked) {
     return accuracy;
   }
-  placementState.levelSummaries.push({
-    level: placementState.level,
-    asked: placementState.levelAsked,
-    correct: placementState.levelCorrect,
-    mistakes: placementState.levelMistakes,
+  state.placementState.levelSummaries.push({
+    level: state.placementState.level,
+    asked: state.placementState.levelAsked,
+    correct: state.placementState.levelCorrect,
+    mistakes: state.placementState.levelMistakes,
     accuracy,
   });
   return accuracy;
@@ -5300,48 +5272,48 @@ function recordPlacementLevelSummary() {
 // Shield filled — the player is comfortable at this level, so climb to the next
 // (or finish if they cleared the top level).
 function climbPlacementLevel() {
-  if (!placementState?.active) return;
+  if (!state.placementState?.active) return;
   recordPlacementLevelSummary();
-  placementState.passedLevel = Math.max(placementState.passedLevel, placementState.level);
-  if (placementState.level >= 10) {
+  state.placementState.passedLevel = Math.max(state.placementState.passedLevel, state.placementState.level);
+  if (state.placementState.level >= 10) {
     finishPlacementRun({ recommendedLevel: 10, reason: "cleared every level" });
   } else {
-    preparePlacementLevel(placementState.level + 1);
+    preparePlacementLevel(state.placementState.level + 1);
   }
 }
 
 function handlePlacementDropFinished(drop, correct, outcome = correct ? "correct" : "wrong") {
   if (!isPlacementDrop(drop)) return;
-  placementState.totalAsked += 1;
-  placementState.levelAsked += 1;
+  state.placementState.totalAsked += 1;
+  state.placementState.levelAsked += 1;
   if (correct) {
-    placementState.totalCorrect += 1;
-    placementState.levelCorrect += 1;
-    placementState.shield = Math.min(PLACEMENT_SHIELD_MAX, placementState.shield + PLACEMENT_SHIELD_GAIN);
-    placementState.shieldPulseMs = BLITZ_SHIELD_PULSE_MS;
+    state.placementState.totalCorrect += 1;
+    state.placementState.levelCorrect += 1;
+    state.placementState.shield = Math.min(PLACEMENT_SHIELD_MAX, state.placementState.shield + PLACEMENT_SHIELD_GAIN);
+    state.placementState.shieldPulseMs = BLITZ_SHIELD_PULSE_MS;
   } else {
-    placementState.totalMistakes += 1;
-    placementState.levelMistakes += 1;
-    placementState.shield = Math.max(0, placementState.shield - PLACEMENT_SHIELD_LOSS);
-    placementState.shieldHitMs = BLITZ_SHIELD_HIT_MS;
+    state.placementState.totalMistakes += 1;
+    state.placementState.levelMistakes += 1;
+    state.placementState.shield = Math.max(0, state.placementState.shield - PLACEMENT_SHIELD_LOSS);
+    state.placementState.shieldHitMs = BLITZ_SHIELD_HIT_MS;
     queuePlacementRetry(drop);
   }
-  placementState.history.push({
-    level: placementState.level,
+  state.placementState.history.push({
+    level: state.placementState.level,
     text: drop.text,
     statsKey: drop.statsKey,
     outcome,
   });
-  placementState.currentDropId = null;
-  placementState.pendingDropMs = PLACEMENT_NEXT_DROP_MS;
+  state.placementState.currentDropId = null;
+  state.placementState.pendingDropMs = PLACEMENT_NEXT_DROP_MS;
   updateScoreDisplay();
 
   // Shield resolves the level (decision logic lives in game-core, unit-tested).
   const decision = resolvePlacementOutcome(
     {
-      shield: placementState.shield,
-      level: placementState.level,
-      levelAsked: placementState.levelAsked,
+      shield: state.placementState.shield,
+      level: state.placementState.level,
+      levelAsked: state.placementState.levelAsked,
     },
     {
       shieldMax: PLACEMENT_SHIELD_MAX,
@@ -5357,44 +5329,44 @@ function handlePlacementDropFinished(drop, correct, outcome = correct ? "correct
 }
 
 function spawnNextPlacementDrop() {
-  if (!placementState?.active) return false;
+  if (!state.placementState?.active) return false;
   // The shield (not an exhausted queue) ends a level, so refill when empty.
-  if (placementState.queue.length === 0) {
-    placementState.queue = shuffleArray(getPlacementFrontierProblems(placementState.opKey, placementState.level))
+  if (state.placementState.queue.length === 0) {
+    state.placementState.queue = shuffleArray(getPlacementFrontierProblems(state.placementState.opKey, state.placementState.level))
       .map((entry) => ({ ...entry, retry: false }));
   }
-  const entry = placementState.queue.shift();
+  const entry = state.placementState.queue.shift();
   const drop = entry ? makePlacementDrop(entry) : null;
   if (!drop) return false;
-  placementState.currentDropId = drop.id;
-  drops.push(drop);
+  state.placementState.currentDropId = drop.id;
+  state.drops.push(drop);
   return true;
 }
 
 function updatePlacementMode(dt) {
-  if (!placementState?.active) return;
+  if (!state.placementState?.active) return;
   // Decay the shield pulse/crack animations every frame.
-  placementState.shieldPulseMs = Math.max(0, (placementState.shieldPulseMs || 0) - dt);
-  placementState.shieldHitMs = Math.max(0, (placementState.shieldHitMs || 0) - dt);
-  if (drops.some(isPlacementDrop)) return;
-  placementState.pendingDropMs = Math.max(0, (placementState.pendingDropMs || 0) - dt);
-  if (placementState.pendingDropMs > 0) return;
+  state.placementState.shieldPulseMs = Math.max(0, (state.placementState.shieldPulseMs || 0) - dt);
+  state.placementState.shieldHitMs = Math.max(0, (state.placementState.shieldHitMs || 0) - dt);
+  if (state.drops.some(isPlacementDrop)) return;
+  state.placementState.pendingDropMs = Math.max(0, (state.placementState.pendingDropMs || 0) - dt);
+  if (state.placementState.pendingDropMs > 0) return;
   spawnNextPlacementDrop();
 }
 
 function finishPlacementRun({ recommendedLevel, reason = "" } = {}) {
-  if (!placementState) return;
-  const runId = placementState.runId;
-  if (placementState.active && placementState.levelAsked > 0) {
+  if (!state.placementState) return;
+  const runId = state.placementState.runId;
+  if (state.placementState.active && state.placementState.levelAsked > 0) {
     recordPlacementLevelSummary();
   }
-  placementState.active = false;
-  placementState.stage = "result";
-  placementState.reason = reason;
-  placementState.recommendedLevel = clamp(1, 10, Math.round(recommendedLevel || placementState.level || 1));
-  drops = drops.filter((drop) => drop.placementRunId !== runId);
-  if (factorTargetId !== null && !drops.some((drop) => drop.id === factorTargetId)) {
-    factorTargetId = null;
+  state.placementState.active = false;
+  state.placementState.stage = "result";
+  state.placementState.reason = reason;
+  state.placementState.recommendedLevel = clamp(1, 10, Math.round(recommendedLevel || state.placementState.level || 1));
+  state.drops = state.drops.filter((drop) => drop.placementRunId !== runId);
+  if (state.factorTargetId !== null && !state.drops.some((drop) => drop.id === state.factorTargetId)) {
+    state.factorTargetId = null;
   }
   showPlacementResultOverlay();
   updateOpChits();
@@ -5404,10 +5376,10 @@ function finishPlacementRun({ recommendedLevel, reason = "" } = {}) {
   drawDrops();
 }
 
-function acceptPlacementLevel(level = placementState?.recommendedLevel || placementState?.passedLevel || placementState?.level || 1) {
-  if (!placementState?.opKey) return;
-  const opKey = placementState.opKey;
-  const runId = placementState.runId;
+function acceptPlacementLevel(level = state.placementState?.recommendedLevel || state.placementState?.passedLevel || state.placementState?.level || 1) {
+  if (!state.placementState?.opKey) return;
+  const opKey = state.placementState.opKey;
+  const runId = state.placementState.runId;
   const nextLevel = clamp(1, 10, Math.round(level || 1));
   const set = getOpSet(opKey);
   for (const key of Object.keys(opConfig)) {
@@ -5417,15 +5389,15 @@ function acceptPlacementLevel(level = placementState?.recommendedLevel || placem
       opConfig[key].enabled = false;
     }
   }
-  drops = drops.filter((drop) => drop.placementRunId !== runId && opConfig[drop.opKey]?.enabled);
-  progressProfile = recordPlacementCredit(progressProfile, opKey, {
+  state.drops = state.drops.filter((drop) => drop.placementRunId !== runId && opConfig[drop.opKey]?.enabled);
+  state.progressProfile = recordPlacementCredit(state.progressProfile, opKey, {
     level: nextLevel,
     placedOutThrough: nextLevel - 1,
     source: "test-me",
   });
-  saveProfile(progressProfile);
+  saveProfile(state.progressProfile);
   resetProblemStats(problemStats);
-  mirrorLegacyProblemStats(progressProfile, problemStats);
+  mirrorLegacyProblemStats(state.progressProfile, problemStats);
   setDifficulty(opKey, nextLevel, { force: true });
   syncProgressSettings();
   markWelcomeSeen();
@@ -5437,8 +5409,8 @@ function acceptPlacementLevel(level = placementState?.recommendedLevel || placem
 }
 
 function submitPlacementAnswer(value) {
-  if (!placementState?.active) return;
-  const drop = drops.find(isPlacementDrop);
+  if (!state.placementState?.active) return;
+  const drop = state.drops.find(isPlacementDrop);
   if (!drop) return;
   if (isPlacementAnswerCorrect(drop, value)) {
     handleCorrectAnswer(drop);
@@ -5482,8 +5454,8 @@ function renderPlacementSelect(card) {
 }
 
 function renderPlacementResult(card) {
-  const opName = opDisplayNames[placementState.opKey] || placementState.opKey;
-  const result = formatPlacementResult(placementState, opName);
+  const opName = opDisplayNames[state.placementState.opKey] || state.placementState.opKey;
+  const result = formatPlacementResult(state.placementState, opName);
   const level = result.level;
   const title = document.createElement("h2");
   title.textContent = result.title;
@@ -5509,7 +5481,7 @@ function renderPlacementResult(card) {
     const tryNext = document.createElement("button");
     tryNext.type = "button";
     tryNext.textContent = `Try Level ${level + 1}`;
-    tryNext.addEventListener("click", () => startPlacementRun(placementState.opKey, level + 1));
+    tryNext.addEventListener("click", () => startPlacementRun(state.placementState.opKey, level + 1));
     actions.append(tryNext);
   }
   card.append(title, body, details, actions);
@@ -5517,13 +5489,13 @@ function renderPlacementResult(card) {
 }
 
 function showPlacementResultOverlay() {
-  if (!placementState) return;
+  if (!state.placementState) return;
   removePlacementOverlay();
   renderPlacementOverlay();
 }
 
 function renderPlacementOverlay() {
-  if (!placementState) placementState = { stage: "select" };
+  if (!state.placementState) state.placementState = { stage: "select" };
   removePlacementOverlay();
   const overlay = document.createElement("div");
   overlay.className = "overlay placement-overlay";
@@ -5536,7 +5508,7 @@ function renderPlacementOverlay() {
   });
   const card = document.createElement("div");
   card.className = "card placement-card";
-  if (placementState.stage === "result") {
+  if (state.placementState.stage === "result") {
     renderPlacementResult(card);
   } else {
     renderPlacementSelect(card);
@@ -5555,7 +5527,7 @@ function showPlacementOverlay() {
   closeShareBadgePopup();
   closeBossVictoryPopup();
   closeBossOffer();
-  placementState = { stage: "select" };
+  state.placementState = { stage: "select" };
   renderPlacementOverlay();
 }
 
@@ -5592,15 +5564,15 @@ function startTutorial({ fromWelcome = false } = {}) {
   if (TUTORIAL_STEPS.length === 0) return;
   closeWelcomeMenu({ focus: false });
   closeTutorialOverlay({ focus: false });
-  tutorialStepIndex = 0;
-  tutorialFromWelcome = fromWelcome;
+  state.tutorialStepIndex = 0;
+  state.tutorialFromWelcome = fromWelcome;
   renderTutorialStep();
 }
 
-function renderTutorialStep({ fromWelcome = tutorialFromWelcome } = {}) {
-  tutorialFromWelcome = fromWelcome;
+function renderTutorialStep({ fromWelcome = state.tutorialFromWelcome } = {}) {
+  state.tutorialFromWelcome = fromWelcome;
   closeTutorialOverlay({ focus: false });
-  const step = TUTORIAL_STEPS[tutorialStepIndex] || TUTORIAL_STEPS[0];
+  const step = TUTORIAL_STEPS[state.tutorialStepIndex] || TUTORIAL_STEPS[0];
   const overlay = document.createElement("div");
   overlay.className = "overlay tutorial-overlay";
   overlay.id = "tutorialOverlay";
@@ -5620,7 +5592,7 @@ function renderTutorialStep({ fromWelcome = tutorialFromWelcome } = {}) {
   TUTORIAL_STEPS.forEach((_, index) => {
     const dot = document.createElement("span");
     dot.className = "tutorial-dot";
-    dot.classList.toggle("active", index === tutorialStepIndex);
+    dot.classList.toggle("active", index === state.tutorialStepIndex);
     dot.setAttribute("aria-hidden", "true");
     progress.appendChild(dot);
   });
@@ -5629,7 +5601,7 @@ function renderTutorialStep({ fromWelcome = tutorialFromWelcome } = {}) {
   kicker.className = "tutorial-kicker";
   kicker.textContent = formatText(getText("tutorial.progressLabel"), {
     kicker: step.kicker,
-    current: tutorialStepIndex + 1,
+    current: state.tutorialStepIndex + 1,
     total: TUTORIAL_STEPS.length,
   });
   const title = document.createElement("h2");
@@ -5652,24 +5624,24 @@ function renderTutorialStep({ fromWelcome = tutorialFromWelcome } = {}) {
   const backBtn = document.createElement("button");
   backBtn.type = "button";
   backBtn.textContent = getText("common.back");
-  backBtn.disabled = tutorialStepIndex === 0;
+  backBtn.disabled = state.tutorialStepIndex === 0;
   backBtn.addEventListener("click", () => {
-    tutorialStepIndex = Math.max(0, tutorialStepIndex - 1);
+    state.tutorialStepIndex = Math.max(0, state.tutorialStepIndex - 1);
     renderTutorialStep({ fromWelcome });
   });
 
   const nextBtn = document.createElement("button");
   nextBtn.type = "button";
   nextBtn.className = "primary tutorial-next";
-  nextBtn.textContent = tutorialStepIndex === TUTORIAL_STEPS.length - 1
+  nextBtn.textContent = state.tutorialStepIndex === TUTORIAL_STEPS.length - 1
     ? getText("common.play")
     : getText("common.next");
   nextBtn.addEventListener("click", () => {
-    if (tutorialStepIndex >= TUTORIAL_STEPS.length - 1) {
+    if (state.tutorialStepIndex >= TUTORIAL_STEPS.length - 1) {
       closeTutorialOverlay({ markSeen: true });
       return;
     }
-    tutorialStepIndex += 1;
+    state.tutorialStepIndex += 1;
     renderTutorialStep({ fromWelcome });
   });
 
@@ -5696,13 +5668,13 @@ function renderTutorialStep({ fromWelcome = tutorialFromWelcome } = {}) {
 
 function showNextTutorialStep() {
   if (!document.getElementById("tutorialOverlay")) return;
-  tutorialStepIndex = Math.min(TUTORIAL_STEPS.length - 1, tutorialStepIndex + 1);
+  state.tutorialStepIndex = Math.min(TUTORIAL_STEPS.length - 1, state.tutorialStepIndex + 1);
   renderTutorialStep();
 }
 
 function showPreviousTutorialStep() {
   if (!document.getElementById("tutorialOverlay")) return;
-  tutorialStepIndex = Math.max(0, tutorialStepIndex - 1);
+  state.tutorialStepIndex = Math.max(0, state.tutorialStepIndex - 1);
   renderTutorialStep();
 }
 
@@ -5711,7 +5683,7 @@ function showPreviousTutorialStep() {
 // ============================================================
 
 function getActiveProfileName() {
-  return progressProfile?.user?.name || "Login";
+  return state.progressProfile?.user?.name || "Login";
 }
 
 function getLoginLinkText() {
@@ -5761,7 +5733,7 @@ function formatProfileUpdatedAt(value) {
 // engine context it needs.
 function openLoginPopup() {
   buildLoginPopupView({
-    getProgressProfile: () => progressProfile,
+    getProgressProfile: () => state.progressProfile,
     getActiveProfileName,
     formatProfileUpdatedAt,
     heartbeatActiveSession,
@@ -5943,30 +5915,30 @@ function updateDifficultyDisplays() {
 
 function updateControlDisplay() {
   if (speedSlider) {
-    speedSlider.value = String(gameSpeed);
+    speedSlider.value = String(state.gameSpeed);
     speedSlider.disabled = isControlLocked();
   }
   if (speedValueEl) {
-    speedValueEl.textContent = `${gameSpeed}%`;
+    speedValueEl.textContent = `${state.gameSpeed}%`;
   }
   if (dropLimitSlider) {
-    dropLimitSlider.value = String(dropLimit);
+    dropLimitSlider.value = String(state.dropLimit);
     dropLimitSlider.disabled = isControlLocked();
   }
   if (dropLimitValueEl) {
-    dropLimitValueEl.textContent = String(dropLimit);
+    dropLimitValueEl.textContent = String(state.dropLimit);
   }
   if (textSizeSelect) {
-    textSizeSelect.value = normalizeTextSizeSetting(textSize);
+    textSizeSelect.value = normalizeTextSizeSetting(state.textSize);
     textSizeSelect.disabled = isControlLocked();
   }
   if (textSizeValueEl) {
     textSizeValueEl.textContent = getTextSizeLabel();
   }
   const kpSpeedVal = document.getElementById("kpSpeedVal");
-  if (kpSpeedVal) kpSpeedVal.textContent = `${gameSpeed}%`;
+  if (kpSpeedVal) kpSpeedVal.textContent = `${state.gameSpeed}%`;
   const kpDropsVal = document.getElementById("kpDropsVal");
-  if (kpDropsVal) kpDropsVal.textContent = String(dropLimit);
+  if (kpDropsVal) kpDropsVal.textContent = String(state.dropLimit);
   const kpTextSizeBtn = document.getElementById("kpTextSizeBtn");
   if (kpTextSizeBtn) kpTextSizeBtn.textContent = getTextSizeLabel();
   document.querySelectorAll(".kp-sbtn").forEach((btn) => {
@@ -5978,13 +5950,13 @@ function updateControlDisplay() {
 }
 
 function togglePause() {
-  isPaused = !isPaused;
-  if (isPaused) exitBreatherMode();
+  state.isPaused = !state.isPaused;
+  if (state.isPaused) exitBreatherMode();
   if (pauseBtn) {
-    pauseBtn.textContent = isPaused ? "Resume" : "Pause";
+    pauseBtn.textContent = state.isPaused ? "Resume" : "Pause";
   }
-  if (!isPaused) {
-    lastTime = 0;
+  if (!state.isPaused) {
+    state.lastTime = 0;
     answerInput.focus();
   }
 }
@@ -6008,11 +5980,11 @@ answerInput.addEventListener("input", (event) => {
     answerInput.value = value.replace(/\s/g, "");
   }
 
-  currentInput = answerInput.value;
-  processInput(currentInput);
+  state.currentInput = answerInput.value;
+  processInput(state.currentInput);
   if (isBossStunned()) {
     answerInput.value = "";
-    currentInput = "";
+    state.currentInput = "";
   }
 });
 
@@ -6044,11 +6016,11 @@ answerInput.addEventListener("keydown", (event) => {
     event.preventDefault();
     clearAmbiguousTimer();
     answerInput.value = "";
-    currentInput = "";
+    state.currentInput = "";
   }
   if (event.key === "Enter") {
     event.preventDefault();
-    if (isPaused || isBossStunned()) return;
+    if (state.isPaused || isBossStunned()) return;
 
     if (isInFactorTargetMode()) {
       const target = getTargetedFactorDrop();
@@ -6057,7 +6029,7 @@ answerInput.addEventListener("keydown", (event) => {
         return;
       }
       // Exit targeting mode so typed factorization can be checked
-      factorTargetId = null; // exit silently without clearing input
+      state.factorTargetId = null; // exit silently without clearing input
     }
 
     const value = answerInput.value.trim();
@@ -6172,19 +6144,19 @@ document.addEventListener("keydown", (event) => {
   }
 
   // Tab / Shift+Tab: cycle through factor drops in targeting mode
-  if (event.key === "Tab" && !isPaused) {
+  if (event.key === "Tab" && !state.isPaused) {
     const factorDrops = getVisibleFactorDrops();
     if (factorDrops.length > 0) {
       event.preventDefault();
       if (event.shiftKey) {
-        const prev = getPrevFactorDrop(factorTargetId);
+        const prev = getPrevFactorDrop(state.factorTargetId);
         if (prev) {
           enterFactorTargeting(prev);
         } else {
           exitFactorTargeting();
         }
       } else {
-        const next = getNextFactorDrop(factorTargetId);
+        const next = getNextFactorDrop(state.factorTargetId);
         if (next) {
           enterFactorTargeting(next);
         } else {
@@ -6202,9 +6174,9 @@ document.addEventListener("keydown", (event) => {
       event.preventDefault();
       return;
     }
-    if (document.activeElement === answerInput && currentInput) {
+    if (document.activeElement === answerInput && state.currentInput) {
       answerInput.value = "";
-      currentInput = "";
+      state.currentInput = "";
       event.preventDefault();
       return;
     }
@@ -6215,7 +6187,7 @@ document.addEventListener("keydown", (event) => {
 
   // Focus input and insert character when not paused and input not focused
   if (
-    !isPaused &&
+    !state.isPaused &&
     !isBossStunned() &&
     document.activeElement !== answerInput &&
     getKeyboardText(event) &&
@@ -6283,14 +6255,14 @@ document.querySelectorAll(".op-chit").forEach((btn) => {
 
 // Canvas click — reveal answer on a drop
 canvas.addEventListener("click", (event) => {
-  if (isPaused) return;
+  if (state.isPaused) return;
   const rect = canvas.getBoundingClientRect();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
 
   // Check drops in reverse order (topmost drawn last)
-  for (let i = drops.length - 1; i >= 0; i--) {
-    const drop = drops[i];
+  for (let i = state.drops.length - 1; i >= 0; i--) {
+    const drop = state.drops[i];
     if (!isDropClickable(drop)) continue;
     if (hitTestDrop(drop, x, y)) {
       if (drop.opKey === "factor") {
@@ -6471,7 +6443,7 @@ function setupTouchKeypad() {
   // Pause / Restart
   wireKpButton(kpPauseBtn, () => {
     togglePause();
-    if (kpPauseBtn) kpPauseBtn.textContent = isPaused ? "Resume" : "Pause";
+    if (kpPauseBtn) kpPauseBtn.textContent = state.isPaused ? "Resume" : "Pause";
   });
   wireKpButton(kpRestartBtn, () => {
     restartGame();
@@ -6479,16 +6451,16 @@ function setupTouchKeypad() {
   });
 
   wireKpButton(document.getElementById("kpSpeedDn"), () => {
-    if (!isControlLocked()) setPracticeControls({ speed: gameSpeed - 10 });
+    if (!isControlLocked()) setPracticeControls({ speed: state.gameSpeed - 10 });
   });
   wireKpButton(document.getElementById("kpSpeedUp"), () => {
-    if (!isControlLocked()) setPracticeControls({ speed: gameSpeed + 10 });
+    if (!isControlLocked()) setPracticeControls({ speed: state.gameSpeed + 10 });
   });
   wireKpButton(document.getElementById("kpDropsDn"), () => {
-    if (!isControlLocked()) setPracticeControls({ drops: dropLimit - 1 });
+    if (!isControlLocked()) setPracticeControls({ drops: state.dropLimit - 1 });
   });
   wireKpButton(document.getElementById("kpDropsUp"), () => {
-    if (!isControlLocked()) setPracticeControls({ drops: dropLimit + 1 });
+    if (!isControlLocked()) setPracticeControls({ drops: state.dropLimit + 1 });
   });
   wireKpButton(document.getElementById("kpTextSizeBtn"), () => {
     if (!isControlLocked()) cycleTextSize();
@@ -6503,7 +6475,7 @@ function buildKpDiffStrip() {
   if (!strip) return;
   strip.innerHTML = "";
   const enabled = getEnabledOps();
-  const progressSummary = summarizeProfile(progressProfile);
+  const progressSummary = summarizeProfile(state.progressProfile);
   enabled.forEach((opKey) => {
     const config = opConfig[opKey];
     const skill = progressSummary.skills[opKey];
@@ -6575,7 +6547,7 @@ function buildKpDiffStrip() {
     badge.hidden = !canReplayChallenges(opKey, skill);
     badge.disabled = isControlLocked();
     wireKpButton(badge, () => {
-      const level = getReplayChallengeLevel(opKey, summarizeProfile(progressProfile).skills[opKey]);
+      const level = getReplayChallengeLevel(opKey, summarizeProfile(state.progressProfile).skills[opKey]);
       if (level) showShareBadge(opKey, level);
     });
 
@@ -6612,13 +6584,13 @@ function updateKpDisplay() {
     kpDisplay.textContent = "OVERLOAD";
     return;
   }
-  kpDisplay.textContent = currentInput || "\u00a0";
+  kpDisplay.textContent = state.currentInput || "\u00a0";
 }
 
 function handleKeypadPress(key) {
   if (isBossStunned()) {
     answerInput.value = "";
-    currentInput = "";
+    state.currentInput = "";
     updateKpDisplay();
     return;
   }
@@ -6631,13 +6603,13 @@ function handleKeypadPress(key) {
   if (key === "Backspace") {
     clearAmbiguousTimer();
     answerInput.value = "";
-    currentInput = "";
+    state.currentInput = "";
     updateKpDisplay();
     return;
   }
 
   if (key === "Enter") {
-    if (isPaused) return;
+    if (state.isPaused) return;
     if (isInFactorTargetMode()) {
       const target = getTargetedFactorDrop();
       if (target && target.factorComplete) {
@@ -6645,9 +6617,9 @@ function handleKeypadPress(key) {
         updateKpDisplay();
         return;
       }
-      factorTargetId = null;
+      state.factorTargetId = null;
     }
-    const value = currentInput.trim();
+    const value = state.currentInput.trim();
     if (!value) return;
     const match = findDropMatch(value, { enterPressed: true });
     if (match) {
@@ -6660,10 +6632,10 @@ function handleKeypadPress(key) {
   }
 
   if (key === "Tab") {
-    if (isPaused) return;
+    if (state.isPaused) return;
     const factorDrops = getVisibleFactorDrops();
     if (factorDrops.length > 0) {
-      const next = getNextFactorDrop(factorTargetId);
+      const next = getNextFactorDrop(state.factorTargetId);
       if (next) {
         enterFactorTargeting(next);
       } else {
@@ -6674,9 +6646,9 @@ function handleKeypadPress(key) {
   }
 
   // Character key (digit, *, ^, /, -, .)
-  currentInput = currentInput + key;
-  answerInput.value = currentInput;
-  processInput(currentInput);
+  state.currentInput = state.currentInput + key;
+  answerInput.value = state.currentInput;
+  processInput(state.currentInput);
   updateKpDisplay();
 }
 
@@ -6690,33 +6662,33 @@ function cloneForTest(value) {
 
 function getTestState() {
   return {
-    score,
+    score: state.score,
     scoreReadout: cloneForTest(getScoreReadout()),
-    drops: drops.map((drop) => ({ ...drop, factorCollected: { ...(drop.factorCollected || {}) } })),
+    drops: state.drops.map((drop) => ({ ...drop, factorCollected: { ...(drop.factorCollected || {}) } })),
     opConfig: cloneForTest(opConfig),
     problemStats: cloneForTest(problemStats),
-    progressProfile: cloneForTest(progressProfile),
-    progressSummary: cloneForTest(summarizeProfile(progressProfile)),
-    sessionLog: cloneForTest(summarizeSessionLog(progressProfile)),
-    activeSessionId,
-    bossMode: cloneForTest(bossMode),
+    progressProfile: cloneForTest(state.progressProfile),
+    progressSummary: cloneForTest(summarizeProfile(state.progressProfile)),
+    sessionLog: cloneForTest(summarizeSessionLog(state.progressProfile)),
+    activeSessionId: state.activeSessionId,
+    bossMode: cloneForTest(state.bossMode),
     laser: cloneForTest(getLaser()),
     playerShip: cloneForTest(getPlayerShip()),
     currentPressure: cloneForTest(getCurrentPressure()),
-    gameSpeed,
-    dropLimit,
-    textSize,
-    isPaused,
-    isBreatherMode,
-    cannonOverloadMs,
-    wrongSubmissionCount: wrongSubmissionTimes.length,
-    factorTargetId,
-    currentInput,
+    gameSpeed: state.gameSpeed,
+    dropLimit: state.dropLimit,
+    textSize: state.textSize,
+    isPaused: state.isPaused,
+    isBreatherMode: state.isBreatherMode,
+    cannonOverloadMs: state.cannonOverloadMs,
+    wrongSubmissionCount: state.wrongSubmissionTimes.length,
+    factorTargetId: state.factorTargetId,
+    currentInput: state.currentInput,
     welcomeVisible: Boolean(document.getElementById("welcomeOverlay")),
     tutorialVisible: Boolean(document.getElementById("tutorialOverlay")),
     placementVisible: Boolean(document.getElementById("placementOverlay")),
-    placementState: cloneForTest(placementState),
-    tutorialStepIndex,
+    placementState: cloneForTest(state.placementState),
+    tutorialStepIndex: state.tutorialStepIndex,
     viewingSharedReport: isViewingSharedReport(),
     reportProfileName: getReportProfile()?.user?.name || null,
   };
@@ -6733,8 +6705,8 @@ function makeTestDrop(overrides = {}) {
   const opKey = overrides.opKey || "add";
   const answerText = overrides.answerText ?? String(overrides.answer ?? 0);
   const drop = {
-    id: overrides.id ?? nextDropId++,
-    x: overrides.x ?? canvasW / 2,
+    id: overrides.id ?? state.nextDropId++,
+    x: overrides.x ?? state.canvasW / 2,
     y: overrides.y ?? 100,
     baseSpeed: overrides.baseSpeed ?? 0,
     text: overrides.text ?? "1 + 1",
@@ -6776,24 +6748,24 @@ function installTestHooks() {
       resetSettingsForTest();
       if (clearStats) {
         resetProblemStats(problemStats);
-        progressProfile = resetStoredProfile();
+        state.progressProfile = resetStoredProfile();
       }
-      drops = [];
+      state.drops = [];
       resetSplashes();
       resetLaser();
       resetPlayerShipVisuals();
-      bossMode = null;
-      isBreatherMode = false;
-      score = 0;
-      spawnTimer = 0;
-      lastTime = 0;
-      gameTime = 0;
-      groundFlash = 0;
-      currentInput = "";
+      state.bossMode = null;
+      state.isBreatherMode = false;
+      state.score = 0;
+      state.spawnTimer = 0;
+      state.lastTime = 0;
+      state.gameTime = 0;
+      state.groundFlash = 0;
+      state.currentInput = "";
       resetCannonOverload({ clearCooldown: true });
-      factorTargetId = null;
+      state.factorTargetId = null;
       answerInput.value = "";
-      isPaused = false;
+      state.isPaused = false;
       closeWelcomeMenu({ focus: false });
       closeTutorialOverlay({ focus: false });
       closePlacementOverlay({ focus: false });
@@ -6841,12 +6813,12 @@ function installTestHooks() {
       return getTestState();
     },
     getShareReportCode(sessionId = null) {
-      return getShareReportCode(progressProfile, sessionId); // async — resolved by page.evaluate
+      return getShareReportCode(state.progressProfile, sessionId); // async — resolved by page.evaluate
     },
     getTamperedReportCode(sessionId = null) {
       // Edit the decoded content but leave the disguised checksum stale, as a
       // tamperer who edits the JSON and re-encodes would.
-      const payload = buildSharedReportPayload(progressProfile, sessionId);
+      const payload = buildSharedReportPayload(state.progressProfile, sessionId);
       payload.name = "TAMPERED";
       return encodeSharePayload(payload); // async
     },
@@ -6866,12 +6838,12 @@ function installTestHooks() {
       return getTestState();
     },
     masterCurrentLevel(opKey, { attempts = 3, responseMs = 900 } = {}) {
-      const skill = progressProfile.skills?.[opKey];
+      const skill = state.progressProfile.skills?.[opKey];
       if (!skill) return getTestState();
       const problems = getSkillUniverseProblems(opKey, opConfig[opKey].difficulty);
       for (const problem of problems) {
         for (let i = 0; i < attempts; i += 1) {
-          progressProfile = recordProgressEvent(progressProfile, {
+          state.progressProfile = recordProgressEvent(state.progressProfile, {
             opKey,
             statsKey: problem.statsKey,
             text: problem.text,
@@ -6881,8 +6853,8 @@ function installTestHooks() {
         }
       }
       resetProblemStats(problemStats);
-      mirrorLegacyProblemStats(progressProfile, problemStats);
-      saveProfile(progressProfile);
+      mirrorLegacyProblemStats(state.progressProfile, problemStats);
+      saveProfile(state.progressProfile);
       updateReadinessDisplays();
       return getTestState();
     },
@@ -6904,7 +6876,7 @@ function installTestHooks() {
     },
     advanceBossTime(ms = 0) {
       updateCannonOverload(Math.max(0, Number(ms) || 0));
-      if (bossMode?.active) {
+      if (state.bossMode?.active) {
         updateBossMode(Math.max(0, Number(ms) || 0));
       }
       drawDrops();
@@ -6921,7 +6893,7 @@ function installTestHooks() {
       return getTestState();
     },
     skipToBossFight() {
-      if (bossMode?.active) {
+      if (state.bossMode?.active) {
         startBossFight();
         updateBossPartPositions();
       }
@@ -6929,8 +6901,8 @@ function installTestHooks() {
       return getTestState();
     },
     forceBossVictory() {
-      if (bossMode?.active) {
-        const core = bossMode.parts.find((part) => part.id === "core");
+      if (state.bossMode?.active) {
+        const core = state.bossMode.parts.find((part) => part.id === "core");
         if (core) {
           core.locked = false;
           core.problems.forEach((problem) => {
@@ -6945,7 +6917,7 @@ function installTestHooks() {
       return getTestState();
     },
     triggerBossBombHit() {
-      if (bossMode?.active) {
+      if (state.bossMode?.active) {
         applyBossStun();
       }
       drawDrops();
@@ -6964,13 +6936,13 @@ function installTestHooks() {
     },
     addDrop(overrides) {
       const drop = makeTestDrop(overrides);
-      drops.push(drop);
+      state.drops.push(drop);
       drawDrops();
       return cloneForTest(drop);
     },
     clearDrops() {
-      drops = [];
-      factorTargetId = null;
+      state.drops = [];
+      state.factorTargetId = null;
       drawDrops();
       return getTestState();
     },
@@ -6979,7 +6951,7 @@ function installTestHooks() {
       return getTestState();
     },
     getDropVisual(id) {
-      const drop = drops.find((candidate) => candidate.id === id);
+      const drop = state.drops.find((candidate) => candidate.id === id);
       return drop ? cloneForTest(getDropAccuracyVisual(drop)) : null;
     },
     submit(value, { enter = false } = {}) {
@@ -6989,16 +6961,16 @@ function installTestHooks() {
         return getTestState();
       }
       answerInput.value = String(value);
-      currentInput = answerInput.value;
+      state.currentInput = answerInput.value;
       if (enter) {
-        const match = findDropMatch(currentInput, { enterPressed: true });
+        const match = findDropMatch(state.currentInput, { enterPressed: true });
         if (match) {
           handleCorrectAnswer(match);
         } else {
           handleWrongInput({ targets: getWrongSubmissionTargets() });
         }
       } else {
-        processInput(currentInput);
+        processInput(state.currentInput);
       }
       drawDrops();
       return getTestState();
