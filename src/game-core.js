@@ -1361,6 +1361,96 @@ function randomFallTimeSec(maxFallTimeSec, rng = Math.random) {
   return maxFallTimeSec <= 3 ? 3 : 3 + rng() * (maxFallTimeSec - 3);
 }
 
+// --- Anti-brute-force: answer-space-aware cannon overload ---
+//
+// A small answer space (e.g. L1 subtraction = {0,1,2}) can be cleared by guessing
+// instead of retrieval, so an impossible submission ("false fire") should heat the
+// cannon faster when the board is guessable. These pures give the answer space; the
+// caller supplies how many distinct answers are currently on screen.
+
+/**
+ * Distinct possible answer values for an operation at a level, as canonical
+ * strings. Arithmetic is enumerated from its operand range (matching
+ * generateProblem: subtraction is |a-b|, division's answer is the quotient); the
+ * pre-enumerated ops use their universe's distinct answers; SI uses its distinct
+ * conversions. String-answer ops naturally yield large, non-guessable sets.
+ * @param {import('./types.js').OpKey} opKey
+ * @param {number} level
+ * @returns {Set<string>}
+ */
+function getAnswerUniverse(opKey, level) {
+  const set = new Set();
+  if (opKey === "add" || opKey === "sub" || opKey === "mul" || opKey === "div") {
+    const { min, max } = getDifficultyRange(opKey, level);
+    for (let a = min; a <= max; a += 1) {
+      for (let b = min; b <= max; b += 1) {
+        if (opKey === "div") set.add(String(a)); // answer is the quotient; a ranges over quotients
+        else if (opKey === "sub") set.add(String(Math.abs(a - b)));
+        else set.add(String(operators[opKey].fn(a, b)));
+      }
+    }
+    return set;
+  }
+  if (opKey === "si") {
+    const prefixes = getSIPrefixesForDifficulty(level);
+    for (const from of prefixes) {
+      for (const to of prefixes) {
+        if (from !== to) set.add(expDiffToConversion(from.exp - to.exp));
+      }
+    }
+    return set;
+  }
+  // shapes/pow carry fixed per-problem answers, so distinct answers are meaningful.
+  // f10 (instance-varying numeric) and factor (factorization strings) have large /
+  // non-guessable spaces and their universe entries carry no fixed answer — they
+  // yield an empty set here, which falseFireCost treats as a large space (cost 1).
+  const universe =
+    opKey === "shapes" ? getShapesUniverse(level)
+    : opKey === "pow" ? getPowUniverse(level)
+    : [];
+  for (const p of universe) {
+    const ans = p.answer ?? p.answerText;
+    if (ans !== undefined && ans !== null && ans !== "") set.add(String(ans));
+  }
+  return set;
+}
+
+/**
+ * @param {import('./types.js').OpKey} opKey
+ * @param {number} level
+ * @returns {number}
+ */
+function getDistinctAnswerCount(opKey, level) {
+  return getAnswerUniverse(opKey, level).size;
+}
+
+// Tunable cost tiers: [maxEffectiveChoices, heatCost]. First match wins. With the
+// overload threshold at 5 (CANNON_OVERLOAD_THRESHOLD), cost 4 means two quick
+// false fires overload; cost 1 preserves the original five-false-fire behavior.
+// `effectiveChoices` ≈ distinct possible answers per distinct answer on screen
+// (lower = a random guess is likelier to land = harsher).
+const FALSE_FIRE_COST_TIERS = [
+  [2, 4],
+  [4, 3],
+  [8, 2],
+  [Infinity, 1],
+];
+
+/**
+ * Heat cost of one false fire given how guessable the board is.
+ * @param {{distinctAnswerCount:number, visibleDistinctAnswers:number}} ctx
+ * @returns {number}
+ */
+function falseFireCost({ distinctAnswerCount, visibleDistinctAnswers }) {
+  if (!(distinctAnswerCount > 1)) return 1; // no real / unknown answer space → don't penalize
+  const visible = Math.max(1, visibleDistinctAnswers || 0);
+  const effectiveChoices = distinctAnswerCount / visible;
+  for (const [max, cost] of FALSE_FIRE_COST_TIERS) {
+    if (effectiveChoices <= max) return cost;
+  }
+  return 1;
+}
+
 // Canonical string of the verified share-content fields (everything except the
 // id that carries the checksum). Must be rebuilt in this exact order on both
 // sides for the tamper check to line up.
@@ -1459,6 +1549,9 @@ export {
   waveBombIntervalMs,
   spawnIntervalMs,
   randomFallTimeSec,
+  getAnswerUniverse,
+  getDistinctAnswerCount,
+  falseFireCost,
   advanceFactorDrop,
   clamp,
   createDefaultOpConfig,

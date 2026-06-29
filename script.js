@@ -77,6 +77,8 @@ const {
   waveBombIntervalMs,
   spawnIntervalMs,
   randomFallTimeSec,
+  getAnswerUniverse,
+  falseFireCost,
   generateProblem,
   generateWeightedProblem: generateCoreWeightedProblem,
   getDifficultyRange,
@@ -642,11 +644,39 @@ function triggerCannonOverload(nowMs = performance.now()) {
   updateInputHint();
 }
 
+// The answer space the player is currently up against: the union of distinct
+// answers for the active operation(s)/level, plus how many distinct answers are
+// actually on screen. Boss/placement lock to their op+level; otherwise it's the
+// enabled practice ops at their current levels.
+function getActiveAnswerSpace() {
+  let pairs;
+  if (state.bossMode?.active) {
+    pairs = [[state.bossMode.opKey, state.bossMode.level]];
+  } else if (state.placementState?.active) {
+    pairs = [[state.placementState.opKey, state.placementState.level]];
+  } else {
+    pairs = getEnabledOps().map((op) => [op, opConfig[op].difficulty]);
+  }
+  const universe = new Set();
+  for (const [op, level] of pairs) {
+    for (const ans of getAnswerUniverse(op, level)) universe.add(ans);
+  }
+  const visible = new Set(
+    state.drops.filter((drop) => !drop.revealed).map((drop) => String(drop.answer))
+  );
+  return { distinctAnswerCount: universe.size, visibleDistinctAnswers: visible.size };
+}
+
+// Anti-brute-force: a false fire heats the cannon faster when the answer space is
+// small/guessable (see falseFireCost in game-core). Heat accumulates in a window;
+// overload at CANNON_OVERLOAD_THRESHOLD.
 function registerWrongSubmission(nowMs = performance.now()) {
+  const cost = falseFireCost(getActiveAnswerSpace());
   state.wrongSubmissionTimes = state.wrongSubmissionTimes
-    .filter((time) => nowMs - time <= CANNON_OVERLOAD_WINDOW_MS);
-  state.wrongSubmissionTimes.push(nowMs);
-  if (state.wrongSubmissionTimes.length >= CANNON_OVERLOAD_THRESHOLD) {
+    .filter((entry) => nowMs - entry.time <= CANNON_OVERLOAD_WINDOW_MS);
+  state.wrongSubmissionTimes.push({ time: nowMs, cost });
+  const heat = state.wrongSubmissionTimes.reduce((sum, entry) => sum + entry.cost, 0);
+  if (heat >= CANNON_OVERLOAD_THRESHOLD) {
     triggerCannonOverload(nowMs);
   }
 }

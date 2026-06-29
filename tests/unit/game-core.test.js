@@ -71,6 +71,9 @@ import {
   waveBombIntervalMs,
   spawnIntervalMs,
   randomFallTimeSec,
+  getAnswerUniverse,
+  getDistinctAnswerCount,
+  falseFireCost,
   isComposite,
   isPrime,
   hashString,
@@ -418,6 +421,33 @@ describe("difficulty ranges", () => {
         challenges: { started: 0, completed: 0 },
       }),
       "Practice no practice attempts · Boss/challenge solved 0 · Challenges 0 started / 0 completed"
+    );
+  });
+
+  it("sizes answer spaces and weights false-fire cost by guessability", () => {
+    // small arithmetic spaces — the brute-force risk
+    assert.deepEqual([...getAnswerUniverse("sub", 1)].sort(), ["0", "1", "2"]);
+    assert.equal(getDistinctAnswerCount("sub", 1), 3);
+    assert.equal(getDistinctAnswerCount("add", 1), 5);
+    assert.equal(getDistinctAnswerCount("div", 1), 3);
+    assert.equal(getDistinctAnswerCount("mul", 1), 6);
+    // higher level → larger space
+    assert.ok(getDistinctAnswerCount("sub", 10) > 8);
+    // instance-varying numeric (f10) / non-guessable string (factor) ops → no small set
+    assert.equal(getDistinctAnswerCount("f10", 1), 0);
+    assert.equal(getDistinctAnswerCount("factor", 1), 0);
+
+    // cost: smaller effective choices (distinct answers per on-screen answer) → harsher
+    assert.equal(falseFireCost({ distinctAnswerCount: 3, visibleDistinctAnswers: 2 }), 4);
+    assert.equal(falseFireCost({ distinctAnswerCount: 5, visibleDistinctAnswers: 2 }), 3);
+    assert.equal(falseFireCost({ distinctAnswerCount: 12, visibleDistinctAnswers: 2 }), 2);
+    assert.equal(falseFireCost({ distinctAnswerCount: 40, visibleDistinctAnswers: 2 }), 1);
+    // unknown / degenerate space is never penalized
+    assert.equal(falseFireCost({ distinctAnswerCount: 0, visibleDistinctAnswers: 1 }), 1);
+    // more distinct answers on screen → easier to hit → harsher
+    assert.ok(
+      falseFireCost({ distinctAnswerCount: 12, visibleDistinctAnswers: 6 }) >
+        falseFireCost({ distinctAnswerCount: 12, visibleDistinctAnswers: 1 })
     );
   });
 

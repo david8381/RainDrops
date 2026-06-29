@@ -441,6 +441,40 @@ test.describe("desktop gameplay", () => {
     expect(state.score).toBe(1);
   });
 
+  test("small answer spaces overload the cannon faster than large ones", async ({ page }) => {
+    await openApp(page);
+
+    // Small space: L1 subtraction answers are only {0,1,2} — brute-forceable, so a
+    // false fire heats the cannon hard. One miss is tolerated; the second overloads.
+    await invoke(page, "enableOps", ["sub"]);
+    await invoke(page, "setOpDifficulty", "sub", 1, { force: true });
+    await freezeAutoSpawns(page);
+    await invoke(page, "addDrop", {
+      opKey: "sub", text: "3 - 1", answer: 2, answerText: "2", statsKey: "3,1", y: 120,
+    });
+
+    let state = await invoke(page, "submit", "9"); // impossible (sub L1 max answer is 2)
+    expect(state.cannonOverloadMs).toBe(0); // one typo is fine
+    state = await invoke(page, "submit", "9");
+    expect(state.cannonOverloadMs).toBeGreaterThan(0); // small space → 2 misses overload
+
+    // Large space: L10 subtraction has ~20 answers — guessing isn't viable, so the
+    // old ~5-miss tolerance holds (each miss costs the minimum).
+    await invoke(page, "reset");
+    await invoke(page, "enableOps", ["sub"]);
+    await invoke(page, "setOpDifficulty", "sub", 10, { force: true });
+    await freezeAutoSpawns(page);
+    await invoke(page, "addDrop", {
+      opKey: "sub", text: "18 - 2", answer: 16, answerText: "16", statsKey: "18,2", y: 120,
+    });
+
+    state = await invoke(page, "submit", "98"); // impossible (sub L10 max answer is 19)
+    state = await invoke(page, "submit", "97");
+    expect(state.cannonOverloadMs).toBe(0); // large space → 2 misses do NOT overload
+    for (let i = 0; i < 3; i += 1) state = await invoke(page, "submit", String(90 + i));
+    expect(state.cannonOverloadMs).toBeGreaterThan(0); // 5 total misses overload
+  });
+
   test("NumLock does not break numpad answer entry", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
