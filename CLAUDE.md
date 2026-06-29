@@ -61,5 +61,6 @@ Read these before making changes:
 - Do not rename the `docs/Ai` folder.
 - Keep documentation in sync with behavioral changes.
 - Add a changelog entry in `docs/Ai/CHANGELOG.md` for any player-facing or architectural change.
+- For any non-trivial feature, create/update a tracked design doc in `docs/Ai/FEATURE_REQUESTS/` (see its README); keep `docs/Ai/DIALOGUE.md` (gitignored, Codex↔Claude) to terse turn-coordination only.
 - If adding new operations, update `src/game-core.js`, operation display labels, `index.html` chits, docs, and tests.
 - GitHub SSH user: `david8381`; repo: `RainDrops`; default branch: `main`.
