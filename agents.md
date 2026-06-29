@@ -8,6 +8,10 @@ has `CLAUDE.md`; this file is the cross-agent source of truth — keep them alig
 - `ARCHITECTURE.md` — structure, the runtime data model, and the **"Design intent & module boundaries"** section (which layer new code belongs in, and why the engine is kept coupled on purpose).
 - `CHANGELOG.md` — recent changes, newest at top; avoid rework.
 - `TESTING.md` — how to run and verify.
+- `FEATURE_REQUESTS/` — tracked design docs (one file per feature: request, design,
+  decisions, outcome). Create/update one before any non-trivial feature; see its
+  `README.md` for the workflow. Keeps design durable instead of in the gitignored
+  `DIALOGUE.md`.
 
 ## What this app is
 Vanilla browser game (falling math drops). **Native ES modules, no bundler, no runtime deps** — `index.html` loads one `<script type="module">` (`script.js`) that imports the `src/` modules; source == runtime. It is **served over HTTP** (ES modules don't load from `file://`).
