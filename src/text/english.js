@@ -50,7 +50,7 @@ export const RainMathText = {
         target: ".op-chits",
         kicker: "Start here",
         title: "Choose problem types to work on.",
-        body: "Turn problem types on and off while the game is running. Arithmetic and x10 can mix; Shapes, SI, and factoring stay in their own lanes so answers do not collide.",
+        body: "Turn problem types on and off while the game is running. Arithmetic and x10 can mix; Shapes, SI, Powers & Roots, and factoring stay in their own lanes so answers do not collide.",
         tip: "",
       },
       {
@@ -79,7 +79,7 @@ export const RainMathText = {
         kicker: "Mastery",
         title: "Each operation has its own level and grid.",
         body: "The level card shows Mastered %. The Grid opens per-problem history: black means unseen, hue shows accuracy, and brightness shows how much evidence the game has.",
-        tip: "Practice is weighted toward unseen and weaker problems, and level choices unlock when all current-level problems are mastered.",
+        tip: "Practice is weighted toward unseen and weaker problems. Level choices unlock when all current-level problems are mastered — or when Test Me places you at a higher starting level.",
       },
       {
         target: ".game",
