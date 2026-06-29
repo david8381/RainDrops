@@ -1,9 +1,9 @@
 # Feature: Session continuity + "Finish" (one report per sitting)
 
-Status: agreed — ready for implementation
-Owner: Codex (planned by Claude; Claude to review)
+Status: landed
+Owner: Codex (planned by Claude; reviewed by Claude)
 Last Updated: 2026-06-29
-Related Commits: (pending)
+Related Commits: (this commit)
 
 ## User Request
 "I want everything a kid does in one sitting to show up in the **same** report — if
@@ -118,4 +118,22 @@ cleared yet" state rather than a blank report (or disable Finish until there's a
   re-enable an op and clear a drop → it lands in the **same** session/report.
 
 ## Outcome
-(pending implementation by Codex)
+Implemented locally by Codex, pending commit/review:
+- Added `shouldResumeSession(session, nowMs, graceMs)` in `player-progress.js` and wired
+  startup to resume the active profile's newest session when `lastSeenAt` is within 30
+  minutes. Profile switches and test resets still force a fresh session.
+- Added desktop and touch **Finish** controls. Finish clears the active board, disables
+  all operation types, stamps the current session, and opens that session's Report with
+  Share visible. It does not hard-close the session; re-enabling an operation continues
+  the same report until the normal idle/reload boundary creates a new session.
+- Updated session Log copy and Tutorial text so the user-facing explanation matches the
+  new sitting model.
+- Added unit coverage for the 30-minute resume rule and existing-id session resumption,
+  plus e2e coverage for recent reload resume, stale reload new-session behavior, profile
+  switches, Finish, and mobile touch-header exposure.
+
+Verification:
+- `npm run test:unit` — 75 passed.
+- `npm run typecheck` — passed.
+- `npx playwright test tests/e2e/rain-math.spec.js -g "reloads within|stale sessions|Finish stops|touch header exposes"` — 12 passed, 12 expected skips.
+- `npm test` — unit passed; e2e had 179 passed / 150 expected skips / 1 known Firefox timing flake (`rapid impossible submissions briefly overload the cannon`), which passed immediately when rerun in isolation with `--project=firefox`.

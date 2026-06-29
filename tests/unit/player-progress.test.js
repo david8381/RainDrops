@@ -37,6 +37,7 @@ import {
   recordSessionHeartbeat,
   recordSessionStart,
   saveProfile,
+  shouldResumeSession,
   summarizeProfile,
   summarizeSessionLog,
   switchStoredProfile,
@@ -159,6 +160,35 @@ describe("player progress profile", () => {
     assert.equal(session.operations[0].levels[0].level, 1);
     assert.equal(session.operations[0].levels[0].started.readiness, 0);
     assert.equal(session.operations[0].levels[0].ended.readiness, 11);
+  });
+
+  it("decides whether a recent session should resume", () => {
+    const now = Date.UTC(2026, 0, 1, 12, 30, 0);
+    const session = {
+      id: "visit-1",
+      startedAt: new Date(now - 60 * 60 * 1000).toISOString(),
+      endedAt: new Date(now - 20 * 60 * 1000).toISOString(),
+      lastSeenAt: new Date(now - 20 * 60 * 1000).toISOString(),
+    };
+
+    assert.equal(shouldResumeSession(session, now, 30 * 60 * 1000), true);
+    assert.equal(shouldResumeSession({ ...session, lastSeenAt: new Date(now - 30 * 60 * 1000).toISOString() }, now, 30 * 60 * 1000), true);
+    assert.equal(shouldResumeSession({ ...session, lastSeenAt: new Date(now - 30 * 60 * 1000 - 1).toISOString() }, now, 30 * 60 * 1000), false);
+    assert.equal(shouldResumeSession({ ...session, lastSeenAt: "not-a-date" }, now, 30 * 60 * 1000), false);
+    assert.equal(shouldResumeSession(null, now, 30 * 60 * 1000), false);
+    assert.equal(shouldResumeSession({ ...session, lastSeenAt: new Date(now + 1000).toISOString() }, now, 30 * 60 * 1000), false);
+  });
+
+  it("recordSessionStart resumes an existing session id instead of adding a row", () => {
+    const profile = createDefaultProfile(Date.UTC(2026, 0, 1));
+    const start = Date.UTC(2026, 0, 1, 12, 0, 0);
+    recordSessionStart(profile, { id: "visit-1", speed: 30, rate: 3 }, start);
+    recordSessionStart(profile, { id: "visit-1", speed: 80, rate: 10 }, start + 5000);
+
+    assert.equal(profile.sessionLog.length, 1);
+    assert.equal(profile.sessionLog[0].id, "visit-1");
+    assert.equal(profile.sessionLog[0].settings.speed, 30);
+    assert.equal(profile.sessionLog[0].lastSeenAt, new Date(start + 5000).toISOString());
   });
 
   it("preserves saved levels and records boss attempts per level", () => {

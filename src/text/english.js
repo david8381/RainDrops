@@ -8,6 +8,7 @@ export const RainMathText = {
     create: "Create",
     play: "Play",
     next: "Next",
+    finish: "Finish",
   },
   support: {
     label: "Donate",
@@ -98,9 +99,9 @@ export const RainMathText = {
       {
         target: ".version",
         kicker: "Profiles",
-        title: "Use local players, Test Me, and Log.",
+        title: "Use local players, Test Me, Log, and Finish.",
         body: "Profiles live in this browser's localStorage for now. Use Login to switch players, Test Me to choose a starting level, Grid to inspect mastery and placed-out facts, and Log to review recent sessions.",
-        tip: "Open a session's Report to show time, correct/missed counts, and mastery changes by problem type and level.",
+        tip: "Finish stops new drops and opens this sitting's Report to share. Brief reloads continue the same session; a long break or player switch starts a new one.",
       },
     ],
   },

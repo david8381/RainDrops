@@ -9,10 +9,14 @@ async function openApp(page) {
   page.on("pageerror", (error) => pageErrors.push(error));
 
   await page.goto("/?test=1");
-  await page.waitForFunction(() => window.__RAIN_MATH_READY__ && window.__RAIN_MATH_TEST__);
+  await waitForAppReady(page);
   await invoke(page, "reset");
 
   return { pageErrors };
+}
+
+async function waitForAppReady(page) {
+  await page.waitForFunction(() => window.__RAIN_MATH_READY__ && window.__RAIN_MATH_TEST__);
 }
 
 async function invoke(page, method, ...args) {
@@ -682,6 +686,74 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#sessionReportOverlay .session-report-donate")).toHaveText("donating");
   });
 
+  test("reloads within the grace window resume the same session report", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await freezeAutoSpawns(page);
+    await invoke(page, "addDrop", { opKey: "add", text: "1 + 1", answer: 2, answerText: "2", statsKey: "1,1", y: 120 });
+    const beforeReload = await invoke(page, "submit", "2");
+    const sessionId = beforeReload.activeSessionId;
+
+    await page.reload();
+    await waitForAppReady(page);
+
+    let state = await invoke(page, "getState");
+    expect(state.activeSessionId).toBe(sessionId);
+    expect(state.sessionLog).toHaveLength(1);
+    expect(state.sessionLog[0].practice.correct).toBe(1);
+
+    await invoke(page, "addDrop", { opKey: "add", text: "2 + 2", answer: 4, answerText: "4", statsKey: "2,2", y: 120 });
+    state = await invoke(page, "submit", "4");
+    expect(state.activeSessionId).toBe(sessionId);
+    expect(state.sessionLog).toHaveLength(1);
+    expect(state.sessionLog[0].practice.correct).toBe(2);
+  });
+
+  test("stale sessions start a new report row on reload", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await freezeAutoSpawns(page);
+    await invoke(page, "addDrop", { opKey: "add", text: "1 + 1", answer: 2, answerText: "2", statsKey: "1,1", y: 120 });
+    const beforeReload = await invoke(page, "submit", "2");
+    await invoke(page, "backdateActiveSession", 31 * 60 * 1000, { deactivate: true });
+
+    await page.reload();
+    await waitForAppReady(page);
+
+    const state = await invoke(page, "getState");
+    expect(state.activeSessionId).not.toBe(beforeReload.activeSessionId);
+    expect(state.sessionLog).toHaveLength(2);
+    expect(state.sessionLog[0].id).toBe(state.activeSessionId);
+    expect(state.sessionLog[1].id).toBe(beforeReload.activeSessionId);
+  });
+
+  test("Finish stops play, opens the combined report, and keeps later work in the same session", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add", "sub"]);
+    await freezeAutoSpawns(page);
+    await invoke(page, "addDrop", { opKey: "add", text: "1 + 1", answer: 2, answerText: "2", statsKey: "1,1", y: 120 });
+    const beforeFinish = await invoke(page, "submit", "2");
+
+    await page.locator("#finishBtn").click();
+    await expect(page.locator("#sessionReportOverlay")).toBeVisible();
+    await expect(page.locator("#sessionReportShare")).toBeVisible();
+    await expect(page.locator("#sessionReportOverlay")).toContainText("Correct/missed: 1/0");
+
+    let state = await invoke(page, "getState");
+    expect(state.activeSessionId).toBe(beforeFinish.activeSessionId);
+    expect(state.drops).toHaveLength(0);
+    expect(state.opConfig.add.enabled).toBe(false);
+    expect(state.opConfig.sub.enabled).toBe(false);
+
+    await page.locator('#sessionReportOverlay button:has-text("Close")').click();
+    await invoke(page, "enableOps", ["add"]);
+    await invoke(page, "addDrop", { opKey: "add", text: "2 + 2", answer: 4, answerText: "4", statsKey: "2,2", y: 120 });
+    state = await invoke(page, "submit", "4");
+    expect(state.activeSessionId).toBe(beforeFinish.activeSessionId);
+    expect(state.sessionLog).toHaveLength(1);
+    expect(state.sessionLog[0].practice.correct).toBe(2);
+  });
+
   test("session report breaks out boss and challenge activity", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
@@ -843,6 +915,7 @@ test.describe("desktop gameplay", () => {
 
   test("creates and switches local player profiles", async ({ page }) => {
     await openApp(page);
+    const firstSession = (await invoke(page, "getState")).activeSessionId;
 
     await expect(page.locator("#loginLink")).toHaveText("Login");
     await page.locator("#loginLink").click();
@@ -851,15 +924,22 @@ test.describe("desktop gameplay", () => {
     await page.getByRole("button", { name: "Create" }).click();
     await expect(page.locator("#loginOverlay")).toHaveCount(0);
     await expect(page.locator("#loginLink")).toHaveText("Ada Lovelace");
+    const adaFirstSession = (await invoke(page, "getState")).activeSessionId;
+    expect(adaFirstSession).not.toBe(firstSession);
 
     await page.locator("#loginLink").click();
     await page.locator("#profileNameInput").fill("Ben");
     await page.getByRole("button", { name: "Create" }).click();
     await expect(page.locator("#loginLink")).toHaveText("Ben");
+    const benSession = (await invoke(page, "getState")).activeSessionId;
+    expect(benSession).not.toBe(adaFirstSession);
 
     await page.locator("#loginLink").click();
     await page.getByRole("button", { name: /Ada Lovelace/ }).click();
     await expect(page.locator("#loginLink")).toHaveText("Ada Lovelace");
+    const adaSecondSession = (await invoke(page, "getState")).activeSessionId;
+    expect(adaSecondSession).not.toBe(adaFirstSession);
+    expect(adaSecondSession).not.toBe(benSession);
 
     await invoke(page, "enableOps", ["add"]);
     await freezeAutoSpawns(page);
@@ -1567,6 +1647,8 @@ test.describe("mobile gameplay", () => {
     await expect(page.locator("#touchSupportLink")).toBeVisible();
     await expect(page.locator("#touchSupportLink")).toHaveAttribute("href", "https://ko-fi.com/davidedaniels");
     await expect(page.locator("#touchResultsLink")).toHaveCount(0);
+    await expect(page.locator("#touchFinishLink")).toBeVisible();
+    await expect(page.locator("#touchFinishLink")).toHaveText("Finish");
     await expect(page.locator("#touchSessionLogLink")).toBeVisible();
   });
 

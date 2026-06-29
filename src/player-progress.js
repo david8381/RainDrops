@@ -912,6 +912,15 @@ function touchSession(profile, session, nowMs = Date.now()) {
   return session;
 }
 
+function shouldResumeSession(session, nowMs = Date.now(), graceMs = 30 * 60 * 1000) {
+  if (!session || !Number.isFinite(nowMs) || !Number.isFinite(graceMs) || graceMs < 0) return false;
+  const timestamp = session.lastSeenAt || session.endedAt || session.startedAt;
+  const lastSeenMs = new Date(timestamp).getTime();
+  if (!Number.isFinite(lastSeenMs)) return false;
+  const elapsedMs = nowMs - lastSeenMs;
+  return elapsedMs >= 0 && elapsedMs <= graceMs;
+}
+
 function recordSessionStart(profile, options = {}, nowMs = Date.now()) {
   if (!profile || typeof profile !== "object") return profile;
   profile.sessionLog = normalizeSessionLog(profile.sessionLog, nowMs);
@@ -2105,6 +2114,7 @@ export {
   recordSessionStart,
   resetStoredProfile,
   saveProfile,
+  shouldResumeSession,
   switchStoredProfile,
   summarizeProfile,
   summarizeSessionLog,

@@ -2518,6 +2518,7 @@ button.primary:hover {
 .touch-menu,
 .touch-test,
 .touch-login,
+.touch-finish,
 .touch-results,
 .touch-log,
 .touch-support {
@@ -2840,6 +2841,7 @@ button.primary:hover {
   .touch-menu,
   .touch-test,
   .touch-login,
+  .touch-finish,
   .touch-results,
   .touch-log,
   .touch-support {

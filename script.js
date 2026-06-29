@@ -138,6 +138,7 @@ const {
   recordSessionStart,
   resetStoredProfile,
   saveProfile,
+  shouldResumeSession,
   summarizeProfile,
   summarizeSessionLog,
   switchStoredProfile,
@@ -165,6 +166,7 @@ const scoreLabelEl = document.querySelector(".stats .label");
 const answerInput = document.getElementById("answer");
 const pauseBtn = document.getElementById("pauseBtn");
 const restartBtn = document.getElementById("restartBtn");
+const finishBtn = document.getElementById("finishBtn");
 const speedSlider = document.getElementById("speedSlider");
 const speedValueEl = document.getElementById("speedValue");
 const dropLimitSlider = document.getElementById("dropLimitSlider");
@@ -210,6 +212,7 @@ const CANNON_OVERLOAD_MAX_MS = 2000;
 const CANNON_OVERLOAD_REPEAT_WINDOW_MS = 10000;
 const MAX_VISIBLE_BOSS_NODES = 6;
 const FINISH_LEVEL_FOCUS_CHANCE = 0.85;
+const SESSION_RESUME_GRACE_MS = 30 * 60 * 1000;
 const WELCOME_SEEN_KEY = "rainMath.welcomeSeen.v1";
 const SUPPORT_URL = "https://ko-fi.com/davidedaniels";
 const TEXT_SIZE_ORDER = ["normal", "large", "huge"];
@@ -309,15 +312,22 @@ function createSessionId() {
   return `session-${Date.now()}-${random}`;
 }
 
-function startVisitSession({ persist = true } = {}) {
-  state.activeSessionId = createSessionId();
+function getRecentResumableSessionId(nowMs = Date.now()) {
+  const latest = Array.isArray(state.progressProfile?.sessionLog)
+    ? state.progressProfile.sessionLog[0]
+    : null;
+  return shouldResumeSession(latest, nowMs, SESSION_RESUME_GRACE_MS) ? latest.id : null;
+}
+
+function startVisitSession({ persist = true, forceNew = false, nowMs = Date.now() } = {}) {
+  state.activeSessionId = forceNew ? createSessionId() : (getRecentResumableSessionId(nowMs) || createSessionId());
   state.progressProfile = recordSessionStart(state.progressProfile, {
     id: state.activeSessionId,
     speed: state.gameSpeed,
     rate: state.dropLimit,
     textSize: state.textSize,
     userAgent: navigator.userAgent || "",
-  });
+  }, nowMs);
   if (persist) saveProfile(state.progressProfile);
 }
 
@@ -372,6 +382,7 @@ function resetRunState({ resume = true, focus = true } = {}) {
   clearAmbiguousTimer();
   state.bossMode = null;
   state.isBreatherMode = false;
+  state.isPaused = false;
   state.factorTargetId = null;
   state.drops = [];
   resetSplashes();
@@ -400,7 +411,7 @@ function activateProfile(nextProfile, { resetRun = true } = {}) {
   bossOfferShown.clear();
   closeBossOffer();
   applyProfileSettingsToControls();
-  startVisitSession();
+  startVisitSession({ forceNew: true });
   resetProblemStats(problemStats);
   mirrorLegacyProblemStats(state.progressProfile, problemStats);
   if (resetRun) resetRunState({ focus: false });
@@ -4667,7 +4678,7 @@ function buildSessionLogPopup() {
   sub.className = "session-log-sub";
   sub.textContent = viewing
     ? `Viewing ${active.textContent}'s shared progress (read-only). Open any session for its report.`
-    : "Each visit or player switch creates a local session. Boss/challenge work is listed separately from ordinary practice accuracy.";
+    : "A sitting stays in one local session across brief reloads; a long break or player switch starts a new one. Boss/challenge work is listed separately from ordinary practice accuracy.";
   card.appendChild(sub);
 
   const list = document.createElement("div");
@@ -5767,6 +5778,11 @@ function updateStaticText() {
     const el = document.getElementById(id);
     if (el) el.textContent = testMeText;
   });
+  const finishText = getText("common.finish") || "Finish";
+  ["finishBtn", "touchFinishLink"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = finishText;
+  });
   const supportText = getText("support.label");
   const supportShortText = getText("support.shortLabel");
   const supportLink = document.getElementById("supportLink");
@@ -6016,6 +6032,49 @@ function togglePause() {
 
 function restartGame() {
   resetRunState();
+}
+
+function finishCurrentSession() {
+  initAudio();
+  clearAmbiguousTimer();
+  closeBossOffer();
+  closeBossVictoryPopup();
+  closeShareBadgePopup();
+  closeStatsPopup();
+  closeLoginPopup();
+  closeSessionLogPopup();
+  closeSessionReportPopup();
+  closeWelcomeMenu({ focus: false });
+  closeTutorialOverlay({ focus: false });
+  closePlacementOverlay({ focus: false });
+
+  state.bossMode = null;
+  state.isBreatherMode = false;
+  state.factorTargetId = null;
+  state.drops = [];
+  state.spawnTimer = 0;
+  state.lastTime = 0;
+  state.currentInput = "";
+  answerInput.value = "";
+  resetCannonOverload({ clearCooldown: true });
+  Object.keys(opConfig).forEach((opKey) => {
+    opConfig[opKey].enabled = false;
+  });
+  heartbeatActiveSession({ persist: true });
+
+  updateOpChits();
+  updateDifficultyDisplays();
+  updateControlDisplay();
+  updateScoreDisplay();
+  updateReadinessDisplays();
+  updateBossHud();
+  updateBreatherHud();
+  updateInputHint();
+  updateKpDisplay();
+  if (pauseBtn) pauseBtn.textContent = "Pause";
+  if (kpPauseBtn) kpPauseBtn.textContent = "Pause";
+  drawDrops();
+  buildSessionReportPopup(state.activeSessionId);
 }
 
 // Answer input handler — single path for all input processing
@@ -6270,6 +6329,12 @@ if (restartBtn) {
   });
 }
 
+// Finish button
+if (finishBtn) {
+  finishBtn.tabIndex = -1;
+  finishBtn.addEventListener("click", finishCurrentSession);
+}
+
 // Practice controls
 if (speedSlider) {
   speedSlider.addEventListener("input", () => {
@@ -6435,7 +6500,7 @@ function setupTouchKeypad() {
   if (controlsBar && opChits) {
     const touchBrand = document.createElement("div");
     touchBrand.className = "touch-brand";
-    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score"><span id="touchScoreLabel">Cleared</span>: <span id="touchScore">0</span></div><a href="#" class="touch-menu" id="touchMenuLink">${getText("welcome.menuLink")}</a><a href="#" class="touch-test" id="touchTestMeLink">${getText("welcome.testMe")}</a><a href="#" class="touch-login" id="touchLoginLink">Login</a><a href="#" class="touch-log" id="touchSessionLogLink">Log</a><a href="${SUPPORT_URL}" class="touch-support" id="touchSupportLink" target="_blank" rel="noopener noreferrer">${getText("support.shortLabel")}</a><a href="#" class="touch-fb" id="touchFbLink">?</a>`;
+    touchBrand.innerHTML = `<div class="logo">MR</div><div class="touch-score"><span id="touchScoreLabel">Cleared</span>: <span id="touchScore">0</span></div><a href="#" class="touch-menu" id="touchMenuLink">${getText("welcome.menuLink")}</a><a href="#" class="touch-test" id="touchTestMeLink">${getText("welcome.testMe")}</a><a href="#" class="touch-login" id="touchLoginLink">Login</a><a href="#" class="touch-finish" id="touchFinishLink">Finish</a><a href="#" class="touch-log" id="touchSessionLogLink">Log</a><a href="${SUPPORT_URL}" class="touch-support" id="touchSupportLink" target="_blank" rel="noopener noreferrer">${getText("support.shortLabel")}</a><a href="#" class="touch-fb" id="touchFbLink">?</a>`;
     controlsBar.insertBefore(touchBrand, opChits);
     const touchMenuLink = document.getElementById("touchMenuLink");
     if (touchMenuLink) {
@@ -6463,6 +6528,13 @@ function setupTouchKeypad() {
       touchSessionLogLink.addEventListener("click", (e) => {
         e.preventDefault();
         buildSessionLogPopup();
+      });
+    }
+    const touchFinishLink = document.getElementById("touchFinishLink");
+    if (touchFinishLink) {
+      touchFinishLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        finishCurrentSession();
       });
     }
     const touchFbLink = document.getElementById("touchFbLink");
@@ -6835,8 +6907,23 @@ function installTestHooks() {
       updateBossHud();
       updateBreatherHud();
       if (pauseBtn) pauseBtn.textContent = "Pause";
-      startVisitSession();
+      startVisitSession({ forceNew: true });
       drawDrops();
+      return getTestState();
+    },
+    backdateActiveSession(msAgo = SESSION_RESUME_GRACE_MS + 1000, { deactivate = false } = {}) {
+      const session = state.progressProfile.sessionLog?.find((item) => item.id === state.activeSessionId);
+      if (session) {
+        const at = new Date(Date.now() - Math.max(0, Number(msAgo) || 0)).toISOString();
+        session.lastSeenAt = at;
+        session.endedAt = at;
+        saveProfile(state.progressProfile);
+        if (deactivate) state.activeSessionId = null;
+      }
+      return getTestState();
+    },
+    finishSession() {
+      finishCurrentSession();
       return getTestState();
     },
     showWelcome() {
