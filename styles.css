@@ -564,6 +564,18 @@ body {
   opacity: 0.72;
 }
 
+.diff-ready.is-locked:not(:disabled),
+.kp-diff-ready.is-locked:not(:disabled) {
+  cursor: help;
+}
+
+.diff-value.needs-ready,
+.kp-diff-val.needs-ready {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  border-radius: 999px;
+}
+
 .diff-blitz,
 .diff-wave,
 .diff-boss,
@@ -587,6 +599,36 @@ body {
   flex-wrap: wrap;
   justify-content: center;
   gap: 5px;
+}
+
+.diff-level-feedback {
+  display: none;
+  width: 100%;
+  min-height: 1rem;
+  color: #fbbf24;
+  font-size: 0.68rem;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.diff-level-feedback.is-visible {
+  display: block;
+}
+
+.diff-challenge-lock {
+  width: 100%;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.1);
+  color: #fbbf24;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.diff-challenge-lock[hidden] {
+  display: none;
 }
 
 .diff-wave,
@@ -2775,6 +2817,23 @@ button.primary:hover {
   font-size: 0.78rem;
   min-width: 14px;
   text-align: center;
+}
+
+.kp-diff-feedback,
+.kp-diff-lock {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.1);
+  color: #fbbf24;
+  font-size: 0.58rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.kp-diff-feedback[hidden],
+.kp-diff-lock[hidden] {
+  display: none;
 }
 
 .kp-diff-ready {

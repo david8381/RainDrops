@@ -63,6 +63,8 @@ const {
   formatReadyText,
   canOpenLevelChoices,
   shouldPromptBossAttempt,
+  getMasteryGateReason,
+  getReplayLockReason,
   formatDropSeconds,
   formatBlitzResult,
   formatWaveResult,
@@ -851,22 +853,31 @@ function getProgressSkill(opKey) {
   return summarizeProfile(state.progressProfile).skills[opKey];
 }
 
-function showReadyRequired(opKey) {
-  const labels = document.querySelectorAll(`.diff-ready[data-op="${opKey}"], .kp-diff-ready[data-op="${opKey}"]`);
-  labels.forEach((label) => {
-    label.classList.add("needs-ready");
-    label.textContent = "Master first";
-  });
-  window.setTimeout(updateReadinessDisplays, 1200);
+function getLevelGateReason(opKey) {
+  return getMasteryGateReason(getProgressSkill(opKey)) || "Beat this level to go higher.";
 }
 
-function showBossLocked(opKey) {
+function showLevelGateFeedback(opKey, reason = getLevelGateReason(opKey)) {
+  const fields = document.querySelectorAll(`.diff-level-feedback[data-op="${opKey}"], .kp-diff-feedback[data-op="${opKey}"]`);
+  fields.forEach((field) => {
+    field.hidden = false;
+    field.textContent = reason;
+    field.classList.add("is-visible");
+  });
+  document.querySelectorAll(`.diff-value[data-op="${opKey}"], .kp-diff-val[data-op="${opKey}"]`).forEach((value) => {
+    value.classList.add("needs-ready");
+  });
+  window.setTimeout(updateReadinessDisplays, 1600);
+}
+
+function showMasteryGateFeedback(opKey) {
+  const reason = getMasteryGateReason(getProgressSkill(opKey)) || `Reach ${BOSS_READY_SCORE}% mastery.`;
   const labels = document.querySelectorAll(`.diff-ready[data-op="${opKey}"], .kp-diff-ready[data-op="${opKey}"]`);
   labels.forEach((label) => {
     label.classList.add("needs-ready");
-    label.textContent = `Reach ${BOSS_READY_SCORE}% mastery`;
+    label.textContent = reason;
   });
-  window.setTimeout(updateReadinessDisplays, 1400);
+  window.setTimeout(updateReadinessDisplays, 1800);
 }
 
 function canAdvanceDifficulty(opKey, nextLevel) {
@@ -903,7 +914,7 @@ function advanceMasteredLevel(opKey) {
   if (currentLevel >= 10) return false;
   const skill = getProgressSkill(opKey);
   if (!skill?.bossReady && !skill?.levelAdvancedForLevel && !skill?.bossAttemptedForLevel) {
-    showReadyRequired(opKey);
+    showLevelGateFeedback(opKey);
     return false;
   }
   setDifficulty(opKey, currentLevel + 1);
@@ -915,7 +926,7 @@ function setDifficulty(opKey, level, { force = false } = {}) {
   if (isControlLocked() && !force) return;
   const nextLevel = clamp(1, 10, level);
   if (!force && !canAdvanceDifficulty(opKey, nextLevel)) {
-    showReadyRequired(opKey);
+    showLevelGateFeedback(opKey);
     return;
   }
   const currentLevel = opConfig[opKey].difficulty;
@@ -1257,7 +1268,7 @@ function refillBossReveals() {
 function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficulty, force = false } = {}) {
   if (!opConfig[opKey]) return;
   if (mode === "full" && !force && !getProgressSkill(opKey)?.bossReady) {
-    showBossLocked(opKey);
+    showMasteryGateFeedback(opKey);
     return false;
   }
   const pressure = getCurrentPressure();
@@ -3789,8 +3800,24 @@ function getReplayChallengeLevel(opKey, skill) {
   const unlockedLevel = skill?.unlockedLevel || skill?.blitzUnlockedLevel || 0;
   if (selectedLevel <= unlockedLevel) return selectedLevel;
   const currentLevel = skill?.currentLevel || selectedLevel;
-  if (selectedLevel === currentLevel && skill?.bossReady) return selectedLevel;
-  return 0;
+  return getReplayLockReason({
+    selectedLevel,
+    unlockedLevel,
+    currentLevel,
+    bossReady: Boolean(skill?.bossReady),
+  }) ? 0 : selectedLevel;
+}
+
+function getChallengeLockReason(opKey, skill) {
+  const selectedLevel = opConfig[opKey]?.difficulty || 1;
+  const unlockedLevel = skill?.unlockedLevel || skill?.blitzUnlockedLevel || 0;
+  const currentLevel = skill?.currentLevel || selectedLevel;
+  return getReplayLockReason({
+    selectedLevel,
+    unlockedLevel,
+    currentLevel,
+    bossReady: Boolean(skill?.bossReady),
+  });
 }
 
 function formatBlitzText(opKey, skill) {
@@ -3916,6 +3943,7 @@ function buildDiffCards() {
     const config = opConfig[opKey];
     const range = getDifficultyRange(opKey, config.difficulty);
     const skill = progressSummary.skills[opKey];
+    const replayLockReason = getChallengeLockReason(opKey, skill);
 
     const card = document.createElement("div");
     card.className = "diff-card";
@@ -3961,6 +3989,7 @@ function buildDiffCards() {
 
     const val = document.createElement("span");
     val.className = "diff-value";
+    val.dataset.op = opKey;
     val.textContent = config.difficulty;
 
     const upBtn = document.createElement("button");
@@ -3995,6 +4024,11 @@ function buildDiffCards() {
     controls.appendChild(val);
     controls.appendChild(upBtn);
 
+    const levelFeedback = document.createElement("div");
+    levelFeedback.className = "diff-level-feedback";
+    levelFeedback.dataset.op = opKey;
+    levelFeedback.hidden = true;
+
     const rangeText = document.createElement("div");
     rangeText.className = "diff-range";
     rangeText.textContent = `${range.min}\u2013${range.max}`;
@@ -4007,12 +4041,16 @@ function buildDiffCards() {
     readyText.classList.toggle("is-qualified", Boolean(skill.bossAttemptedForLevel));
     readyText.classList.toggle("is-locked", !canOpenLevelChoices(skill));
     readyText.classList.toggle("is-ready-attention", shouldPromptBossAttempt(skill));
-    readyText.disabled = isControlLocked() || !canOpenLevelChoices(skill);
+    readyText.disabled = isControlLocked();
     readyText.title = getBossButtonTitle(skill);
     readyText.setAttribute("aria-pressed", skill.bossAttemptedForLevel ? "true" : "false");
     readyText.addEventListener("click", (e) => {
       e.stopPropagation();
       initAudio();
+      if (!canOpenLevelChoices(getProgressSkill(opKey))) {
+        showMasteryGateFeedback(opKey);
+        return;
+      }
       showBossOffer(opKey);
     });
 
@@ -4030,7 +4068,7 @@ function buildDiffCards() {
     blitzBtn.dataset.op = opKey;
     blitzBtn.dataset.challenge = "blitz";
     blitzBtn.textContent = formatBlitzText(opKey, skill);
-    blitzBtn.hidden = !canReplayChallenges(opKey, skill);
+    blitzBtn.hidden = Boolean(replayLockReason);
     blitzBtn.disabled = isControlLocked();
     blitzBtn.addEventListener("click", (e) => {
       e.preventDefault();
@@ -4045,7 +4083,7 @@ function buildDiffCards() {
     waveBtn.dataset.op = opKey;
     waveBtn.dataset.challenge = "wave";
     waveBtn.textContent = formatWaveText(opKey, skill);
-    waveBtn.hidden = !canReplayChallenges(opKey, skill);
+    waveBtn.hidden = Boolean(replayLockReason);
     waveBtn.disabled = isControlLocked();
     waveBtn.addEventListener("click", (e) => {
       e.preventDefault();
@@ -4060,7 +4098,7 @@ function buildDiffCards() {
     bossReplayBtn.dataset.op = opKey;
     bossReplayBtn.dataset.challenge = "boss";
     bossReplayBtn.textContent = formatBossReplayText(opKey, skill);
-    bossReplayBtn.hidden = !canReplayChallenges(opKey, skill);
+    bossReplayBtn.hidden = Boolean(replayLockReason);
     bossReplayBtn.disabled = isControlLocked();
     bossReplayBtn.addEventListener("click", (e) => {
       e.preventDefault();
@@ -4075,7 +4113,7 @@ function buildDiffCards() {
     badgeBtn.dataset.op = opKey;
     badgeBtn.dataset.challenge = "badge";
     badgeBtn.textContent = formatBadgeText(opKey, skill);
-    badgeBtn.hidden = !canReplayChallenges(opKey, skill);
+    badgeBtn.hidden = Boolean(replayLockReason);
     badgeBtn.disabled = isControlLocked();
     badgeBtn.addEventListener("click", (e) => {
       e.preventDefault();
@@ -4087,6 +4125,12 @@ function buildDiffCards() {
 
     const challengeRow = document.createElement("div");
     challengeRow.className = "diff-challenge-row";
+    const challengeLock = document.createElement("div");
+    challengeLock.className = "diff-challenge-lock";
+    challengeLock.dataset.op = opKey;
+    challengeLock.textContent = replayLockReason ? `Locked: ${replayLockReason}` : "";
+    challengeLock.hidden = !replayLockReason;
+    challengeRow.appendChild(challengeLock);
     challengeRow.appendChild(blitzBtn);
     challengeRow.appendChild(waveBtn);
     challengeRow.appendChild(bossReplayBtn);
@@ -4100,6 +4144,7 @@ function buildDiffCards() {
     header.appendChild(gridHint);
     card.appendChild(header);
     card.appendChild(controls);
+    card.appendChild(levelFeedback);
     card.appendChild(readyText);
     card.appendChild(challengeRow);
     card.appendChild(readyMeter);
@@ -4118,9 +4163,19 @@ function updateReadinessDisplays() {
     el.classList.toggle("is-locked", !canOpenLevelChoices(skill));
     el.classList.toggle("is-ready-attention", shouldPromptBossAttempt(skill));
     el.classList.remove("needs-ready");
-    el.disabled = isControlLocked() || !canOpenLevelChoices(skill);
+    el.disabled = isControlLocked();
     el.title = getBossButtonTitle(skill);
     el.setAttribute("aria-pressed", skill?.bossAttemptedForLevel ? "true" : "false");
+  });
+
+  document.querySelectorAll(".diff-level-feedback[data-op], .kp-diff-feedback[data-op]").forEach((el) => {
+    el.textContent = "";
+    el.hidden = true;
+    el.classList.remove("is-visible");
+  });
+
+  document.querySelectorAll(".diff-value[data-op], .kp-diff-val[data-op]").forEach((el) => {
+    el.classList.remove("needs-ready");
   });
 
   document.querySelectorAll(".diff-ready-fill[data-op]").forEach((el) => {
@@ -4130,30 +4185,41 @@ function updateReadinessDisplays() {
 
   document.querySelectorAll(".diff-blitz[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
+    const lockReason = getChallengeLockReason(el.dataset.op, skill);
     el.textContent = formatBlitzText(el.dataset.op, skill);
-    el.hidden = !canReplayChallenges(el.dataset.op, skill);
+    el.hidden = Boolean(lockReason);
     el.disabled = isControlLocked();
   });
 
   document.querySelectorAll(".diff-wave[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
+    const lockReason = getChallengeLockReason(el.dataset.op, skill);
     el.textContent = formatWaveText(el.dataset.op, skill);
-    el.hidden = !canReplayChallenges(el.dataset.op, skill);
+    el.hidden = Boolean(lockReason);
     el.disabled = isControlLocked();
   });
 
   document.querySelectorAll(".diff-boss[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
+    const lockReason = getChallengeLockReason(el.dataset.op, skill);
     el.textContent = formatBossReplayText(el.dataset.op, skill);
-    el.hidden = !canReplayChallenges(el.dataset.op, skill);
+    el.hidden = Boolean(lockReason);
     el.disabled = isControlLocked();
   });
 
   document.querySelectorAll(".diff-badge[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
+    const lockReason = getChallengeLockReason(el.dataset.op, skill);
     el.textContent = formatBadgeText(el.dataset.op, skill);
-    el.hidden = !canReplayChallenges(el.dataset.op, skill);
+    el.hidden = Boolean(lockReason);
     el.disabled = isControlLocked();
+  });
+
+  document.querySelectorAll(".diff-challenge-lock[data-op]").forEach((el) => {
+    const skill = progressSummary.skills[el.dataset.op];
+    const lockReason = getChallengeLockReason(el.dataset.op, skill);
+    el.textContent = lockReason ? `Locked: ${lockReason}` : "";
+    el.hidden = !lockReason;
   });
 
   document.querySelectorAll(".kp-diff-ready[data-op]").forEach((el) => {
@@ -4163,37 +4229,48 @@ function updateReadinessDisplays() {
     el.classList.toggle("is-locked", !canOpenLevelChoices(skill));
     el.classList.toggle("is-ready-attention", shouldPromptBossAttempt(skill));
     el.classList.remove("needs-ready");
-    el.disabled = isControlLocked() || !canOpenLevelChoices(skill);
+    el.disabled = isControlLocked();
     el.title = getBossButtonTitle(skill);
     el.setAttribute("aria-pressed", skill?.bossAttemptedForLevel ? "true" : "false");
   });
 
   document.querySelectorAll(".kp-diff-blitz[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
+    const lockReason = getChallengeLockReason(el.dataset.op, skill);
     el.textContent = formatBlitzText(el.dataset.op, skill);
-    el.hidden = !canReplayChallenges(el.dataset.op, skill);
+    el.hidden = Boolean(lockReason);
     el.disabled = isControlLocked();
   });
 
   document.querySelectorAll(".kp-diff-wave[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
+    const lockReason = getChallengeLockReason(el.dataset.op, skill);
     el.textContent = formatWaveText(el.dataset.op, skill);
-    el.hidden = !canReplayChallenges(el.dataset.op, skill);
+    el.hidden = Boolean(lockReason);
     el.disabled = isControlLocked();
   });
 
   document.querySelectorAll(".kp-diff-boss[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
+    const lockReason = getChallengeLockReason(el.dataset.op, skill);
     el.textContent = formatBossReplayText(el.dataset.op, skill);
-    el.hidden = !canReplayChallenges(el.dataset.op, skill);
+    el.hidden = Boolean(lockReason);
     el.disabled = isControlLocked();
   });
 
   document.querySelectorAll(".kp-diff-badge[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
+    const lockReason = getChallengeLockReason(el.dataset.op, skill);
     el.textContent = formatBadgeText(el.dataset.op, skill);
-    el.hidden = !canReplayChallenges(el.dataset.op, skill);
+    el.hidden = Boolean(lockReason);
     el.disabled = isControlLocked();
+  });
+
+  document.querySelectorAll(".kp-diff-lock[data-op]").forEach((el) => {
+    const skill = progressSummary.skills[el.dataset.op];
+    const lockReason = getChallengeLockReason(el.dataset.op, skill);
+    el.textContent = lockReason ? `Locked: ${lockReason}` : "";
+    el.hidden = !lockReason;
   });
 }
 
@@ -6604,6 +6681,7 @@ function buildKpDiffStrip() {
   enabled.forEach((opKey) => {
     const config = opConfig[opKey];
     const skill = progressSummary.skills[opKey];
+    const replayLockReason = getChallengeLockReason(opKey, skill);
     const item = document.createElement("div");
     item.className = "kp-diff-item";
 
@@ -6623,7 +6701,13 @@ function buildKpDiffStrip() {
 
     const val = document.createElement("span");
     val.className = "kp-diff-val";
+    val.dataset.op = opKey;
     val.textContent = config.difficulty;
+
+    const levelFeedback = document.createElement("span");
+    levelFeedback.className = "kp-diff-feedback";
+    levelFeedback.dataset.op = opKey;
+    levelFeedback.hidden = true;
 
     const ready = document.createElement("button");
     ready.type = "button";
@@ -6632,17 +6716,23 @@ function buildKpDiffStrip() {
     ready.textContent = formatReadyText(skill);
     ready.classList.toggle("is-qualified", Boolean(skill.bossAttemptedForLevel));
     ready.classList.toggle("is-locked", !canOpenLevelChoices(skill));
-    ready.disabled = isControlLocked() || !canOpenLevelChoices(skill);
+    ready.disabled = isControlLocked();
     ready.title = getBossButtonTitle(skill);
     ready.setAttribute("aria-pressed", skill.bossAttemptedForLevel ? "true" : "false");
-    wireKpButton(ready, () => showBossOffer(opKey));
+    wireKpButton(ready, () => {
+      if (!canOpenLevelChoices(getProgressSkill(opKey))) {
+        showMasteryGateFeedback(opKey);
+        return;
+      }
+      showBossOffer(opKey);
+    });
 
     const blitz = document.createElement("button");
     blitz.type = "button";
     blitz.className = "kp-diff-challenge kp-diff-blitz";
     blitz.dataset.op = opKey;
     blitz.textContent = formatBlitzText(opKey, skill);
-    blitz.hidden = !canReplayChallenges(opKey, skill);
+    blitz.hidden = Boolean(replayLockReason);
     blitz.disabled = isControlLocked();
     wireKpButton(blitz, () => startBlitzMode(opKey));
 
@@ -6651,7 +6741,7 @@ function buildKpDiffStrip() {
     wave.className = "kp-diff-challenge kp-diff-wave";
     wave.dataset.op = opKey;
     wave.textContent = formatWaveText(opKey, skill);
-    wave.hidden = !canReplayChallenges(opKey, skill);
+    wave.hidden = Boolean(replayLockReason);
     wave.disabled = isControlLocked();
     wireKpButton(wave, () => startWaveMode(opKey));
 
@@ -6660,7 +6750,7 @@ function buildKpDiffStrip() {
     bossReplay.className = "kp-diff-challenge kp-diff-boss";
     bossReplay.dataset.op = opKey;
     bossReplay.textContent = formatBossReplayText(opKey, skill);
-    bossReplay.hidden = !canReplayChallenges(opKey, skill);
+    bossReplay.hidden = Boolean(replayLockReason);
     bossReplay.disabled = isControlLocked();
     wireKpButton(bossReplay, () => startBossReplayMode(opKey));
 
@@ -6669,12 +6759,18 @@ function buildKpDiffStrip() {
     badge.className = "kp-diff-challenge kp-diff-badge";
     badge.dataset.op = opKey;
     badge.textContent = formatBadgeText(opKey, skill);
-    badge.hidden = !canReplayChallenges(opKey, skill);
+    badge.hidden = Boolean(replayLockReason);
     badge.disabled = isControlLocked();
     wireKpButton(badge, () => {
       const level = getReplayChallengeLevel(opKey, summarizeProfile(state.progressProfile).skills[opKey]);
       if (level) showShareBadge(opKey, level);
     });
+
+    const challengeLock = document.createElement("span");
+    challengeLock.className = "kp-diff-lock";
+    challengeLock.dataset.op = opKey;
+    challengeLock.textContent = replayLockReason ? `Locked: ${replayLockReason}` : "";
+    challengeLock.hidden = !replayLockReason;
 
     const upBtn = document.createElement("button");
     upBtn.className = "kp-diff-btn";
@@ -6687,7 +6783,9 @@ function buildKpDiffStrip() {
     item.appendChild(downBtn);
     item.appendChild(val);
     item.appendChild(upBtn);
+    item.appendChild(levelFeedback);
     item.appendChild(ready);
+    item.appendChild(challengeLock);
     item.appendChild(blitz);
     item.appendChild(wave);
     item.appendChild(bossReplay);
@@ -6695,7 +6793,7 @@ function buildKpDiffStrip() {
 
     // Click the item (not buttons) to show stats
     item.addEventListener("click", (e) => {
-      if ([downBtn, upBtn, ready, blitz, wave, bossReplay, badge].includes(e.target)) return;
+      if ([downBtn, upBtn, ready, blitz, wave, bossReplay, badge, levelFeedback, challengeLock].includes(e.target)) return;
       showStatsPopup(opKey);
     });
 

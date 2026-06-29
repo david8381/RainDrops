@@ -57,6 +57,8 @@ import {
   formatReadyText,
   canOpenLevelChoices,
   shouldPromptBossAttempt,
+  getMasteryGateReason,
+  getReplayLockReason,
   formatDropSeconds,
   formatBlitzResult,
   formatWaveResult,
@@ -279,6 +281,23 @@ describe("difficulty ranges", () => {
     assert.equal(shouldPromptBossAttempt({ bossReady: true }), true);
     assert.equal(shouldPromptBossAttempt({ bossReady: true, bossAttemptedForLevel: true }), false);
     assert.equal(shouldPromptBossAttempt({ bossReady: false }), false);
+
+    assert.equal(getMasteryGateReason({ bossReady: true }), null);
+    assert.equal(getMasteryGateReason({ bossAttemptedForLevel: true }), null);
+    assert.equal(
+      getMasteryGateReason({ currentLevel: 3, bossThreshold: 100 }),
+      "Master 100% of L3 to unlock Boss / Next Level."
+    );
+    assert.equal(getReplayLockReason({ selectedLevel: 1, unlockedLevel: 1, currentLevel: 2 }), null);
+    assert.equal(getReplayLockReason({ selectedLevel: 3, unlockedLevel: 1, currentLevel: 3, bossReady: true }), null);
+    assert.equal(
+      getReplayLockReason({ selectedLevel: 3, unlockedLevel: 1, currentLevel: 3, bossReady: false }),
+      "Master this level to unlock its challenges."
+    );
+    assert.equal(
+      getReplayLockReason({ selectedLevel: 4, unlockedLevel: 1, currentLevel: 3, bossReady: false }),
+      "Reach Level 4 first."
+    );
   });
 
   it("round-trips share blobs through the base64url codecs", () => {

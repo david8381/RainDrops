@@ -1,9 +1,9 @@
 # Feature: Make boss-mode controls legible (no silent gating)
 
-Status: agreed — ready for implementation
-Owner: Codex (planned by Claude; Claude to review)
+Status: landed
+Owner: Codex (planned by Claude; reviewed by Claude)
 Last Updated: 2026-06-29
-Related Commits: (pending)
+Related Commits: (this commit)
 
 ## User Request
 "There's something funky about the different boss-mode options — I was clicking on them
@@ -113,4 +113,15 @@ Keep the `title` tooltips too (harmless on desktop), but the visible states are 
   Mastered opens the offer and Blitz/Wave/Worksheet start as today (no regression).
 
 ## Outcome
-(pending implementation by Codex)
+Implemented by Codex on 2026-06-29:
+- Added pure, unit-tested `getMasteryGateReason(skill)` and `getReplayLockReason(...)`
+  helpers in `src/game-core.js`.
+- Desktop level cards now keep the gated Mastered control tappable, show a specific
+  mastery reason on click, show selector feedback beside the level number when `+` is
+  blocked, and show a compact locked challenge hint instead of a disappearing
+  Blitz/Wave/Worksheet row.
+- Mobile keypad diff controls mirror the same locked states and tap feedback.
+- Existing unlocked flows are unchanged: Mastered opens the boss/next-level offer, and
+  Blitz/Wave/Worksheet controls still start their challenge modes when eligible.
+- Added unit and e2e coverage for the locked-state reason helpers and visible desktop
+  plus touch feedback.

@@ -170,7 +170,13 @@ test.describe("desktop gameplay", () => {
     await expect(addCard.locator(".diff-value")).toHaveText("1");
     await addCard.locator(".diff-btn").last().click();
     await expect(addCard.locator(".diff-value")).toHaveText("1");
-    await expect(addCard.locator(".diff-ready")).toHaveText("Master first");
+    await expect(addCard.locator(".diff-ready")).toHaveText("Mastered: 0%");
+    await expect(addCard.locator(".diff-level-feedback")).toContainText("Master 100% of L1");
+    await expect(addCard.locator(".diff-challenge-lock")).toContainText("Master this level");
+
+    await addCard.locator(".diff-ready").click();
+    await expect(addCard.locator(".diff-ready")).toContainText("Master 100% of L1");
+    await expect(page.locator("#bossOfferOverlay")).toHaveCount(0);
 
     await invoke(page, "masterCurrentLevel", "add");
     await addCard.locator(".diff-btn").last().click();
@@ -970,8 +976,11 @@ test.describe("desktop gameplay", () => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
 
-    await expect(page.locator('.diff-card[data-op="add"] .diff-ready')).toBeDisabled();
-    await expect(page.locator('.diff-card[data-op="add"] .diff-ready')).toHaveText("Mastered: 0%");
+    const ready = page.locator('.diff-card[data-op="add"] .diff-ready');
+    await expect(ready).toBeEnabled();
+    await expect(ready).toHaveText("Mastered: 0%");
+    await expect(ready).toHaveClass(/is-locked/);
+    await expect(page.locator('.diff-card[data-op="add"] .diff-challenge-lock')).toContainText("Master this level");
 
     await invoke(page, "masterCurrentLevel", "add");
     await expect(page.locator('.diff-card[data-op="add"] .diff-ready')).toHaveText("Mastered: 100%");
@@ -1639,6 +1648,15 @@ test.describe("mobile gameplay", () => {
     await expect(page.locator("#kpSpeedVal")).toHaveText("40%");
     await expect(page.locator("#kpDropsVal")).toHaveText("4");
     await expect(page.locator(".kp-grid-hint").first()).toHaveText("Grid");
+    await expect(page.locator('.kp-diff-lock[data-op="add"]')).toContainText("Master this level");
+
+    await page.locator('.kp-diff-ready[data-op="add"]').click();
+    await expect(page.locator('.kp-diff-ready[data-op="add"]')).toContainText("Master 100% of L1");
+    await expect(page.locator("#bossOfferOverlay")).toHaveCount(0);
+
+    await page.locator(".kp-diff-item").filter({ has: page.locator('.kp-diff-val[data-op="add"]') }).locator(".kp-diff-btn").last().click();
+    await expect(page.locator('.kp-diff-val[data-op="add"]')).toHaveText("1");
+    await expect(page.locator('.kp-diff-feedback[data-op="add"]')).toContainText("Master 100% of L1");
   });
 
   test("touch header exposes donate and log without the old results tab", async ({ page }) => {

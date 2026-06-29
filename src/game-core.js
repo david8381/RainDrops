@@ -1261,6 +1261,31 @@ function shouldPromptBossAttempt(skill) {
   return Boolean(skill?.bossReady && !skill?.bossAttemptedForLevel && !skill?.levelAdvancedForLevel);
 }
 
+/**
+ * @param {Partial<import('./types.js').SkillSummary>} skill
+ * @returns {string | null}
+ */
+function getMasteryGateReason(skill) {
+  if (canOpenLevelChoices(skill)) return null;
+  const threshold = Math.round(skill?.bossThreshold || 100);
+  const level = Math.max(1, Math.round(skill?.currentLevel || 1));
+  return `Master ${threshold}% of L${level} to unlock Boss / Next Level.`;
+}
+
+/**
+ * @param {{ selectedLevel?: number, unlockedLevel?: number, currentLevel?: number, bossReady?: boolean }} [options]
+ * @returns {string | null}
+ */
+function getReplayLockReason({ selectedLevel, unlockedLevel = 0, currentLevel = 1, bossReady = false } = {}) {
+  const selected = Math.max(1, Math.round(selectedLevel || 1));
+  const unlocked = Math.max(0, Math.round(unlockedLevel || 0));
+  const current = Math.max(1, Math.round(currentLevel || selected));
+  if (selected <= unlocked) return null;
+  if (selected === current && bossReady) return null;
+  if (selected === current) return "Master this level to unlock its challenges.";
+  return `Reach Level ${selected} first.`;
+}
+
 // Challenge-result summaries (Blitz survival time + fastest drop + solved;
 // Wave max simultaneous load + solved). Em-dash when nothing was recorded.
 function formatDropSeconds(seconds) {
@@ -1740,6 +1765,8 @@ export {
   formatReadyText,
   canOpenLevelChoices,
   shouldPromptBossAttempt,
+  getMasteryGateReason,
+  getReplayLockReason,
   formatDropSeconds,
   formatBlitzResult,
   formatWaveResult,
