@@ -1,9 +1,20 @@
 # Architecture
 
 ## Overview
-Rain Math is a static browser game. Production still has no bundler and no runtime dependencies: `index.html` loads `styles.css`, then `src/game-core.js`, `src/player-progress.js`, `src/text/english.js`, and `script.js` as ordinary browser scripts. This keeps the app usable when `index.html` is opened directly from disk.
+Rain Math is a static browser game. Production has no bundler and no runtime dependencies: `index.html` loads `styles.css` and a single `<script type="module">` entry (`script.js`), which `import`s the `src/` modules — native ES modules, source == runtime. Because ES modules require HTTP, the app is served (`npm start` / GitHub Pages), not opened from `file://`.
 
-Dev-only tooling exists for tests: Node's built-in test runner covers core logic, and Playwright covers real browser flows.
+Dev-only tooling: Node's built-in test runner (unit), Playwright (browser e2e), `tsc --checkJs` over the typed core (`npm run typecheck`, enforced in CI), and c8/monocart coverage.
+
+## Design intent & module boundaries
+The codebase is layered by *testability and coupling*, not by feature folders. When adding code, put it in the right layer:
+
+- **`src/game-core.js`** — pure, DOM-free rules and game-logic. Problem generation, mastery weighting, factorization, SI; the stats/report/share **display formatters**; and pure **engine decisions** (`resolvePlacementOutcome`, the Blitz ramp curves `blitzDropSeconds`/`blitzSpeedPercent`/`blitzBombIntervalMs`, `spawnIntervalMs`, etc.). Fully unit-tested and type-checked. **Pure logic goes here.**
+- **`src/player-progress.js`** — local profile + readiness/persistence. Unit-tested and type-checked. **Profile/stats logic goes here.**
+- **`src/engine/`** — runtime pieces with a *real* boundary: `state.js` (the shared mutable `state` object), `predicates.js` (state queries), `splashes.js`, `laser-ship.js` (each owns its state, deps injected). **Self-contained engine subsystems go here.**
+- **`src/popups/`** — modal "views": given data + callbacks (a `ctx`), build DOM. **New popups go here.**
+- **`script.js`** — the **irreducibly-coupled real-time engine**: boss mode, drop management, input handling, the game loop, and UI-update orchestration. These share `state` and interact every frame, so they are kept together *on purpose* — splitting them would spread essential coupling across files behind a thick circular-import seam without making anything more maintainable. UI updates use a manual reactive pattern (refresh the affected `update*Display()` after the change; all out-of-loop, which is fine). The coupling here is essential, not accidental — don't "fix" it by moving files.
+
+The high-leverage maintainability work was: tests + types on the core, explicit shared `state`, and extracting the parts with genuine boundaries. The remaining engine is large but cohesive and backed by the test/type net.
 
 ## Runtime Files
 - `index.html`: Game markup, operation chits, controls, canvas, input bar, touch keypad, menu/test-me/login/log/donate/feedback links, feedback form, and overlays.
