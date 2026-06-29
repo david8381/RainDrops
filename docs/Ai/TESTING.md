@@ -74,3 +74,7 @@ The existing GitHub Pages deploy workflow remains separate.
 - If browser tests cannot bind `127.0.0.1:4173`, allow the test command to start a local server or change the port in `playwright.config.mjs`.
 - Playwright intentionally blocks external font and analytics requests during tests.
 - The test-only browser API is installed only when the URL includes `?test=1`.
+
+## Known flakiness (not regressions)
+- **Stale `:4173` server.** Playwright reuses an already-running static server (`reuseExistingServer`). A leftover one from a previous run can wedge — symptom: a sudden run where ~15-20 tests time out / "browser has been closed" across multiple engines, and the run takes ~9 min instead of ~1.5 min. Fix: `lsof -ti :4173 | xargs kill`, then re-run.
+- **Firefox cannon-overload test.** `rain-math.spec.js` › "rapid impossible submissions briefly overload the cannon" is timing-sensitive and occasionally fails on Firefox under full parallel load; it passes on retry / in isolation. A lone Firefox failure of just this test is the flake, not a code regression.
