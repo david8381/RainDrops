@@ -36,6 +36,7 @@ Kebab-case slug describing the feature: `answer-space-aware-overload.md`,
 
 ## Index
 Keep this list current (newest meaningful first):
+- `session-continuity-and-finish.md` — Status: agreed — one report per sitting (resume recent session) + a "Finish" share-the-report control.
 - `richer-report-and-compact-share-link.md` — Status: landed — clearer session reports and shorter parent share links.
 - `answer-space-aware-overload.md` — Status: landed — guessability-weighted cannon overload.
 
