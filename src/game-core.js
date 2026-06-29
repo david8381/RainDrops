@@ -1166,10 +1166,13 @@ function expandCompactReportChallenges(row = []) {
   });
 }
 
-function compactSessionReportViewModel(report) {
+// `idOverride` (the session's position in the shared blob) lets the share path
+// emit a tiny "0"/"1" handle instead of the long internal session id — the id is
+// only used to match a log row to its report popup within the decoded set.
+function compactSessionReportViewModel(report, idOverride) {
   const model = createSessionReportViewModel(report);
   return [
-    model.id,
+    idOverride == null ? model.id : String(idOverride),
     model.startedAt,
     model.durationMs,
     compactReportStats(model.practice),
@@ -1655,7 +1658,7 @@ function falseFireCost({ distinctAnswerCount, visibleDistinctAnswers }) {
 // sides for the tamper check to line up.
 function shareContentString(p) {
   if (p?.v === 2) {
-    return JSON.stringify({ note: p.note, v: p.v, n: p.n, r: p.r });
+    return JSON.stringify({ v: p.v, n: p.n, r: p.r });
   }
   return JSON.stringify({ note: p.note, v: p.v, name: p.name, sessionLog: p.sessionLog });
 }
