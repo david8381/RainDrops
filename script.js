@@ -1,4 +1,11 @@
 import { state } from "./src/engine/state.js";
+import {
+  isBossActive,
+  isPlacementActive,
+  isPlacementDrop,
+  isControlLocked,
+  isBossStunned,
+} from "./src/engine/predicates.js";
 import * as RainMathCore from "./src/game-core.js";
 import * as RainMathProgress from "./src/player-progress.js";
 import { RainMathText } from "./src/text/english.js";
@@ -915,25 +922,7 @@ function pickRandomEnabledOp() {
 // 6b. Boss Mode
 // ============================================================
 
-function isBossActive() {
-  return Boolean(state.bossMode?.active);
-}
-
-function isPlacementActive() {
-  return Boolean(state.placementState?.active);
-}
-
-function isPlacementDrop(drop) {
-  return Boolean(isPlacementActive() && drop?.placementRunId === state.placementState.runId);
-}
-
-function isControlLocked() {
-  return isBossActive() || isPlacementActive();
-}
-
-function isBossStunned() {
-  return Boolean(state.bossMode?.active && state.bossMode.stunMs > 0);
-}
+// State predicates live in src/engine/predicates.js (imported at the top).
 
 function copyProblemToTarget(problem, target) {
   target.text = problem.text;
