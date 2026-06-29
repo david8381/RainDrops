@@ -1,9 +1,9 @@
 # Feature: Richer session report + compact share link
 
-Status: agreed — ready for implementation
-Owner: Codex (planned by Claude; Claude to review)
+Status: landed
+Owner: Codex (planned by Claude; reviewed by Claude)
 Last Updated: 2026-06-29
-Related Commits: (pending)
+Related Commits: (this commit)
 
 ## User Request
 1. The post-session **report** is "a little lacking, especially around boss attempts" —
@@ -49,8 +49,7 @@ Keep the practice line and the per-level mastery changes. Pure formatting helper
 - Exact compact field layout (short keys vs positional arrays) — settle during impl by
   measuring the resulting link length; target well under ~300 chars for a single session.
 - Old `#report=` links use the v1 full-JSON format. Decision: version the scheme; the
-  decoder accepts v1 (best-effort) but new links are v2. Acceptable to drop v1 if it
-  complicates — few links exist (kids' game).
+  decoder accepts v1 best-effort, while new links are v2.
 
 ## Implementation Notes
 - Report path: `buildSessionReportPopup` (script.js) renders via `getReportProfile()` +
@@ -76,4 +75,14 @@ Keep the practice line and the per-level mastery changes. Pure formatting helper
   link is under the target length.
 
 ## Outcome
-(to fill in on landing)
+Implemented locally by Codex, pending commit/review:
+
+- Added pure report helpers in `game-core.js`: rich challenge breakdown text, session
+  report view model creation, compact report model conversion, and v2 checksum support.
+- Reports now show challenge breakdowns at the session level and per operation:
+  started/completed, cleared count, Blitz/Wave/Worksheet activity, best worksheet time,
+  and best score.
+- New shared links encode compact v2 report-view values instead of full session JSON;
+  v1 links remain best-effort compatible.
+- Added unit coverage for compact report round-trip/checksum and focused e2e coverage for
+  richer report display, compact link length, read-only shared links, and tamper rejection.

@@ -38,4 +38,5 @@ export const state = {
   activeSessionId: null,
   progressProfile: null,
   reportViewProfile: null,
+  reportViewReports: null,
 };

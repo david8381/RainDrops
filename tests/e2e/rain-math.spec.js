@@ -126,6 +126,7 @@ test("a shared report link opens read-only on this device", async ({ page }) => 
   const state = await invoke(page, "submit", "2");
   const code = await invoke(page, "getShareReportCode", state.activeSessionId);
   expect(code.length).toBeGreaterThan(0);
+  expect(code.length).toBeLessThan(300);
 
   const parent = await page.context().newPage();
   await parent.goto(`/?test=1#report=${code}`);
@@ -681,6 +682,35 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#sessionReportOverlay .session-report-donate")).toHaveText("donating");
   });
 
+  test("session report breaks out boss and challenge activity", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await freezeAutoSpawns(page);
+
+    await invoke(page, "recordSessionChallenge", {
+      action: "start",
+      type: "full",
+      opKey: "add",
+      level: 1,
+    });
+    await invoke(page, "recordSessionChallenge", {
+      action: "complete",
+      type: "boss",
+      opKey: "add",
+      level: 1,
+      cleared: true,
+      durationMs: 65000,
+      score: 9,
+    });
+
+    await page.locator("#sessionLogLink").click();
+    await page.locator(".session-log-report").click();
+    await expect(page.locator("#sessionReportOverlay")).toContainText("Challenges: 1 started, 1 completed");
+    await expect(page.locator("#sessionReportOverlay")).toContainText("1 cleared");
+    await expect(page.locator("#sessionReportOverlay")).toContainText("best worksheet 1:05");
+    await expect(page.locator("#sessionReportOverlay")).toContainText("activity: Worksheet 2");
+  });
+
   test("shares a single report a parent opens straight to the report, read-only", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
@@ -707,6 +737,7 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#sessionReportCopy")).toBeVisible();
     const code = await invoke(page, "getShareReportCode", sessionId);
     expect(code.length).toBeGreaterThan(0);
+    expect(code.length).toBeLessThan(300);
 
     // A parent opening the link (fresh page = cold load) lands straight on that
     // report, read-only — no log list, no share button.

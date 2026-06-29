@@ -1031,11 +1031,210 @@ function formatSessionOperationStats(operation) {
     pieces.push(`Boss/challenge attempts: ${operation.assessment.attempts}`);
   }
   if (operation.challenges.started || operation.challenges.completed) {
-    pieces.push(
-      `Challenges: ${operation.challenges.started} started, ${operation.challenges.completed} completed`
-    );
+    pieces.push(formatSessionChallengeBreakdown(operation.challenges));
   }
   return pieces;
+}
+
+function createReportStats(stats = {}) {
+  const attempts = Math.max(0, Math.round(Number.isFinite(stats.attempts) ? stats.attempts : 0));
+  const correct = Math.max(0, Math.round(Number.isFinite(stats.correct) ? stats.correct : 0));
+  const wrong = Math.max(0, Math.round(Number.isFinite(stats.wrong) ? stats.wrong : 0));
+  const missed = Math.max(0, Math.round(Number.isFinite(stats.missed) ? stats.missed : 0));
+  const helped = Math.max(0, Math.round(Number.isFinite(stats.helped) ? stats.helped : 0));
+  const accuracy = attempts > 0 ? (correct + helped * 0.25) / attempts : 0;
+  return { attempts, correct, wrong, missed, helped, accuracy };
+}
+
+function createReportChallenges(challenges = {}) {
+  return {
+    started: Math.max(0, Math.round(Number.isFinite(challenges.started) ? challenges.started : 0)),
+    completed: Math.max(0, Math.round(Number.isFinite(challenges.completed) ? challenges.completed : 0)),
+    cleared: Math.max(0, Math.round(Number.isFinite(challenges.cleared) ? challenges.cleared : 0)),
+    blitz: Math.max(0, Math.round(Number.isFinite(challenges.blitz) ? challenges.blitz : 0)),
+    wave: Math.max(0, Math.round(Number.isFinite(challenges.wave) ? challenges.wave : 0)),
+    boss: Math.max(0, Math.round(Number.isFinite(challenges.boss) ? challenges.boss : 0)),
+    bestScore: Math.max(0, Math.round(Number.isFinite(challenges.bestScore) ? challenges.bestScore : 0)),
+    bestBossTimeMs: Number.isFinite(challenges.bestBossTimeMs) ? Math.max(0, Math.round(challenges.bestBossTimeMs)) : null,
+  };
+}
+
+function formatSessionChallengeBreakdown(challenges = {}) {
+  const stats = createReportChallenges(challenges);
+  if (!stats.started && !stats.completed && !stats.blitz && !stats.wave && !stats.boss) {
+    return "Challenges: none";
+  }
+  const types = [];
+  if (stats.blitz) types.push(`Blitz ${stats.blitz}`);
+  if (stats.wave) types.push(`Wave ${stats.wave}`);
+  if (stats.boss) types.push(`Worksheet ${stats.boss}`);
+  const activity = types.length > 0 ? ` · activity: ${types.join(" · ")}` : "";
+  const bests = [];
+  if (stats.bestBossTimeMs !== null) bests.push(`best worksheet ${formatDuration(stats.bestBossTimeMs)}`);
+  if (stats.bestScore > 0) bests.push(`best score ${stats.bestScore}`);
+  return [
+    `Challenges: ${stats.started} started, ${stats.completed} completed`,
+    `${stats.cleared} cleared`,
+    bests.join(" · "),
+  ].filter(Boolean).join(" · ") + activity;
+}
+
+function createReportLevelSnapshot(snapshot = {}, fallbackLevel = 1) {
+  return {
+    level: clamp(1, 10, Math.round(Number.isFinite(snapshot.level) ? snapshot.level : fallbackLevel)),
+    readiness: clamp(0, 100, Math.round(Number.isFinite(snapshot.readiness) ? snapshot.readiness : 0)),
+    masteredCount: Math.max(0, Math.round(Number.isFinite(snapshot.masteredCount) ? snapshot.masteredCount : 0)),
+    universeCount: Math.max(0, Math.round(Number.isFinite(snapshot.universeCount) ? snapshot.universeCount : 0)),
+  };
+}
+
+function createReportLevel(level = {}) {
+  const levelNumber = clamp(1, 10, Math.round(Number.isFinite(level.level) ? level.level : 1));
+  const started = createReportLevelSnapshot(level.started, levelNumber);
+  const ended = createReportLevelSnapshot(level.ended, levelNumber);
+  return {
+    level: levelNumber,
+    started,
+    ended,
+    masteryDelta: Number.isFinite(level.masteryDelta) ? Math.round(level.masteryDelta) : ended.readiness - started.readiness,
+  };
+}
+
+function createReportOperation(operation = {}) {
+  const levels = getSessionReportLevels(operation).map(createReportLevel);
+  return {
+    opKey: operation.opKey || "unknown",
+    durationMs: Math.max(0, Math.round(Number.isFinite(operation.durationMs) ? operation.durationMs : 0)),
+    practice: createReportStats(operation.practice),
+    assessment: createReportStats(operation.assessment),
+    challenges: createReportChallenges(operation.challenges),
+    levels,
+  };
+}
+
+function createSessionReportViewModel(session = {}) {
+  return {
+    id: session.id || "",
+    startedAt: session.startedAt || "",
+    durationMs: Math.max(0, Math.round(Number.isFinite(session.durationMs) ? session.durationMs : 0)),
+    practice: createReportStats(session.practice),
+    assessment: createReportStats(session.assessment),
+    challenges: createReportChallenges(session.challenges),
+    operations: Array.isArray(session.operations) ? session.operations.map(createReportOperation) : [],
+  };
+}
+
+function compactReportStats(stats) {
+  const normalized = createReportStats(stats);
+  return [normalized.attempts, normalized.correct, normalized.wrong, normalized.missed, normalized.helped];
+}
+
+function expandCompactReportStats(row = []) {
+  return createReportStats({
+    attempts: row[0],
+    correct: row[1],
+    wrong: row[2],
+    missed: row[3],
+    helped: row[4],
+  });
+}
+
+function compactReportChallenges(challenges) {
+  const normalized = createReportChallenges(challenges);
+  return [
+    normalized.started,
+    normalized.completed,
+    normalized.cleared,
+    normalized.blitz,
+    normalized.wave,
+    normalized.boss,
+    normalized.bestScore,
+    normalized.bestBossTimeMs,
+  ];
+}
+
+function expandCompactReportChallenges(row = []) {
+  return createReportChallenges({
+    started: row[0],
+    completed: row[1],
+    cleared: row[2],
+    blitz: row[3],
+    wave: row[4],
+    boss: row[5],
+    bestScore: row[6],
+    bestBossTimeMs: row[7],
+  });
+}
+
+function compactSessionReportViewModel(report) {
+  const model = createSessionReportViewModel(report);
+  return [
+    model.id,
+    model.startedAt,
+    model.durationMs,
+    compactReportStats(model.practice),
+    compactReportStats(model.assessment),
+    compactReportChallenges(model.challenges),
+    model.operations.map((operation) => {
+      const opIndex = Object.keys(operationDefaults).indexOf(operation.opKey);
+      return [
+        opIndex >= 0 ? opIndex : operation.opKey,
+        operation.durationMs,
+        compactReportStats(operation.practice),
+        compactReportStats(operation.assessment),
+        compactReportChallenges(operation.challenges),
+        operation.levels.map((level) => [
+          level.level,
+          level.started.readiness,
+          level.ended.readiness,
+          level.masteryDelta,
+          level.started.masteredCount,
+          level.started.universeCount,
+          level.ended.masteredCount,
+          level.ended.universeCount,
+        ]),
+      ];
+    }),
+  ];
+}
+
+function expandCompactSessionReportViewModel(row = []) {
+  const opKeys = Object.keys(operationDefaults);
+  return createSessionReportViewModel({
+    id: row[0],
+    startedAt: row[1],
+    durationMs: row[2],
+    practice: expandCompactReportStats(row[3]),
+    assessment: expandCompactReportStats(row[4]),
+    challenges: expandCompactReportChallenges(row[5]),
+    operations: Array.isArray(row[6])
+      ? row[6].map((operation) => ({
+          opKey: typeof operation[0] === "string" ? operation[0] : opKeys[operation[0]] || "unknown",
+          durationMs: operation[1],
+          practice: expandCompactReportStats(operation[2]),
+          assessment: expandCompactReportStats(operation[3]),
+          challenges: expandCompactReportChallenges(operation[4]),
+          levels: Array.isArray(operation[5])
+            ? operation[5].map((level) => ({
+                level: level[0],
+                started: {
+                  level: level[0],
+                  readiness: level[1],
+                  masteredCount: level[4],
+                  universeCount: level[5],
+                },
+                ended: {
+                  level: level[0],
+                  readiness: level[2],
+                  masteredCount: level[6],
+                  universeCount: level[7],
+                },
+                masteryDelta: level[3],
+              }))
+            : [],
+        }))
+      : [],
+  });
 }
 
 // Skill-state display/predicate helpers, operating on a summarized skill.
@@ -1455,6 +1654,9 @@ function falseFireCost({ distinctAnswerCount, visibleDistinctAnswers }) {
 // id that carries the checksum). Must be rebuilt in this exact order on both
 // sides for the tamper check to line up.
 function shareContentString(p) {
+  if (p?.v === 2) {
+    return JSON.stringify({ note: p.note, v: p.v, n: p.n, r: p.r });
+  }
   return JSON.stringify({ note: p.note, v: p.v, name: p.name, sessionLog: p.sessionLog });
 }
 
@@ -1522,6 +1724,10 @@ export {
   formatSessionSummary,
   getSessionReportLevels,
   formatSessionOperationStats,
+  formatSessionChallengeBreakdown,
+  createSessionReportViewModel,
+  compactSessionReportViewModel,
+  expandCompactSessionReportViewModel,
   formatSessionLogDetails,
   formatAccuracyText,
   getCourseProgressPercent,

@@ -38,6 +38,10 @@ import {
   formatSessionSummary,
   getSessionReportLevels,
   formatSessionOperationStats,
+  formatSessionChallengeBreakdown,
+  createSessionReportViewModel,
+  compactSessionReportViewModel,
+  expandCompactSessionReportViewModel,
   formatSessionLogDetails,
   formatAccuracyText,
   getCourseProgressPercent,
@@ -302,6 +306,11 @@ describe("difficulty ranges", () => {
     assert.equal(verifyShareChecksum(payload, salt), true); // intact
     assert.equal(verifyShareChecksum({ ...payload, name: "Eve" }, salt), false); // tampered
     assert.equal(verifyShareChecksum(content, salt), true); // legacy blob with no id is accepted
+
+    const compact = { note: "CHEATER 🚩", v: 2, n: "Ada", r: [["s1", "2026-01-01T00:00:00.000Z"]] };
+    const compactChecksum = computeShareChecksum(compact, salt);
+    assert.equal(verifyShareChecksum({ ...compact, id: `rmabc123-${compactChecksum}` }, salt), true);
+    assert.equal(verifyShareChecksum({ ...compact, n: "Eve", id: `rmabc123-${compactChecksum}` }, salt), false);
   });
 
   it("resolves stats-key display labels per operation", () => {
@@ -355,14 +364,14 @@ describe("difficulty ranges", () => {
       formatSessionOperationStats({
         practice: { correct: 6, missed: 2, wrong: 1, attempts: 9 },
         assessment: { correct: 3, missed: 1, wrong: 0, attempts: 4 },
-        challenges: { started: 2, completed: 1 },
+        challenges: { started: 2, completed: 1, cleared: 1, blitz: 1, wave: 1, boss: 0, bestScore: 7, bestBossTimeMs: null },
       }),
       [
         "Correct/missed: 9/3",
         "Practice attempts: 9",
         "Wrong: 1",
         "Boss/challenge attempts: 4",
-        "Challenges: 2 started, 1 completed",
+        "Challenges: 2 started, 1 completed · 1 cleared · best score 7 · activity: Blitz 1 · Wave 1",
       ]
     );
     // practice-only: no wrong/assessment/challenge lines
@@ -373,6 +382,23 @@ describe("difficulty ranges", () => {
         challenges: { started: 0, completed: 0 },
       }),
       ["Correct/missed: 5/0", "Practice attempts: 5"]
+    );
+  });
+
+  it("formats rich challenge breakdowns for reports", () => {
+    assert.equal(formatSessionChallengeBreakdown({}), "Challenges: none");
+    assert.equal(
+      formatSessionChallengeBreakdown({
+        started: 2,
+        completed: 2,
+        cleared: 1,
+        blitz: 1,
+        wave: 1,
+        boss: 2,
+        bestScore: 9,
+        bestBossTimeMs: 65000,
+      }),
+      "Challenges: 2 started, 2 completed · 1 cleared · best worksheet 1:05 · best score 9 · activity: Blitz 1 · Wave 1 · Worksheet 2"
     );
   });
 
@@ -403,6 +429,36 @@ describe("difficulty ranges", () => {
       getSessionReportLevels({ levels: [], started: { level: 5 }, ended: {}, masteryDelta: 0 }).length,
       1
     );
+  });
+
+  it("builds and round-trips compact session report view models", () => {
+    const report = createSessionReportViewModel({
+      id: "session-1",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      durationMs: 65000,
+      practice: { attempts: 4, correct: 3, wrong: 1, missed: 0, helped: 0 },
+      assessment: { attempts: 2, correct: 1, wrong: 0, missed: 1, helped: 0 },
+      challenges: { started: 2, completed: 2, cleared: 1, blitz: 1, wave: 1, boss: 2, bestScore: 9, bestBossTimeMs: 65000 },
+      operations: [
+        {
+          opKey: "add",
+          durationMs: 4000,
+          practice: { attempts: 4, correct: 3, wrong: 1, missed: 0, helped: 0 },
+          assessment: { attempts: 2, correct: 1, wrong: 0, missed: 1, helped: 0 },
+          challenges: { started: 2, completed: 2, cleared: 1, blitz: 1, wave: 1, boss: 2, bestScore: 9, bestBossTimeMs: 65000 },
+          levels: [
+            {
+              level: 1,
+              started: { level: 1, readiness: 44, masteredCount: 4, universeCount: 9 },
+              ended: { level: 1, readiness: 100, masteredCount: 9, universeCount: 9 },
+              masteryDelta: 56,
+            },
+          ],
+        },
+      ],
+    });
+
+    assert.deepEqual(expandCompactSessionReportViewModel(compactSessionReportViewModel(report)), report);
   });
 
   it("formats the session-report summary line", () => {

@@ -36,6 +36,7 @@ Kebab-case slug describing the feature: `answer-space-aware-overload.md`,
 
 ## Index
 Keep this list current (newest meaningful first):
+- `richer-report-and-compact-share-link.md` — Status: landed — clearer session reports and shorter parent share links.
 - `answer-space-aware-overload.md` — Status: landed — guessability-weighted cannon overload.
 
 ---
