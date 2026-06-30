@@ -228,10 +228,34 @@ function generateFactorsOfTenProblem(difficulty = 1, rng = Math.random) {
   return makeFactorsOfTenProblem(types[randInt(0, types.length - 1, rng)], rng);
 }
 
-// Rounding & estimation. Like factors-of-10, mastery is per complexity bucket
-// rather than per literal number: input size band × target place. The concrete
-// number is sampled at spawn time.
+// Rounding & estimation. Like factors-of-10, mastery is per conceptual bucket
+// rather than per literal number. Here each bucket is a rounding case (down,
+// up, half, zero, carry) scoped to a level's place and size relationship.
 const ROUND_MAX_LEVEL = 10;
+const ROUND_PLACES = {
+  ten: 10,
+  hundred: 100,
+  thousand: 1000,
+  tenth: 0.1,
+  hundredth: 0.01,
+  thousandth: 0.001,
+};
+
+const ROUND_RELATION_LABELS = {
+  norm: "normal",
+  big: "larger numbers",
+  cross: "crossing to 0/one unit",
+  extra: "extra precision",
+  mix: "mixed review",
+};
+
+const ROUND_CASE_LABELS = {
+  down: "round down",
+  up: "round up",
+  half: "half rounds up",
+  zero: "already rounded",
+  carry: "carry to next place",
+};
 
 function countDecimalPlaces(value) {
   const str = String(value);
@@ -256,92 +280,126 @@ function roundToPlace(value, place) {
 }
 
 function roundTypeStatsKey(type) {
-  const kind = type.kind === "integer" ? "d" : "i";
-  const suffix = type.harder ? ":h" : "";
-  return `r:${type.band}${kind}:${formatRoundPlace(type.place)}${suffix}`;
+  return `r:${type.placeKey}:${type.relation}:${type.caseName}`;
 }
 
 function roundTypeFromKey(statsKey) {
-  const parts = String(statsKey).split(":");
-  const bandMatch = parts[1]?.match(/^(\d+)([di])$/);
-  if (parts[0] !== "r" || !bandMatch) return null;
-  return {
-    band: Number(bandMatch[1]),
-    kind: bandMatch[2] === "d" ? "integer" : "decimal",
-    place: Number(parts[2]),
-    harder: parts[3] === "h",
-    statsKey,
+  return allRoundTypes().find((type) => type.statsKey === String(statsKey)) || null;
+}
+
+function makeRoundType(placeKey, relation, caseName, minValue, maxValue, inputDecimals = 0) {
+  const place = ROUND_PLACES[placeKey];
+  const scale = pow10(inputDecimals);
+  const type = {
+    placeKey,
+    place,
+    relation,
+    caseName,
+    inputDecimals,
+    minUnits: Math.round(minValue * scale),
+    maxUnits: Math.round(maxValue * scale),
   };
-}
-
-function maxRoundInputValue(type) {
-  if (type.kind === "integer") return pow10(type.band) - 1;
-  return pow10(type.band) - Math.pow(10, -roundInputDecimals(type));
-}
-
-function roundInputDecimals(type) {
-  if (type.kind === "integer") return 0;
-  return countDecimalPlaces(type.place) + 1 + (type.harder ? 1 : 0);
-}
-
-function makeRoundType(band, place, kind = "integer", harder = false) {
-  const type = { band, place, kind, harder };
   return { ...type, statsKey: roundTypeStatsKey(type) };
 }
 
-function keepRoundType(type) {
-  return maxRoundInputValue(type) >= type.place / 2;
+function roundLevelSpecs(level) {
+  const int = 0;
+  if (level === 1) return [["ten", "norm", ["down", "up", "half", "zero"], 10, 99, int]];
+  if (level === 2) return [["ten", "big", ["down", "up", "half", "zero", "carry"], 100, 9999, int]];
+  if (level === 3) return [["ten", "cross", ["down", "up"], 1, 9, int]];
+  if (level === 4) return [["hundred", "norm", ["down", "up", "half", "zero"], 100, 9999, int]];
+  if (level === 5) {
+    return [
+      ["hundred", "cross", ["down", "up", "half"], 1, 99, int],
+      ["thousand", "norm", ["down", "up", "half", "zero", "carry"], 1000, 99999, int],
+    ];
+  }
+  if (level === 6) return [["tenth", "norm", ["down", "up", "half", "zero"], 1, 9.99, 2]];
+  if (level === 7) return [["tenth", "extra", ["down", "up", "half", "carry"], 1, 99.999, 3]];
+  if (level === 8) return [["hundredth", "norm", ["down", "up", "half", "zero"], 1, 9.999, 3]];
+  if (level === 9) {
+    return [
+      ["tenth", "cross", ["down", "up", "half"], 0.01, 0.09, 2],
+      ["hundredth", "cross", ["down", "up", "half"], 0.001, 0.009, 3],
+    ];
+  }
+  return [
+    ["thousandth", "norm", ["down", "up", "half", "zero", "carry"], 1, 9.9999, 4],
+    ["tenth", "mix", ["down", "up"], 1, 99.999, 3],
+    ["hundredth", "mix", ["half"], 1, 99.999, 3],
+  ];
+}
+
+function makeRoundTypesFromSpecs(specs) {
+  return specs.flatMap(([placeKey, relation, cases, minValue, maxValue, decimals]) =>
+    cases.map((caseName) => makeRoundType(placeKey, relation, caseName, minValue, maxValue, decimals))
+  );
 }
 
 function roundTypesForLevel(level) {
   const lvl = clamp(1, ROUND_MAX_LEVEL, Math.round(level || 1));
-  const types = [];
-  const addTypes = (places, bands, kind, harder = false) => {
-    for (const place of places) {
-      for (const band of bands) {
-        const type = makeRoundType(band, place, kind, harder);
-        if (keepRoundType(type)) types.push(type);
-      }
+  return makeRoundTypesFromSpecs(roundLevelSpecs(lvl));
+}
+
+function allRoundTypes() {
+  const byKey = new Map();
+  for (let level = 1; level <= ROUND_MAX_LEVEL; level += 1) {
+    for (const type of roundTypesForLevel(level)) {
+      byKey.set(type.statsKey, type);
     }
-  };
-
-  if (lvl === 1) addTypes([10], [1, 2], "integer");
-  else if (lvl === 2) addTypes([10], [1, 2, 3], "integer");
-  else if (lvl === 3) addTypes([100], [1, 2, 3, 4], "integer");
-  else if (lvl === 4) addTypes([10, 100], [2, 3, 4], "integer");
-  else if (lvl === 5) addTypes([10, 100, 1000], [2, 3, 4, 5], "integer");
-  else if (lvl === 6) addTypes([0.1], [1, 2], "decimal");
-  else if (lvl === 7) addTypes([0.1], [2, 3, 4], "decimal", true);
-  else if (lvl === 8) addTypes([0.1, 0.01], [1, 2], "decimal");
-  else if (lvl === 9) addTypes([0.1, 0.01], [2, 3, 4], "decimal", true);
-  else addTypes([0.1, 0.01, 0.001], [1, 2, 3], "decimal");
-
-  return types;
+  }
+  return [...byKey.values()];
 }
 
 function roundTypeLabel(type) {
-  const size =
-    type.kind === "integer"
-      ? `${type.band}-digit number`
-      : `${type.band}-digit integer part${type.harder ? ", extra decimal" : ""}`;
-  return `${size} to nearest ${formatRoundPlace(type.place)}`;
+  const relation = ROUND_RELATION_LABELS[type.relation] || type.relation;
+  const caseLabel = ROUND_CASE_LABELS[type.caseName] || type.caseName;
+  return `nearest ${formatRoundPlace(type.place)} · ${relation} · ${caseLabel}`;
+}
+
+function roundCaseMatches(units, type) {
+  const scale = pow10(type.inputDecimals);
+  const placeUnits = Math.round(type.place * scale);
+  const remainder = ((units % placeUnits) + placeUnits) % placeUnits;
+  const quotient = Math.floor(units / placeUnits);
+  const half = placeUnits / 2;
+  const isCarry = quotient % 10 === 9 && remainder > half;
+
+  if (type.relation === "cross" && !(units > 0 && units < placeUnits)) return false;
+  if (type.relation !== "cross" && units < placeUnits) return false;
+
+  if (type.caseName === "zero") return remainder === 0;
+  if (type.caseName === "half") return remainder === half;
+  if (type.caseName === "carry") return isCarry;
+  if (type.caseName === "down") return remainder > 0 && remainder < half;
+  if (type.caseName === "up") return remainder > half && !isCarry;
+  return false;
 }
 
 function sampleRoundInput(type, rng = Math.random) {
-  if (type.kind === "integer") {
-    const min = type.band === 1 ? 1 : pow10(type.band - 1);
-    const max = pow10(type.band) - 1;
-    return { value: randInt(min, max, rng), text: "" };
+  let units = null;
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    const candidate = randInt(type.minUnits, type.maxUnits, rng);
+    if (roundCaseMatches(candidate, type)) {
+      units = candidate;
+      break;
+    }
   }
+  if (units === null) {
+    for (let candidate = type.minUnits; candidate <= type.maxUnits; candidate += 1) {
+      if (roundCaseMatches(candidate, type)) {
+        units = candidate;
+        break;
+      }
+    }
+  }
+  if (units === null) throw new Error(`No constructible rounding sample for ${type.statsKey}`);
 
-  const inputDecimals = roundInputDecimals(type);
-  const minInt = type.band === 1 ? 1 : pow10(type.band - 1);
-  const maxInt = pow10(type.band) - 1;
-  const scale = pow10(inputDecimals);
-  const minScaled = minInt * scale;
-  const maxScaled = maxInt * scale + (scale - 1);
-  const scaled = randInt(minScaled, maxScaled, rng);
-  return { value: scaled / scale, text: formatFixedScale(scaled, inputDecimals) };
+  const value = units / pow10(type.inputDecimals);
+  return {
+    value,
+    text: type.inputDecimals > 0 ? formatFixedScale(units, type.inputDecimals) : String(units),
+  };
 }
 
 function makeRoundProblem(type, rng = Math.random) {
@@ -1515,7 +1573,10 @@ function formatStatsKeyLabel(opKey, statsKey) {
   if (opKey === "si") return formatSIStatsKey(statsKey);
   if (opKey === "shapes") return makeShapeProblemFromKey(statsKey).text;
   if (opKey === "pow") return makePowProblemFromKey(statsKey).text;
-  if (opKey === "round") return roundTypeFromKey(statsKey) ? roundTypeLabel(roundTypeFromKey(statsKey)) : statsKey;
+  if (opKey === "round") {
+    const type = roundTypeFromKey(statsKey);
+    return type ? roundTypeLabel(type) : statsKey;
+  }
   if (opKey === "f10") return formatF10StatsKey(statsKey);
   return statsKey;
 }

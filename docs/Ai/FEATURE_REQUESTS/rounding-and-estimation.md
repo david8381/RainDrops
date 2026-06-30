@@ -1,9 +1,9 @@
 # Feature: Rounding & Estimation operation
 
-Status: v1 landed; **grid revision agreed — ready for implementation** (see "Revision" below)
-Owner: Codex (planned by Claude; Claude to review)
+Status: landed (v1 + case-based grid revision)
+Owner: Codex (planned by Claude; reviewed by Claude)
 Last Updated: 2026-06-30
-Related Commits: v1 ea8bb27; revision (pending)
+Related Commits: v1 ea8bb27; revision (this commit)
 
 ## User Request
 Add a foundational elementary skill the game lacks: **rounding / estimation**. David
@@ -228,3 +228,15 @@ The one risk is the **sampler failing to construct a valid number** for a tight 
 (e.g. carry at a small band, or `half` where `place/2` isn't representable at the input
 granularity). Codex: guarantee every listed cell is constructible (and unit-test it); I'll
 verify each cell yields valid, in-case problems during review.
+
+### Revision outcome
+Implemented by Codex on 2026-06-30:
+- Replaced the v1 band-by-place rounding grid with case cells scoped by place and
+  size relationship. Per-level counts now match `[4,5,2,4,8,4,4,4,6,8]`.
+- Added stable case stats keys such as `r:tenth:norm:half`,
+  `r:hundred:cross:up`, and `r:tenth:extra:carry`.
+- Reworked the sampler so every cell constructs a positive number in the requested
+  range and case, including carry and crossing cases; unit tests now validate every
+  listed cell by reclassifying the generated prompt.
+- Kept the v1 UI/plumbing: same `≈` chit, own lane, immediate numeric clearing,
+  universe routing, Grid popup, boss/worksheet support, and tutorial integration.

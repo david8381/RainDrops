@@ -180,18 +180,18 @@ test.describe("desktop gameplay", () => {
       text: "3.45 ≈ 0.1",
       answer: 3.5,
       answerText: "3.5",
-      statsKey: "r:1i:0.1",
+      statsKey: "r:tenth:norm:half",
       y: 120,
     });
 
     const state = await invoke(page, "submit", "3.50");
     expect(state.drops).toHaveLength(0);
-    expect(state.problemStats.round["r:1i:0.1"]).toEqual({ asked: 1, correct: 1 });
+    expect(state.problemStats.round["r:tenth:norm:half"]).toEqual({ asked: 1, correct: 1 });
 
     await page.locator('.diff-card[data-op="round"] .diff-grid-hint').click();
     await expect(page.locator("#statsOverlay h2")).toHaveText("Rounding — Problem Accuracy");
-    await expect(page.locator("#statsOverlay .stats-f10-row")).toHaveCount(2);
-    await expect(page.locator("#statsOverlay")).toContainText("1-digit integer part to nearest 0.1");
+    await expect(page.locator("#statsOverlay .stats-f10-row")).toHaveCount(4);
+    await expect(page.locator("#statsOverlay")).toContainText("nearest 0.1 · normal · half rounds up");
   });
 
   test("requires mastery before increasing a level and locks controls during boss", async ({ page }) => {

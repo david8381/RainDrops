@@ -36,7 +36,7 @@ Kebab-case slug describing the feature: `answer-space-aware-overload.md`,
 
 ## Index
 Keep this list current (newest meaningful first):
-- `rounding-and-estimation.md` — Status: v1 landed; grid revision agreed — `≈` Rounding/estimation (case-based grid: cells=cases, levels=place+size).
+- `rounding-and-estimation.md` — Status: landed — `≈` Rounding/estimation (case-based grid: cells=cases, levels=place+size).
 - `boss-mode-control-legibility.md` — Status: landed — make silently-gated boss/challenge controls show their locked state + reason (touch-friendly).
 - `session-continuity-and-finish.md` — Status: landed — one report per sitting (resume recent session) + a "Finish" share-the-report control.
 - `richer-report-and-compact-share-link.md` — Status: landed — clearer session reports and shorter parent share links.

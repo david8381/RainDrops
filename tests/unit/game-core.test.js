@@ -106,6 +106,45 @@ function sequenceRng(values) {
   };
 }
 
+function parseRoundProblem(problem) {
+  const [valueText, , placeText] = problem.text.split(" ");
+  return { value: Number(valueText), place: Number(placeText) };
+}
+
+function assertRoundProblemMatchesType(problem, type) {
+  const { value, place } = parseRoundProblem(problem);
+  const scale = 10 ** type.inputDecimals;
+  const units = Math.round(value * scale);
+  const placeUnits = Math.round(type.place * scale);
+  const remainder = ((units % placeUnits) + placeUnits) % placeUnits;
+  const quotient = Math.floor(units / placeUnits);
+  const half = placeUnits / 2;
+  const isCarry = quotient % 10 === 9 && remainder > half;
+
+  assert.equal(problem.statsKey, type.statsKey);
+  assert.equal(place, type.place);
+  assert.equal(problem.answer, roundToPlace(value, type.place));
+  assert.ok(units >= type.minUnits, `${type.statsKey} sampled below range: ${value}`);
+  assert.ok(units <= type.maxUnits, `${type.statsKey} sampled above range: ${value}`);
+
+  if (type.relation === "cross") {
+    assert.ok(units > 0 && units < placeUnits, `${type.statsKey} should cross below the place`);
+  } else {
+    assert.ok(units >= placeUnits, `${type.statsKey} should have kept digits above the place`);
+  }
+
+  if (type.caseName === "zero") assert.equal(remainder, 0, `${type.statsKey} should already be rounded`);
+  else if (type.caseName === "half") assert.equal(remainder, half, `${type.statsKey} should be exactly half`);
+  else if (type.caseName === "carry") assert.equal(isCarry, true, `${type.statsKey} should carry`);
+  else if (type.caseName === "down") assert.ok(remainder > 0 && remainder < half, `${type.statsKey} should round down`);
+  else if (type.caseName === "up") assert.ok(remainder > half && !isCarry, `${type.statsKey} should round up without carrying`);
+
+  if (type.relation === "cross" && type.caseName === "down") assert.equal(problem.answer, 0);
+  if (type.relation === "cross" && (type.caseName === "up" || type.caseName === "half")) {
+    assert.equal(problem.answer, type.place);
+  }
+}
+
 describe("numeric utilities", () => {
   it("clamps and normalizes typed numeric input", () => {
     assert.equal(clamp(1, 10, -2), 1);
@@ -742,11 +781,11 @@ describe("problem generation", () => {
 
   it("generates rounding problems with bucket stats keys", () => {
     const config = createDefaultOpConfig();
-    config.round.difficulty = 8;
+    config.round.difficulty = 6;
     const problem = generateProblem("round", config, sequenceRng([0, 0.42]));
     assert.equal(problem.opKey, "round");
     assert.match(problem.text, /^.+ ≈ 0\.1$/);
-    assert.match(problem.statsKey, /^r:\d+i:0\.1/);
+    assert.match(problem.statsKey, /^r:tenth:norm:/);
     assert.equal(Number(problem.answerText), problem.answer);
     assert.equal(problem.answer, roundToPlace(Number(problem.text.split(" ")[0]), 0.1));
 
@@ -791,30 +830,36 @@ describe("problem generation", () => {
   });
 
   it("builds rounding buckets and samples problems from their stats keys", () => {
-    const counts = [2, 3, 3, 6, 11, 2, 3, 4, 6, 9];
+    const counts = [4, 5, 2, 4, 8, 4, 4, 4, 6, 8];
     counts.forEach((count, index) => {
       assert.equal(roundTypesForLevel(index + 1).length, count);
       assert.equal(getRoundUniverse(index + 1).length, count);
     });
 
-    assert.ok(!roundTypesForLevel(3).some((type) => type.band === 1 && type.place === 100));
-    assert.ok(!roundTypesForLevel(5).some((type) => type.band === 2 && type.place === 1000));
+    assert.ok(!roundTypesForLevel(3).some((type) => type.caseName === "half"));
+    assert.ok(!roundTypesForLevel(9).some((type) => type.relation === "cross" && type.caseName === "zero"));
 
-    const intProblem = makeRoundProblemFromKey("r:2d:10", sequenceRng([0.5]));
+    for (let level = 1; level <= 10; level += 1) {
+      for (const type of roundTypesForLevel(level)) {
+        const problem = makeRoundProblemFromKey(type.statsKey, sequenceRng([0]));
+        assertRoundProblemMatchesType(problem, type);
+      }
+    }
+
+    const intProblem = makeRoundProblemFromKey("r:ten:norm:half", sequenceRng([0.5]));
     assert.equal(intProblem.opKey, "round");
-    assert.equal(intProblem.statsKey, "r:2d:10");
     assert.match(intProblem.text, /^\d+ ≈ 10$/);
-    assert.equal(intProblem.answer, roundToPlace(Number(intProblem.text.split(" ")[0]), 10));
+    assertRoundProblemMatchesType(intProblem, roundTypesForLevel(1).find((type) => type.statsKey === "r:ten:norm:half"));
 
-    const decProblem = makeRoundProblemFromKey("r:1i:0.01", sequenceRng([0.276]));
-    assert.equal(decProblem.opKey, "round");
-    assert.equal(decProblem.statsKey, "r:1i:0.01");
-    assert.match(decProblem.text, /^\d+\.\d{3} ≈ 0\.01$/);
-    assert.equal(decProblem.answer, roundToPlace(Number(decProblem.text.split(" ")[0]), 0.01));
+    const crossProblem = makeRoundProblemFromKey("r:hundred:cross:up", sequenceRng([0]));
+    assert.match(crossProblem.text, /^\d+ ≈ 100$/);
+    assert.equal(crossProblem.answer, 100);
 
-    const hardProblem = makeRoundProblemFromKey("r:2i:0.1:h", sequenceRng([0]));
-    assert.match(hardProblem.text, /^\d+\.\d{3} ≈ 0\.1$/);
-    assert.equal(formatStatsKeyLabel("round", "r:2i:0.1:h"), "2-digit integer part, extra decimal to nearest 0.1");
+    const carryProblem = makeRoundProblemFromKey("r:tenth:extra:carry", sequenceRng([0]));
+    assert.match(carryProblem.text, /^\d+\.\d{3} ≈ 0\.1$/);
+    assertRoundProblemMatchesType(carryProblem, roundTypesForLevel(7).find((type) => type.statsKey === "r:tenth:extra:carry"));
+
+    assert.equal(formatStatsKeyLabel("round", "r:tenth:extra:carry"), "nearest 0.1 · extra precision · carry to next place");
   });
 
   it("builds powers & roots with clean answers and a cumulative level ladder", () => {
