@@ -1,9 +1,9 @@
 # Feature: Rounding & Estimation operation
 
-Status: landed
-Owner: Codex (planned by Claude; reviewed by Claude)
+Status: v1 landed; **grid revision agreed — ready for implementation** (see "Revision" below)
+Owner: Codex (planned by Claude; Claude to review)
 Last Updated: 2026-06-30
-Related Commits: (this commit)
+Related Commits: v1 ea8bb27; revision (pending)
 
 ## User Request
 Add a foundational elementary skill the game lacks: **rounding / estimation**. David
@@ -140,3 +140,91 @@ Implemented by Codex on 2026-06-30:
 - Wired rounding into ordinary and weighted problem generation, profile universe sizing,
   mastery/readiness, boss/challenge fact-sheet support, stats labels, and the Grid popup.
 - Updated Tutorial/PURPOSE/ARCHITECTURE/CHANGELOG plus unit/e2e coverage.
+
+---
+
+## Revision (2026-06-30): case-based grid — supersedes the band×place grid above
+
+David's feedback after v1 shipped: the **rounding decision is the real concept**, and the
+input-size-vs-place **relationship** is *also* conceptual, not just difficulty (e.g.
+`7 ≈ 100` — "closer to 0 or 100?" — is genuinely hard; `472 ≈ 10` means ignoring noise
+digits). The v1 `band × place` grid blurred these. New model:
+
+### Model
+- **Grid cell = the rounding CASE** (the decision). Let remainder `r = value mod place`,
+  `0 ≤ r < place`:
+  - `down` — `0 < r < place/2` → rounds down (`73 ≈ 10 → 70`)
+  - `up` — `place/2 < r < place` → rounds up (`78 ≈ 10 → 80`)
+  - `half` — `r == place/2` → rounds up by the half-up rule (`75 ≈ 10 → 80`)
+  - `zero` (already-there) — `r == 0` → unchanged (`70 ≈ 10 → 70`)
+  - `carry` — an `up` whose result gains a digit (`497 ≈ 10 → 500`, `9.97 ≈ 0.1 → 10`)
+- **Level = place + size-relationship.** Magnitude becomes the *level*, not a cell.
+  `relationship ∈ { normal (number has kept digits above the place), crossing (number
+  smaller than the place → rounds to 0 or one whole place-unit) }`.
+- **Prune degenerate cells:** no `zero` on crossing levels (only 0); drop single-number
+  cells (e.g. the lone `5` half at 1-digit→ten — that case is taught at the 2-digit level
+  where it varies: 15, 25, 35…).
+
+### The 10-level ladder
+| Lvl | Place | Size / relationship | Cells (cases) | # |
+|----|----|----|----|----|
+| 1 | ten | normal, 2-digit (easy opener) | down · up · half · zero | 4 |
+| 2 | ten | bigger 3–4 digit + carry | down · up · half · zero · carry | 5 |
+| 3 | ten | crossing, 1-digit (7→10, 3→0) | down(→0) · up(→10) | 2 |
+| 4 | hundred | normal, 3–4 digit | down · up · half · zero | 4 |
+| 5 | hundred crossing + thousand (capstone) | small→100 (47→0, 62→100) & 4–5 digit→1000 | cross: down(→0)·up(→100)·half · thousand: down·up·half·zero·carry | 8 |
+| 6 | tenth | normal, `X.dd` | down · up · half · zero | 4 |
+| 7 | tenth | bigger / extra-decimal + carry (9.97→10.0) | down · up · half · carry | 4 |
+| 8 | hundredth | normal, `X.ddd` | down · up · half · zero | 4 |
+| 9 | tenth & hundredth | crossing-to-zero (0.04→0.0, 0.06→0.1) | each place: down(→0) · up · half | 6 |
+| 10 | thousandth + mixed (capstone) | `X.dddd` + review tenth/hundredth | down · up · half · zero · carry (+ mixed) | 8 |
+
+Difficulty is intentionally **non-monotonic in digit count**: 2-digit→ten is the gentle
+opener; the hard "crossing" cases (1-digit→ten, small→hundred) come later (L3, L5). No level
+exceeds ~8 cells; the **capstones L5/L10** mix prior places so those bosses feel substantial.
+
+### Generation
+- `statsKey` encodes `(place, relationship, case)`, e.g. `r:ten:norm:up`,
+  `r:hundred:cross:down`, `r:thousand:norm:carry`, `r:tenth:norm:half`. (Pick a clean, stable
+  scheme; it just has to round-trip and be unique per cell.)
+- A level descriptor lists its cells (place, relationship, case) + the digit-size range to
+  sample within. `makeRoundProblemFromKey` constructs a number `v` satisfying **all three**:
+  the right magnitude vs place (normal = has kept digits above the place; crossing = `v < place`),
+  and `v mod place` in the case's range (`0` for zero; `(0, p/2)` down; `= p/2` half;
+  `(p/2, p)` up; carry = an up where rounding gains a digit). Decimal levels: input carries
+  one more decimal place than the target (extra-decimal "harder" levels carry two).
+- `roundToPlace` is **unchanged** (already decimal-safe half-up). The capstones sample their
+  mixed cells across the listed places.
+
+### Implementation delta vs v1
+- Replace the v1 `roundTypesForLevel` / band-based bucket descriptors with the
+  case-based level descriptors above; keep `getRoundUniverse` / `makeRoundProblem(FromKey)` /
+  `generateRoundProblem` signatures and the game-core ↔ player-progress wiring (universe
+  routing, stats list, chit, generation) — only the *bucket definition + sampler* change.
+- `roundTypeLabel` → a case-aware label, e.g. "nearest 100 · round up", "nearest 10 ·
+  crosses to 0/10", so the grid/stats list reads as concepts.
+- Update the v1 unit tests (cell counts were `[2,3,3,6,11,2,3,4,6,9]`; new counts are
+  `[4,5,2,4,8,4,4,4,6,8]`) and add tests per below.
+
+### Updated acceptance criteria
+- Each level's grid shows its **case** cells (down/up/half/zero/carry as applicable), not
+  band buckets; per-level counts match `[4,5,2,4,8,4,4,4,6,8]`.
+- The sampler can **always** construct a valid number for every cell (esp. carry and
+  crossing) — no empty/degenerate cells slip through.
+- Spawned problems for a cell always fall in that cell's case (e.g. a `half` cell's number
+  has `r == place/2`; a `carry` cell's rounded answer has more digits than its input's place
+  group). Everything else (immediate clear, numeric-equal answers, own lane) unchanged.
+
+### Updated testing
+- **Unit:** per-cell sampler correctness — for each `(place, relationship, case)`, the sampled
+  `v` satisfies the case predicate and `roundToPlace(v, place)` matches the expected direction
+  (incl. carry gains a digit, crossing rounds to 0 or one unit); new per-level cell counts;
+  degenerate-cell pruning (no `zero` on crossing; no single-number cells).
+- **E2E:** unchanged in spirit — own-lane toggle, a sampled rounding drop clears on the typed
+  answer, the stats list renders the case cells.
+
+### Sanity-check flag for review
+The one risk is the **sampler failing to construct a valid number** for a tight cell
+(e.g. carry at a small band, or `half` where `place/2` isn't representable at the input
+granularity). Codex: guarantee every listed cell is constructible (and unit-test it); I'll
+verify each cell yields valid, in-case problems during review.
