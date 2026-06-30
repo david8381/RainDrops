@@ -93,6 +93,7 @@ const {
   getSelectionWeight,
   getSIPrefixesForDifficulty,
   getSIReferenceRows,
+  getRoundUniverse,
   getCourseProgressPercent,
   formatSIStatsKey,
   formatStatsKeyLabel,
@@ -814,6 +815,7 @@ const OP_SETS = {
   mul: "arithmetic",
   div: "arithmetic",
   f10: "arithmetic",
+  round: "round",
   shapes: "shapes",
   pow: "pow",
   si: "si",
@@ -3466,6 +3468,7 @@ const opDisplayLabels = {
   mul: "\u00d7",
   div: "\u00f7",
   f10: "x10",
+  round: "\u2248",
   si: "SI",
   shapes: "\u25b1",
   pow: "x\u207f",
@@ -3478,6 +3481,7 @@ const opDisplayNames = {
   mul: "Multiply",
   div: "Divide",
   f10: "Factors of 10",
+  round: "Rounding",
   si: "SI Conversions",
   shapes: "Shapes (P & A)",
   pow: "Powers & Roots",
@@ -4409,7 +4413,7 @@ function showStatsPopup(opKey) {
   if (opKey === "si") {
     card.appendChild(buildSIReferenceTable());
     card.appendChild(buildListStats(opKey, stats));
-  } else if (opKey === "f10" || opKey === "factor" || opKey === "shapes" || opKey === "pow") {
+  } else if (opKey === "f10" || opKey === "round" || opKey === "factor" || opKey === "shapes" || opKey === "pow") {
     card.appendChild(buildListStats(opKey, stats));
   } else {
     card.appendChild(buildGridStats(opKey, stats));
@@ -6010,7 +6014,12 @@ function buildSIReferenceTable() {
 }
 
 function buildListStats(opKey, stats) {
-  const entries = Object.entries(stats);
+  const entries = opKey === "round"
+    ? getRoundUniverse(opConfig.round.difficulty).map((problem) => [
+        problem.statsKey,
+        stats[problem.statsKey] || { asked: 0, correct: 0 },
+      ])
+    : Object.entries(stats);
   const wrap = document.createElement("div");
   wrap.className = "stats-f10-list";
 

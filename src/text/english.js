@@ -51,14 +51,14 @@ export const RainMathText = {
         target: ".op-chits",
         kicker: "Start here",
         title: "Choose problem types to work on.",
-        body: "Turn problem types on and off while the game is running. Arithmetic and x10 can mix; Shapes, SI, Powers & Roots, and factoring stay in their own lanes so answers do not collide.",
+        body: "Turn problem types on and off while the game is running. Arithmetic and x10 can mix; Rounding, Shapes, SI, Powers & Roots, and factoring stay in their own lanes so answers do not collide.",
         tip: "",
       },
       {
         target: ".game",
         kicker: "The playfield",
         title: "Read the drop, type the answer.",
-        body: "Most answers clear immediately as soon as the typed value matches. If a drop has the same answer as another, the game avoids showing both at once where that would be confusing.",
+        body: "Most answers clear immediately as soon as the typed value matches, including rounding prompts like 47 ≈ 10. If a drop has the same answer as another, the game avoids showing both at once where that would be confusing.",
         tip: "",
       },
       {

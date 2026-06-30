@@ -11,6 +11,7 @@ const operationDefaults = {
   mul: { enabled: false, difficulty: 1, symbol: "×", label: "×" },
   div: { enabled: false, difficulty: 1, symbol: "÷", label: "÷" },
   f10: { enabled: false, difficulty: 1, symbol: "×10", label: "x10" },
+  round: { enabled: false, difficulty: 1, symbol: "≈", label: "≈" },
   si: { enabled: false, difficulty: 1, symbol: "SI", label: "SI" },
   shapes: { enabled: false, difficulty: 1, symbol: "▱", label: "▱" },
   pow: { enabled: false, difficulty: 1, symbol: "xⁿ", label: "xⁿ" },
@@ -138,6 +139,10 @@ function getDifficultyRange(opKey, difficulty) {
     return { min: 1, max: F10_MAX_DIGITS };
   }
 
+  if (opKey === "round") {
+    return { min: 1, max: ROUND_MAX_LEVEL };
+  }
+
   if (opKey === "si") {
     return { min: 1, max: getSIPrefixesForDifficulty(d).length };
   }
@@ -221,6 +226,152 @@ function getF10Universe(level) {
 function generateFactorsOfTenProblem(difficulty = 1, rng = Math.random) {
   const types = f10TypesForLevel(difficulty);
   return makeFactorsOfTenProblem(types[randInt(0, types.length - 1, rng)], rng);
+}
+
+// Rounding & estimation. Like factors-of-10, mastery is per complexity bucket
+// rather than per literal number: input size band × target place. The concrete
+// number is sampled at spawn time.
+const ROUND_MAX_LEVEL = 10;
+
+function countDecimalPlaces(value) {
+  const str = String(value);
+  if (!str.includes(".")) return 0;
+  return str.split(".")[1].replace(/0+$/, "").length;
+}
+
+function formatDecimal(value, decimals) {
+  if (decimals <= 0) return String(Math.round(value));
+  return Number(value.toFixed(decimals)).toString();
+}
+
+function formatRoundPlace(place) {
+  return formatDecimal(place, countDecimalPlaces(place));
+}
+
+function roundToPlace(value, place) {
+  const decimals = countDecimalPlaces(place);
+  const quotient = value / place;
+  const rounded = Math.floor(quotient + 0.5 + 1e-10) * place;
+  return Number(formatDecimal(rounded, decimals));
+}
+
+function roundTypeStatsKey(type) {
+  const kind = type.kind === "integer" ? "d" : "i";
+  const suffix = type.harder ? ":h" : "";
+  return `r:${type.band}${kind}:${formatRoundPlace(type.place)}${suffix}`;
+}
+
+function roundTypeFromKey(statsKey) {
+  const parts = String(statsKey).split(":");
+  const bandMatch = parts[1]?.match(/^(\d+)([di])$/);
+  if (parts[0] !== "r" || !bandMatch) return null;
+  return {
+    band: Number(bandMatch[1]),
+    kind: bandMatch[2] === "d" ? "integer" : "decimal",
+    place: Number(parts[2]),
+    harder: parts[3] === "h",
+    statsKey,
+  };
+}
+
+function maxRoundInputValue(type) {
+  if (type.kind === "integer") return pow10(type.band) - 1;
+  return pow10(type.band) - Math.pow(10, -roundInputDecimals(type));
+}
+
+function roundInputDecimals(type) {
+  if (type.kind === "integer") return 0;
+  return countDecimalPlaces(type.place) + 1 + (type.harder ? 1 : 0);
+}
+
+function makeRoundType(band, place, kind = "integer", harder = false) {
+  const type = { band, place, kind, harder };
+  return { ...type, statsKey: roundTypeStatsKey(type) };
+}
+
+function keepRoundType(type) {
+  return maxRoundInputValue(type) >= type.place / 2;
+}
+
+function roundTypesForLevel(level) {
+  const lvl = clamp(1, ROUND_MAX_LEVEL, Math.round(level || 1));
+  const types = [];
+  const addTypes = (places, bands, kind, harder = false) => {
+    for (const place of places) {
+      for (const band of bands) {
+        const type = makeRoundType(band, place, kind, harder);
+        if (keepRoundType(type)) types.push(type);
+      }
+    }
+  };
+
+  if (lvl === 1) addTypes([10], [1, 2], "integer");
+  else if (lvl === 2) addTypes([10], [1, 2, 3], "integer");
+  else if (lvl === 3) addTypes([100], [1, 2, 3, 4], "integer");
+  else if (lvl === 4) addTypes([10, 100], [2, 3, 4], "integer");
+  else if (lvl === 5) addTypes([10, 100, 1000], [2, 3, 4, 5], "integer");
+  else if (lvl === 6) addTypes([0.1], [1, 2], "decimal");
+  else if (lvl === 7) addTypes([0.1], [2, 3, 4], "decimal", true);
+  else if (lvl === 8) addTypes([0.1, 0.01], [1, 2], "decimal");
+  else if (lvl === 9) addTypes([0.1, 0.01], [2, 3, 4], "decimal", true);
+  else addTypes([0.1, 0.01, 0.001], [1, 2, 3], "decimal");
+
+  return types;
+}
+
+function roundTypeLabel(type) {
+  const size =
+    type.kind === "integer"
+      ? `${type.band}-digit number`
+      : `${type.band}-digit integer part${type.harder ? ", extra decimal" : ""}`;
+  return `${size} to nearest ${formatRoundPlace(type.place)}`;
+}
+
+function sampleRoundInput(type, rng = Math.random) {
+  if (type.kind === "integer") {
+    const min = type.band === 1 ? 1 : pow10(type.band - 1);
+    const max = pow10(type.band) - 1;
+    return { value: randInt(min, max, rng), text: "" };
+  }
+
+  const inputDecimals = roundInputDecimals(type);
+  const minInt = type.band === 1 ? 1 : pow10(type.band - 1);
+  const maxInt = pow10(type.band) - 1;
+  const scale = pow10(inputDecimals);
+  const minScaled = minInt * scale;
+  const maxScaled = maxInt * scale + (scale - 1);
+  const scaled = randInt(minScaled, maxScaled, rng);
+  return { value: scaled / scale, text: formatFixedScale(scaled, inputDecimals) };
+}
+
+function makeRoundProblem(type, rng = Math.random) {
+  const sample = sampleRoundInput(type, rng);
+  const inputText = sample.text || String(sample.value);
+  const placeText = formatRoundPlace(type.place);
+  const answer = roundToPlace(sample.value, type.place);
+  const answerText = formatDecimal(answer, countDecimalPlaces(type.place));
+  return {
+    text: `${inputText} ≈ ${placeText}`,
+    answer,
+    answerText,
+    opKey: "round",
+    statsKey: type.statsKey,
+  };
+}
+
+function makeRoundProblemFromKey(statsKey, rng = Math.random) {
+  const type = roundTypeFromKey(statsKey);
+  if (!type) return makeRoundProblem(roundTypesForLevel(1)[0], rng);
+  return makeRoundProblem(type, rng);
+}
+
+function getRoundUniverse(level) {
+  return roundTypesForLevel(level).map((type) => ({ statsKey: type.statsKey, text: roundTypeLabel(type) }));
+}
+
+function generateRoundProblem(difficulty = 1, rng = Math.random) {
+  const types = roundTypesForLevel(difficulty);
+  return makeRoundProblem(types[randInt(0, types.length - 1, rng)], rng);
 }
 
 const siPrefixes = [
@@ -725,6 +876,7 @@ function generateProblem(opKey, opConfig, rng = Math.random) {
   if (opKey === "factor") return P(generateFactorProblem(config.difficulty, rng));
   if (opKey === "shapes") return P(generateShapesProblem(config.difficulty, rng));
   if (opKey === "pow") return P(generatePowProblem(config.difficulty, rng));
+  if (opKey === "round") return P(generateRoundProblem(config.difficulty, rng));
   if (opKey === "si") return P(generateSIProblem(config.difficulty, rng));
   if (opKey === "f10") return P(generateFactorsOfTenProblem(config.difficulty, rng));
 
@@ -818,6 +970,15 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
     const items = getPowUniverse(config.difficulty).map((problem) => ({
       value: problem,
       weight: getSelectionWeight(getMastery(problemStats, "pow", problem.statsKey, masteryLookup)),
+    }));
+    if (items.length === 0) return generateProblem(opKey, opConfig, rng);
+    return weightedPick(items, rng);
+  }
+
+  if (opKey === "round") {
+    const items = getRoundUniverse(config.difficulty).map((type) => ({
+      value: makeRoundProblemFromKey(type.statsKey, rng),
+      weight: getSelectionWeight(getMastery(problemStats, "round", type.statsKey, masteryLookup)),
     }));
     if (items.length === 0) return generateProblem(opKey, opConfig, rng);
     return weightedPick(items, rng);
@@ -1354,6 +1515,7 @@ function formatStatsKeyLabel(opKey, statsKey) {
   if (opKey === "si") return formatSIStatsKey(statsKey);
   if (opKey === "shapes") return makeShapeProblemFromKey(statsKey).text;
   if (opKey === "pow") return makePowProblemFromKey(statsKey).text;
+  if (opKey === "round") return roundTypeFromKey(statsKey) ? roundTypeLabel(roundTypeFromKey(statsKey)) : statsKey;
   if (opKey === "f10") return formatF10StatsKey(statsKey);
   return statsKey;
 }
@@ -1628,7 +1790,7 @@ function getAnswerUniverse(opKey, level) {
     return set;
   }
   // shapes/pow carry fixed per-problem answers, so distinct answers are meaningful.
-  // f10 (instance-varying numeric) and factor (factorization strings) have large /
+  // f10/round (instance-varying numeric) and factor (factorization strings) have large /
   // non-guessable spaces and their universe entries carry no fixed answer — they
   // yield an empty set here, which falseFireCost treats as a large space (cost 1).
   const universe =
@@ -1805,11 +1967,17 @@ export {
   generateProblem,
   generateShapesProblem,
   generatePowProblem,
+  generateRoundProblem,
   generateSIProblem,
   generateWeightedProblem,
   getDifficultyRange,
   getF10Universe,
   makeF10ProblemFromKey,
+  getRoundUniverse,
+  makeRoundProblem,
+  makeRoundProblemFromKey,
+  roundToPlace,
+  roundTypesForLevel,
   getShapesUniverse,
   makeShapeProblem,
   makeShapeProblemFromKey,

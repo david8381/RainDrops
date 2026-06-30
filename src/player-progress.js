@@ -3,6 +3,7 @@ import {
   getDifficultyRange,
   getF10Universe,
   getFactorUniverse,
+  getRoundUniverse,
   getShapesUniverse,
   getPowUniverse,
   getSIPrefixesForDifficulty,
@@ -361,6 +362,10 @@ function getSkillUniverseSize(opKey, level) {
     return getF10Universe(level).length;
   }
 
+  if (opKey === "round") {
+    return getRoundUniverse(level).length;
+  }
+
   return Math.max(1, count);
 }
 
@@ -394,6 +399,10 @@ function getSkillUniverseProblems(opKey, level) {
 
   if (opKey === "f10") {
     return getF10Universe(level);
+  }
+
+  if (opKey === "round") {
+    return getRoundUniverse(level);
   }
 
   if (opKey === "si") {

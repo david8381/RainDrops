@@ -37,7 +37,7 @@ test("loads without page errors and paints the canvas", async ({ page }) => {
   await expect(page).toHaveTitle("Rain Math");
   await expect(page.locator("#canvas")).toBeVisible();
   await expect(page.locator(".stats .label")).toHaveText("Cleared");
-  await expect(page.locator(".op-chit")).toHaveCount(9);
+  await expect(page.locator(".op-chit")).toHaveCount(10);
   expect(pageErrors).toEqual([]);
 
   const hasPaintedPixel = await page.locator("#canvas").evaluate((canvas) => {
@@ -61,7 +61,7 @@ test("boots over HTTP through the welcome flow and operation chits respond", asy
   if (await page.locator("#welcomeOverlay").isVisible()) {
     await page.locator("#welcomePlay").click();
   }
-  await expect(page.locator(".op-chit")).toHaveCount(9);
+  await expect(page.locator(".op-chit")).toHaveCount(10);
 
   await page.locator('.op-chit[data-op="add"]').click();
   await expect(page.locator('.op-chit[data-op="add"]')).toHaveClass(/active/);
@@ -160,6 +160,38 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator('.diff-card[data-op="factor"] .diff-ready')).toHaveText("Mastered: 0%");
     await expect(page.locator("#inputHint")).toContainText("SI: type *1000 or /100 + Enter");
     await expect(page.locator("#inputHint")).toContainText("p·q: type 2^2*3 + Enter");
+  });
+
+  test("rounding operation has its own lane and clears rounded answers", async ({ page }) => {
+    await openApp(page);
+
+    await page.locator('.op-chit[data-op="add"]').click();
+    await expect(page.locator('.op-chit[data-op="add"]')).toHaveClass(/active/);
+    await page.locator('.op-chit[data-op="round"]').click();
+    await expect(page.locator('.op-chit[data-op="round"]')).toHaveClass(/active/);
+    await expect(page.locator('.op-chit[data-op="add"]')).not.toHaveClass(/active/);
+    await expect(page.locator('.diff-card[data-op="round"]')).toBeVisible();
+    await invoke(page, "setOpDifficulty", "round", 6, { force: true });
+    await expect(page.locator('.diff-card[data-op="round"] .diff-value')).toHaveText("6");
+
+    await freezeAutoSpawns(page);
+    await invoke(page, "addDrop", {
+      opKey: "round",
+      text: "3.45 ≈ 0.1",
+      answer: 3.5,
+      answerText: "3.5",
+      statsKey: "r:1i:0.1",
+      y: 120,
+    });
+
+    const state = await invoke(page, "submit", "3.50");
+    expect(state.drops).toHaveLength(0);
+    expect(state.problemStats.round["r:1i:0.1"]).toEqual({ asked: 1, correct: 1 });
+
+    await page.locator('.diff-card[data-op="round"] .diff-grid-hint').click();
+    await expect(page.locator("#statsOverlay h2")).toHaveText("Rounding — Problem Accuracy");
+    await expect(page.locator("#statsOverlay .stats-f10-row")).toHaveCount(2);
+    await expect(page.locator("#statsOverlay")).toContainText("1-digit integer part to nearest 0.1");
   });
 
   test("requires mastery before increasing a level and locks controls during boss", async ({ page }) => {
@@ -1591,7 +1623,7 @@ test.describe("mobile gameplay", () => {
 
     await expect(page.locator("#touchKeypad")).toBeVisible();
     await expect(page.locator(".touch-score")).toContainText("Cleared:");
-    await expect(page.locator(".op-chit")).toHaveCount(9);
+    await expect(page.locator(".op-chit")).toHaveCount(10);
     const opChitMetrics = await page.locator(".op-chits").evaluate((el) => {
       const rect = el.getBoundingClientRect();
       const visibleCount = [...el.children].filter((child) => {
@@ -1604,7 +1636,7 @@ test.describe("mobile gameplay", () => {
         visibleCount,
       };
     });
-    expect(opChitMetrics.visibleCount).toBe(9);
+    expect(opChitMetrics.visibleCount).toBe(10);
     expect(opChitMetrics.scrollWidth).toBeLessThanOrEqual(opChitMetrics.clientWidth + 2);
     await page.locator('.kp-key[data-key="1"]').click();
     await page.locator('.kp-key[data-key="2"]').click();

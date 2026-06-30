@@ -11,8 +11,8 @@
 // ---------------------------------------------------------------------------
 
 /**
- * The nine operation identifiers.
- * @typedef {"add"|"sub"|"mul"|"div"|"f10"|"si"|"shapes"|"pow"|"factor"} OpKey
+ * The ten operation identifiers.
+ * @typedef {"add"|"sub"|"mul"|"div"|"f10"|"round"|"si"|"shapes"|"pow"|"factor"} OpKey
  */
 
 /**

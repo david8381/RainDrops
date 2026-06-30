@@ -3,6 +3,9 @@
 ## Purpose
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
+## 2026-06-30
+- Added the new **Rounding** operation (`≈`) in its own compatibility lane. It teaches nearest tens/hundreds/thousands and tenths/hundredths/thousandths with a complexity-bucket mastery grid modeled on Factors of 10, decimal-safe half-up rounding, immediate numeric clearing, tutorial copy, and unit/e2e coverage.
+
 ## 2026-06-29
 - Made boss-mode gating legible on desktop and touch: gated Mastered controls now stay tappable and explain the mastery requirement, blocked level increases show feedback beside the selector, and locked Blitz/Wave/Worksheet replays show a compact reason instead of silently disappearing. Added pure reason helpers in `game-core` plus unit/e2e coverage.
 - Implemented session continuity + Finish: normal startup now resumes the active profile's newest session when `lastSeenAt` is within 30 minutes, while stale sessions and player switches start a fresh report. Added desktop and touch **Finish** controls that clear the board, disable active problem types, stamp the current session, and open the combined session Report with Share visible without hard-closing the session; re-enabling practice continues the same report. Updated Log/Tutorial copy and added unit/e2e coverage for resume, stale reloads, profile switches, Finish, and touch exposure.

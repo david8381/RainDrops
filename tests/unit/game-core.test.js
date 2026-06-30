@@ -18,6 +18,10 @@ import {
   getPowUniverse,
   getF10Universe,
   makeF10ProblemFromKey,
+  getRoundUniverse,
+  makeRoundProblemFromKey,
+  roundToPlace,
+  roundTypesForLevel,
   factorDifficulty,
   getFactorUniverse,
   generateProblem,
@@ -147,6 +151,7 @@ describe("difficulty ranges", () => {
     assert.deepEqual(getDifficultyRange("add", 10), { min: 1, max: 20 });
     assert.deepEqual(getDifficultyRange("mul", 10), { min: 1, max: 12 });
     assert.deepEqual(getDifficultyRange("f10", 10), { min: 1, max: 4 });
+    assert.deepEqual(getDifficultyRange("round", 10), { min: 1, max: 10 });
     assert.deepEqual(getDifficultyRange("shapes", 10), { min: 2, max: 5 });
     assert.deepEqual(getDifficultyRange("factor", 1), { min: 4, max: 400 });
     assert.deepEqual(getDifficultyRange("factor", 10), { min: 4, max: 400 });
@@ -735,6 +740,21 @@ describe("problem generation", () => {
     );
   });
 
+  it("generates rounding problems with bucket stats keys", () => {
+    const config = createDefaultOpConfig();
+    config.round.difficulty = 8;
+    const problem = generateProblem("round", config, sequenceRng([0, 0.42]));
+    assert.equal(problem.opKey, "round");
+    assert.match(problem.text, /^.+ ≈ 0\.1$/);
+    assert.match(problem.statsKey, /^r:\d+i:0\.1/);
+    assert.equal(Number(problem.answerText), problem.answer);
+    assert.equal(problem.answer, roundToPlace(Number(problem.text.split(" ")[0]), 0.1));
+
+    const weighted = generateWeightedProblem("round", config, createProblemStats(), sequenceRng([0, 0.42]));
+    assert.equal(weighted.opKey, "round");
+    assert.match(weighted.text, /≈/);
+  });
+
   it("builds factors-of-10 problems by structural type", () => {
     // Level gates types by digits + power - 1 (cumulative): L1 has only 1-digit ×/÷10.
     assert.equal(getF10Universe(1).length, 2);
@@ -753,6 +773,48 @@ describe("problem generation", () => {
     assert.equal(div.statsKey, "div,1,2");
     assert.equal(Number(div.answerText), div.answer);
     assert.match(div.text, /÷ 100$/);
+  });
+
+  it("rounds integers and decimals half-up without floating-point drift", () => {
+    assert.equal(roundToPlace(44, 10), 40);
+    assert.equal(roundToPlace(45, 10), 50);
+    assert.equal(roundToPlace(96, 10), 100);
+    assert.equal(roundToPlace(149, 100), 100);
+    assert.equal(roundToPlace(150, 100), 200);
+    assert.equal(roundToPlace(1500, 1000), 2000);
+    assert.equal(roundToPlace(3.44, 0.1), 3.4);
+    assert.equal(roundToPlace(3.45, 0.1), 3.5);
+    assert.equal(roundToPlace(9.97, 0.1), 10);
+    assert.equal(roundToPlace(3.474, 0.01), 3.47);
+    assert.equal(roundToPlace(3.475, 0.01), 3.48);
+    assert.equal(roundToPlace(3.4765, 0.001), 3.477);
+  });
+
+  it("builds rounding buckets and samples problems from their stats keys", () => {
+    const counts = [2, 3, 3, 6, 11, 2, 3, 4, 6, 9];
+    counts.forEach((count, index) => {
+      assert.equal(roundTypesForLevel(index + 1).length, count);
+      assert.equal(getRoundUniverse(index + 1).length, count);
+    });
+
+    assert.ok(!roundTypesForLevel(3).some((type) => type.band === 1 && type.place === 100));
+    assert.ok(!roundTypesForLevel(5).some((type) => type.band === 2 && type.place === 1000));
+
+    const intProblem = makeRoundProblemFromKey("r:2d:10", sequenceRng([0.5]));
+    assert.equal(intProblem.opKey, "round");
+    assert.equal(intProblem.statsKey, "r:2d:10");
+    assert.match(intProblem.text, /^\d+ ≈ 10$/);
+    assert.equal(intProblem.answer, roundToPlace(Number(intProblem.text.split(" ")[0]), 10));
+
+    const decProblem = makeRoundProblemFromKey("r:1i:0.01", sequenceRng([0.276]));
+    assert.equal(decProblem.opKey, "round");
+    assert.equal(decProblem.statsKey, "r:1i:0.01");
+    assert.match(decProblem.text, /^\d+\.\d{3} ≈ 0\.01$/);
+    assert.equal(decProblem.answer, roundToPlace(Number(decProblem.text.split(" ")[0]), 0.01));
+
+    const hardProblem = makeRoundProblemFromKey("r:2i:0.1:h", sequenceRng([0]));
+    assert.match(hardProblem.text, /^\d+\.\d{3} ≈ 0\.1$/);
+    assert.equal(formatStatsKeyLabel("round", "r:2i:0.1:h"), "2-digit integer part, extra decimal to nearest 0.1");
   });
 
   it("builds powers & roots with clean answers and a cumulative level ladder", () => {

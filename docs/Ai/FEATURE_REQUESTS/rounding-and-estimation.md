@@ -1,9 +1,9 @@
 # Feature: Rounding & Estimation operation
 
-Status: agreed — ready for implementation
-Owner: Codex (planned by Claude; Claude to review)
+Status: landed
+Owner: Codex (planned by Claude; reviewed by Claude)
 Last Updated: 2026-06-30
-Related Commits: (pending)
+Related Commits: (this commit)
 
 ## User Request
 Add a foundational elementary skill the game lacks: **rounding / estimation**. David
@@ -131,4 +131,12 @@ No profile schema change; the universe is computed, not stored.
   clears on the correct typed answer; the grid/diff card renders for `round`.
 
 ## Outcome
-(pending implementation by Codex)
+Implemented by Codex on 2026-06-30:
+- Added the `round` operation with `≈` chit, "Rounding" display name, and its own
+  compatibility lane.
+- Added pure core helpers for decimal-safe half-up rounding, per-level rounding bucket
+  universes, and bucket-sampled problem generation. Stats keys distinguish normal and
+  harder decimal buckets so mastery does not leak between different precision demands.
+- Wired rounding into ordinary and weighted problem generation, profile universe sizing,
+  mastery/readiness, boss/challenge fact-sheet support, stats labels, and the Grid popup.
+- Updated Tutorial/PURPOSE/ARCHITECTURE/CHANGELOG plus unit/e2e coverage.

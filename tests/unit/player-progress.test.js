@@ -73,6 +73,7 @@ describe("player progress profile", () => {
       "mul",
       "div",
       "f10",
+      "round",
       "si",
       "shapes",
       "pow",
