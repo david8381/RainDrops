@@ -4,6 +4,7 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-06-30
+- Rounding L2 fix: nearest-ten level 2 now samples 3-digit numbers (was 3–4 digit); 4-digit→nearest-ten is the same skill as 3-digit and was appearing too early. Big numbers still arrive with the hundred/thousand levels. Carry case still constructs within 100–999.
 - Revised the new **Rounding** operation's mastery grid from input-size buckets to case buckets: each cell now represents a rounding decision (`down`, `up`, `half`, `zero`, or `carry`) scoped by place and size relationship, with sampler tests proving every listed cell can generate an in-case problem.
 - Added the new **Rounding** operation (`≈`) in its own compatibility lane. It teaches nearest tens/hundreds/thousands and tenths/hundredths/thousandths with a complexity-bucket mastery grid modeled on Factors of 10, decimal-safe half-up rounding, immediate numeric clearing, tutorial copy, and unit/e2e coverage.
 

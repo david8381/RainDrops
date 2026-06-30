@@ -169,7 +169,7 @@ digits). The v1 `band × place` grid blurred these. New model:
 | Lvl | Place | Size / relationship | Cells (cases) | # |
 |----|----|----|----|----|
 | 1 | ten | normal, 2-digit (easy opener) | down · up · half · zero | 4 |
-| 2 | ten | bigger 3–4 digit + carry | down · up · half · zero · carry | 5 |
+| 2 | ten | bigger 3-digit + carry | down · up · half · zero · carry | 5 |
 | 3 | ten | crossing, 1-digit (7→10, 3→0) | down(→0) · up(→10) | 2 |
 | 4 | hundred | normal, 3–4 digit | down · up · half · zero | 4 |
 | 5 | hundred crossing + thousand (capstone) | small→100 (47→0, 62→100) & 4–5 digit→1000 | cross: down(→0)·up(→100)·half · thousand: down·up·half·zero·carry | 8 |

@@ -305,7 +305,7 @@ function makeRoundType(placeKey, relation, caseName, minValue, maxValue, inputDe
 function roundLevelSpecs(level) {
   const int = 0;
   if (level === 1) return [["ten", "norm", ["down", "up", "half", "zero"], 10, 99, int]];
-  if (level === 2) return [["ten", "big", ["down", "up", "half", "zero", "carry"], 100, 9999, int]];
+  if (level === 2) return [["ten", "big", ["down", "up", "half", "zero", "carry"], 100, 999, int]];
   if (level === 3) return [["ten", "cross", ["down", "up"], 1, 9, int]];
   if (level === 4) return [["hundred", "norm", ["down", "up", "half", "zero"], 100, 9999, int]];
   if (level === 5) {
