@@ -36,6 +36,7 @@ Kebab-case slug describing the feature: `answer-space-aware-overload.md`,
 
 ## Index
 Keep this list current (newest meaningful first):
+- `player-menu-and-backup.md` — Status: agreed — one player menu (Login popup) + compressed, checksummed profile backup/restore.
 - `session-active-time.md` — Status: landed — idle-capped active seat-time so a left-open tab stops inflating session duration.
 - `rounding-and-estimation.md` — Status: landed — `≈` Rounding/estimation (case-based grid: cells=cases, levels=place+size).
 - `boss-mode-control-legibility.md` — Status: landed — make silently-gated boss/challenge controls show their locked state + reason (touch-friendly).
