@@ -844,6 +844,34 @@ function importStoredProfile(profile, storage = globalThis.localStorage, nowMs =
   return ensureProfileShape(next.profiles[next.activeUserId], nowMs);
 }
 
+function deleteStoredProfile(userId, storage = globalThis.localStorage, nowMs = Date.now()) {
+  const store = readProfileStore(storage, nowMs);
+  const targetId = String(userId || "");
+  if (!targetId || !store.profiles[targetId]) {
+    return ensureProfileShape(store.profiles[store.activeUserId], nowMs);
+  }
+
+  delete store.profiles[targetId];
+  const remaining = Object.values(store.profiles);
+  if (remaining.length === 0) {
+    const next = persistProfileStore(createProfileStore(createDefaultProfile(nowMs), nowMs), storage, nowMs);
+    return ensureProfileShape(next.profiles[next.activeUserId], nowMs);
+  }
+
+  if (store.activeUserId === targetId || !store.profiles[store.activeUserId]) {
+    remaining.sort((a, b) => {
+      const aTime = Date.parse(a.user?.updatedAt || "");
+      const bTime = Date.parse(b.user?.updatedAt || "");
+      const delta = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+      return delta || String(a.user?.name || "").localeCompare(String(b.user?.name || ""));
+    });
+    store.activeUserId = remaining[0].user.id;
+  }
+
+  const next = persistProfileStore(store, storage, nowMs);
+  return ensureProfileShape(next.profiles[next.activeUserId], nowMs);
+}
+
 function switchStoredProfile(userId, storage = globalThis.localStorage, nowMs = Date.now()) {
   const store = readProfileStore(storage, nowMs);
   if (!store.profiles[userId]) return readProfile(storage, nowMs);
@@ -2124,6 +2152,7 @@ export {
   createEmptySkill,
   createProfileForUser,
   createStoredProfile,
+  deleteStoredProfile,
   ensureProfileShape,
   getProfileList,
   getBossSpeedTierClears,

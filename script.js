@@ -117,6 +117,7 @@ const {
 const {
   BOSS_READY_SCORE,
   PROFILE_VERSION,
+  deleteStoredProfile,
   getFinishLevelPracticeProblems,
   getBlitzBest,
   getChallengeBest,
@@ -5901,6 +5902,7 @@ function openLoginPopup({ keepWelcome = false } = {}) {
     restoreBackupCode: restoreProfileBackupCode,
     copyTextToClipboard,
     heartbeatActiveSession,
+    deleteProfile: deleteStoredProfile,
     activateProfile,
     onProfileChanged: rebuildWelcomeMenu,
     closeOtherPopups: () => {
@@ -7110,6 +7112,12 @@ function installTestHooks() {
       return restoreProfileBackupCode(code, {
         confirmReplace: options.confirmReplace ?? false,
       }); // async
+    },
+    deletePlayer(userId) {
+      saveProfile(state.progressProfile);
+      const active = deleteStoredProfile(userId);
+      activateProfile(active);
+      return getTestState();
     },
     enableOps(opKeys) {
       Object.keys(opConfig).forEach((key) => {

@@ -10,6 +10,7 @@ import {
   computeSkillReadiness,
   createDefaultProfile,
   createStoredProfile,
+  deleteStoredProfile,
   getPracticeSuggestions,
   getPressureTier,
   getProfileList,
@@ -608,6 +609,36 @@ describe("player progress profile", () => {
     assert.equal(nextStore.activeUserId, "grace");
     assert.ok(nextStore.profiles.ada);
     assert.ok(nextStore.profiles.grace);
+  });
+
+  it("deletes local profiles without leaving the store inactive or empty", () => {
+    const storage = createMemoryStorage();
+    const now = Date.UTC(2026, 0, 1);
+    createStoredProfile("Ada", storage, now);
+    deleteStoredProfile("local-default", storage, now + 500);
+    createStoredProfile("Ben", storage, now + 1000);
+    switchStoredProfile("ada", storage, now + 2000);
+
+    let active = deleteStoredProfile("ben", storage, now + 3000);
+    let store = readProfileStore(storage, now + 3000);
+    assert.equal(active.user.id, "ada");
+    assert.equal(store.activeUserId, "ada");
+    assert.equal(store.profiles.ben, undefined);
+    assert.deepEqual(Object.keys(store.profiles), ["ada"]);
+
+    createStoredProfile("Cara", storage, now + 4000);
+    active = deleteStoredProfile("cara", storage, now + 5000);
+    store = readProfileStore(storage, now + 5000);
+    assert.equal(active.user.id, "ada");
+    assert.equal(store.activeUserId, "ada");
+    assert.equal(store.profiles.cara, undefined);
+
+    active = deleteStoredProfile("ada", storage, now + 6000);
+    store = readProfileStore(storage, now + 6000);
+    assert.equal(active.user.id, "local-default");
+    assert.equal(active.user.name, "Local Player");
+    assert.equal(store.activeUserId, "local-default");
+    assert.equal(Object.keys(store.profiles).length, 1);
   });
 
   it("falls back to defaults when stored data is malformed", () => {

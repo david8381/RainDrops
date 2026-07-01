@@ -4,6 +4,7 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-07-01
+- Added safe player deletion to the Login popup: each profile row now has a Delete control with confirmation, backend deletion keeps the active profile valid and recreates a default if the last player is removed, and tests cover delete edge cases plus backup-delete-restore.
 - Consolidated player management into the Login popup: the Welcome menu now shows the current player and links to Login instead of duplicating profile create/switch controls. Login now includes active-player backup/restore using compressed checksummed `RMBAK1:` codes or text files, with restore collision handling, schema checks, import migration, and unit/e2e coverage.
 - Changed session/report headline duration from wall-clock to idle-capped active time. Sessions now persist `activeMs`, accrue at most 2 minutes for any idle gap, count no-target wrong submissions and stepwise factor entries as activity, and legacy sessions without `activeMs` fall back to summed per-operation engaged time so left-open tabs no longer show absurd durations.
 

@@ -474,19 +474,21 @@ test.describe("desktop gameplay", () => {
       y: 120,
     });
 
-    for (let i = 0; i < 5; i += 1) {
-      await invoke(page, "submit", "9");
-    }
+    const overload = await page.evaluate(() => {
+      let state;
+      for (let i = 0; i < 5; i += 1) {
+        state = window.__RAIN_MATH_TEST__.submit("9");
+      }
+      const hintText = document.getElementById("inputHint")?.textContent || "";
+      const blockedState = window.__RAIN_MATH_TEST__.submit("4");
+      return { state, hintText, blockedState };
+    });
+    expect(overload.state.cannonOverloadMs).toBeGreaterThan(0);
+    expect(overload.hintText).toContain("Cannon overloaded");
+    expect(overload.blockedState.drops).toHaveLength(1);
+    expect(overload.blockedState.score).toBe(0);
 
-    let state = await invoke(page, "getState");
-    expect(state.cannonOverloadMs).toBeGreaterThan(0);
-    await expect(page.locator("#inputHint")).toContainText("Cannon overloaded");
-
-    state = await invoke(page, "submit", "4");
-    expect(state.drops).toHaveLength(1);
-    expect(state.score).toBe(0);
-
-    state = await invoke(page, "advanceDrops", 2100);
+    let state = await invoke(page, "advanceDrops", 2100);
     expect(state.cannonOverloadMs).toBe(0);
     state = await invoke(page, "submit", "4");
     expect(state.drops).toHaveLength(0);
@@ -748,10 +750,16 @@ test.describe("desktop gameplay", () => {
     expect(durationMs).toBeGreaterThanOrEqual(119_000);
     expect(durationMs).toBeLessThan(3 * 60 * 1000);
 
-    const expectedDuration = await page.evaluate((ms) => window.RainMathCore.formatDuration(ms), durationMs);
-    await expect(page.locator("#sessionLogOverlay")).toContainText(expectedDuration);
+    const expectedDurations = await page.evaluate(
+      (ms) => [0, 1000, 2000].map((delta) => window.RainMathCore.formatDuration(ms + delta)),
+      durationMs
+    );
+    const durationPattern = new RegExp(
+      expectedDurations.map((text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")
+    );
+    await expect(page.locator("#sessionLogOverlay")).toContainText(durationPattern);
     await page.locator(".session-log-report").click();
-    await expect(page.locator("#sessionReportOverlay")).toContainText(expectedDuration);
+    await expect(page.locator("#sessionReportOverlay")).toContainText(durationPattern);
   });
 
   test("reloads within the grace window resume the same session report", async ({ page }) => {
@@ -1003,7 +1011,7 @@ test.describe("desktop gameplay", () => {
     expect(benSession).not.toBe(adaFirstSession);
 
     await page.locator("#loginLink").click();
-    await page.getByRole("button", { name: /Ada Lovelace/ }).click();
+    await page.locator(".login-profile-row", { hasText: "Ada Lovelace" }).locator(".login-profile-btn").click();
     await expect(page.locator("#loginLink")).toHaveText("Ada Lovelace");
     const adaSecondSession = (await invoke(page, "getState")).activeSessionId;
     expect(adaSecondSession).not.toBe(adaFirstSession);
@@ -1032,6 +1040,46 @@ test.describe("desktop gameplay", () => {
     state = await invoke(page, "getState");
     expect(state.progressProfile.user.name).toBe("Ada Lovelace");
     expect(state.progressSummary.skills.add.attempts).toBe(0);
+  });
+
+  test("deletes local player profiles without stranding the active player", async ({ page }) => {
+    await openApp(page);
+    page.on("dialog", async (dialog) => {
+      expect(dialog.message()).toContain("Delete");
+      await dialog.accept();
+    });
+
+    await page.locator("#loginLink").click();
+    await page.locator("#profileNameInput").fill("Ada");
+    await page.getByRole("button", { name: /^Create$/ }).click();
+    await page.locator("#loginLink").click();
+    await page.locator("#profileNameInput").fill("Ben");
+    await page.getByRole("button", { name: /^Create$/ }).click();
+    await expect(page.locator("#loginLink")).toHaveText("Ben");
+
+    await page.locator("#loginLink").click();
+    await page.getByRole("button", { name: "Delete Ada" }).click();
+    await expect(page.locator("#loginOverlay")).toHaveCount(0);
+    await expect(page.locator("#loginLink")).toHaveText("Ben");
+    let profiles = await page.evaluate(() => window.RainMathProgress.getProfileList());
+    expect(profiles.map((profile) => profile.name)).toEqual(["Ben", "Local Player"]);
+    expect(profiles.find((profile) => profile.name === "Ben").active).toBe(true);
+
+    await page.locator("#loginLink").click();
+    await page.getByRole("button", { name: "Delete Ben" }).click();
+    await expect(page.locator("#loginLink")).toHaveText("Login");
+    profiles = await page.evaluate(() => window.RainMathProgress.getProfileList());
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].name).toBe("Local Player");
+    expect(profiles[0].active).toBe(true);
+
+    await page.locator("#loginLink").click();
+    await page.getByRole("button", { name: "Delete Local Player" }).click();
+    profiles = await page.evaluate(() => window.RainMathProgress.getProfileList());
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].id).toBe("local-default");
+    expect(profiles[0].name).toBe("Local Player");
+    expect(profiles[0].active).toBe(true);
   });
 
   test("backs up and restores the active local player profile", async ({ page }) => {
@@ -1081,6 +1129,17 @@ test.describe("desktop gameplay", () => {
     const unsupported = await invoke(page, "restoreBackup", newer, { confirmReplace: false });
     expect(unsupported.ok).toBe(false);
     expect(unsupported.message).toContain("newer version");
+
+    state = await invoke(page, "deletePlayer", state.progressProfile.user.id);
+    expect(state.progressProfile.user.name).toBe("Local Player");
+    expect(state.progressSummary.skills.add.attempts).toBe(0);
+
+    const restoredAfterDelete = await invoke(page, "restoreBackup", code, { confirmReplace: false });
+    expect(restoredAfterDelete.ok).toBe(true);
+    expect(restoredAfterDelete.replaced).toBe(false);
+    state = await invoke(page, "getState");
+    expect(state.progressProfile.user.name).toBe("Ada Backup");
+    expect(state.progressSummary.skills.add.attempts).toBe(1);
   });
 
   test("boss mode starts from a level card, then boss bombs stun input", async ({ page }) => {

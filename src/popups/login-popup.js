@@ -1,4 +1,4 @@
-// Login / player-profile popup (create, switch, clear local players).
+// Login / player-profile popup (create, switch, delete, clear local players).
 //
 // Profile persistence comes straight from player-progress; everything that
 // touches live engine state (the active profile, session heartbeat, activating
@@ -31,7 +31,7 @@ function downloadTextFile(filename, text) {
 // ctx: { getProgressProfile, getActiveProfileName, formatProfileUpdatedAt,
 //        createBackupCode, getBackupFileName, restoreBackupCode,
 //        copyTextToClipboard, heartbeatActiveSession, activateProfile,
-//        onProfileChanged, closeOtherPopups }
+//        deleteProfile, onProfileChanged, closeOtherPopups }
 export function buildLoginPopup(ctx) {
   const {
     getProgressProfile,
@@ -43,6 +43,7 @@ export function buildLoginPopup(ctx) {
     copyTextToClipboard,
     heartbeatActiveSession,
     activateProfile,
+    deleteProfile,
     onProfileChanged,
     closeOtherPopups,
   } = ctx;
@@ -78,6 +79,9 @@ export function buildLoginPopup(ctx) {
   list.className = "login-list";
   const profiles = getProfileList();
   profiles.forEach((profile) => {
+    const row = document.createElement("div");
+    row.className = "login-profile-row";
+
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "login-profile-btn";
@@ -100,7 +104,29 @@ export function buildLoginPopup(ctx) {
     meta.textContent = profile.active ? "Active" : formatProfileUpdatedAt(profile.updatedAt);
     btn.appendChild(name);
     btn.appendChild(meta);
-    list.appendChild(btn);
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "login-profile-delete";
+    deleteBtn.textContent = "Delete";
+    deleteBtn.setAttribute("aria-label", `Delete ${profile.name}`);
+    deleteBtn.title = `Delete ${profile.name}`;
+    deleteBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const ok = window.confirm(`Delete ${profile.name} and all their progress? This can't be undone.`);
+      if (!ok) return;
+      heartbeatActiveSession();
+      saveProfile(getProgressProfile());
+      const selected = deleteProfile(profile.id);
+      activateProfile(selected);
+      closeLoginPopup();
+      onProfileChanged?.();
+    });
+
+    row.appendChild(btn);
+    row.appendChild(deleteBtn);
+    list.appendChild(row);
   });
   card.appendChild(list);
 

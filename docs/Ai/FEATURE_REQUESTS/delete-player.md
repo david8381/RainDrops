@@ -1,9 +1,9 @@
 # Feature: Delete player
 
-Status: agreed — ready for implementation
-Owner: Codex (planned by Claude; Claude to review)
+Status: landed
+Owner: Codex (planned by Claude; reviewed by Claude)
 Last Updated: 2026-07-01
-Related Commits: (pending)
+Related Commits: (this commit)
 
 ## User Request
 The player manager can create / switch / clear but not **delete** a player. Add a delete
@@ -69,4 +69,15 @@ leave the store empty; never strand the app with no active player).
   it, restore the code → it returns.
 
 ## Outcome
-(pending implementation by Codex)
+Implemented in the working tree:
+- Added `deleteStoredProfile(userId)` in `player-progress.js`. It removes the
+  requested local profile, keeps non-active deletes from changing the active
+  player, switches active deletes to the most recently updated remaining player,
+  and recreates a fresh default profile when the last player is deleted.
+- Added per-row Delete buttons in the Login popup, with native confirmation and
+  click isolation from the switch button.
+- Added `deletePlayer(userId)` to the `?test=1` browser hooks.
+- Updated Profile/Tutorial copy and AI docs to include delete in the Login player
+  manager.
+- Added unit coverage for delete edge cases and e2e coverage for UI deletion plus
+  backup-delete-restore.
