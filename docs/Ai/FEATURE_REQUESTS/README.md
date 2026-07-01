@@ -36,6 +36,7 @@ Kebab-case slug describing the feature: `answer-space-aware-overload.md`,
 
 ## Index
 Keep this list current (newest meaningful first):
+- `recap-share-link.md` — Status: agreed — recap becomes a reconstructable, checksummed `#recap=` achievement-card link.
 - `delete-player.md` — Status: landed — per-row delete-player in the Login manager (safe active/last-player handling).
 - `player-menu-and-backup.md` — Status: landed — one player menu (Login popup) + compressed, checksummed profile backup/restore.
 - `session-active-time.md` — Status: landed — idle-capped active seat-time so a left-open tab stops inflating session duration.
