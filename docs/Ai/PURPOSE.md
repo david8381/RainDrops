@@ -4,7 +4,8 @@
 Build a fast, friendly math game where falling drops are cleared by typing answers. The game should feel responsive, playable immediately, and let the user control their own practice mix while the game is running.
 
 ## Design Principles
-- Low setup friction: first visit shows a Play/Tutorial/Test Me/player menu, then returning visits load directly into play.
+- Low setup friction: first visit shows a Play/Tutorial/Test Me/player menu; after that the game opens at a ready screen where problem types can be chosen before pressing Start (so toggling a type stages it rather than immediately raining drops). Restart returns to that ready state.
+- No ads, no tracking, no accounts, no server: everything runs in the browser and nothing is collected. Donations keep it free and ad-free — surfaced on the welcome menu and session report.
 - Fast input: ordinary numeric answers clear immediately; multi-step or symbolic answers use Enter only where needed.
 - User-controlled pacing: operation types, per-operation difficulty, fall speed, and active-drop load are adjustable during play.
 - Content level and practice pressure are separate mastery axes: levels measure problem scope, while Blitz survival time, Wave max simultaneous load, and Worksheet time give optional fluency goals.

@@ -15,6 +15,10 @@ export const state = {
   spawnTimer: 0,
   lastTime: 0,
   isPaused: false,
+  // A fresh run waits at "ready" — problem types can be toggled but nothing
+  // spawns/falls until the player presses Start. Turns true once play begins;
+  // Restart returns to this ready state. (Test mode starts already-started.)
+  hasStarted: false,
   isBreatherMode: false,
   nextDropId: 0,
   canvasW: 0,

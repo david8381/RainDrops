@@ -1793,6 +1793,38 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#score")).toHaveText("1");
   });
 
+  test("problem types stage until Start, and restart never strands Resume", async ({ page }) => {
+    await openApp(page);
+
+    // Force the real-user ready/Start gate (the suite otherwise auto-starts).
+    let state = await invoke(page, "stageReadyRun");
+    expect(state.hasStarted).toBe(false);
+    await expect(page.locator("#pauseBtn")).toHaveText("Start");
+
+    // Toggling a problem type stages it — nothing spawns while at the gate.
+    await invoke(page, "enableOps", ["add"]);
+    await invoke(page, "setControls", { speed: 100, drops: 5 });
+    await page.waitForTimeout(300);
+    state = await invoke(page, "getState");
+    expect(state.hasStarted).toBe(false);
+    expect(state.drops).toHaveLength(0);
+
+    // Start begins play.
+    await page.locator("#pauseBtn").click();
+    state = await invoke(page, "getState");
+    expect(state.hasStarted).toBe(true);
+    expect(state.isPaused).toBe(false);
+    await expect(page.locator("#pauseBtn")).toHaveText("Pause");
+
+    // Pause → "Resume"; Restart must not leave the button stuck on "Resume".
+    await page.locator("#pauseBtn").click();
+    await expect(page.locator("#pauseBtn")).toHaveText("Resume");
+    await page.locator("#restartBtn").click();
+    await expect(page.locator("#pauseBtn")).toHaveText("Pause");
+    state = await invoke(page, "getState");
+    expect(state.isPaused).toBe(false);
+  });
+
   test("pause, restart, feedback, and stats overlays work", async ({ page }) => {
     await openApp(page);
 

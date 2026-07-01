@@ -190,12 +190,20 @@ const BOSS_ANNOUNCE_MS = 1300;
 const BOSS_STUN_MS = 1400;
 const BOSS_VICTORY_MS = 1800;
 const DEFAULT_MAX_FALL_TIME_SEC = 10;
-const BLITZ_RAMP_MS = 70000;
-const BLITZ_START_SPEED = 20;
-const BLITZ_START_DROP_SECONDS = 5.4;
+// Endurance ramp: reach baseline in one ramp unit, then overdrive. The onset was
+// a ~70s crawl from a very slow start, which felt tedious before it got
+// interesting; compress it (shorter ramp, more engaging start speed/fall time)
+// so it reaches real pressure quickly without a jarring cold open. Tunable.
+const BLITZ_RAMP_MS = 42000;
+const BLITZ_START_SPEED = 40;
+const BLITZ_START_DROP_SECONDS = 3.8;
 const BLITZ_BASELINE_DROP_SECONDS = 2.2;
 const BLITZ_MIN_DROP_SECONDS = 0.85;
 const BLITZ_START_DROPS = 2;
+
+// Test mode (`?test=1`) starts a run already-playing so the Playwright suite (which
+// never presses Start) behaves as before; real users get the ready/Start gate.
+const IS_TEST_MODE = new URLSearchParams(window.location.search).has("test");
 const WAVE_TWO_BASE_SPEED = 42;
 const CHALLENGE_TRANSITION_MS = 1800;
 const BOSS_HUD_FRESH_MS = 2400;
@@ -386,7 +394,9 @@ function resetRunState({ resume = true, focus = true } = {}) {
   clearAmbiguousTimer();
   state.bossMode = null;
   state.isBreatherMode = false;
-  state.isPaused = false;
+  // Restart returns to the ready/Start gate for real users; tests auto-play.
+  state.hasStarted = IS_TEST_MODE;
+  state.isPaused = !state.hasStarted;
   state.factorTargetId = null;
   state.drops = [];
   resetSplashes();
@@ -404,9 +414,7 @@ function resetRunState({ resume = true, focus = true } = {}) {
   updateKpDisplay();
   updateBossHud();
   updateBreatherHud();
-  if (resume && state.isPaused) {
-    togglePause();
-  }
+  updatePauseControlLabels();
   if (focus) answerInput.focus();
 }
 
@@ -3702,22 +3710,15 @@ function getShareBadgeText(data, recapLink = "") {
 
 async function copyShareBadge(data, statusEl) {
   if (statusEl) statusEl.textContent = "Preparing recap link…";
-  await copyTextToClipboard(
-    getShareBadgeText(data, await getRecapShareLink(data)),
-    statusEl,
-    "Copied recap link."
-  );
+  await copyTextToClipboard(await getRecapShareLink(data), statusEl, "Copied recap link.");
 }
 
 async function shareBadge(data, statusEl) {
   if (statusEl) statusEl.textContent = "Preparing recap link…";
-  const text = getShareBadgeText(data, await getRecapShareLink(data));
+  const url = await getRecapShareLink(data);
   if (navigator.share) {
     try {
-      await navigator.share({
-        title: "Rain Math recap",
-        text,
-      });
+      await navigator.share({ title: "Rain Math recap", url });
       if (statusEl) statusEl.textContent = "Share sheet opened.";
       return;
     } catch (error) {
@@ -5243,7 +5244,7 @@ function buildSessionReportPopup(sessionId) {
   donate.rel = "noopener noreferrer";
   donate.textContent = "donating";
   donateNote.appendChild(donate);
-  donateNote.append(".");
+  donateNote.append(". It keeps Rain Math ad-free, tracking-free, and running with no server.");
   card.appendChild(donateNote);
 
   overlay.appendChild(card);
@@ -5355,6 +5356,7 @@ function buildWelcomeMenu({ firstVisit = false } = {}) {
   playBtn.textContent = getText("common.play");
   playBtn.addEventListener("click", () => {
     closeWelcomeMenu({ markSeen: true });
+    startRun();
   });
 
   const tutorialBtn = document.createElement("button");
@@ -5560,8 +5562,9 @@ function startPlacementRun(opKey, level = 1) {
     currentDropId: null,
   };
   preparePlacementLevel(state.placementState.level);
+  state.hasStarted = true;
   state.isPaused = false;
-  if (pauseBtn) pauseBtn.textContent = "Pause";
+  updatePauseControlLabels();
   updateOpChits();
   updateControlDisplay();
   drawDrops();
@@ -6306,12 +6309,41 @@ function updateControlDisplay() {
   });
 }
 
+// The single Start/Pause/Resume control label, derived from run state: a fresh
+// (not-yet-started) run shows "Start"; after that it's Pause/Resume.
+function pauseControlLabel() {
+  if (!state.hasStarted) return "Start";
+  return state.isPaused ? "Resume" : "Pause";
+}
+
+function updatePauseControlLabels() {
+  if (pauseBtn) pauseBtn.textContent = pauseControlLabel();
+  if (kpPauseBtn) kpPauseBtn.textContent = pauseControlLabel();
+}
+
+// Begin a ready run (the player pressed Start / Play). Toggling problem types
+// before this only stages them — nothing spawns until here.
+function startRun() {
+  state.hasStarted = true;
+  state.isPaused = false;
+  state.lastTime = 0;
+  updatePauseControlLabels();
+  answerInput.focus();
+}
+
+// The Start/Pause/Resume button: Start a ready run, otherwise toggle pause.
+function togglePauseOrStart() {
+  if (!state.hasStarted) {
+    startRun();
+    return;
+  }
+  togglePause();
+}
+
 function togglePause() {
   state.isPaused = !state.isPaused;
   if (state.isPaused) exitBreatherMode();
-  if (pauseBtn) {
-    pauseBtn.textContent = state.isPaused ? "Resume" : "Pause";
-  }
+  updatePauseControlLabels();
   if (!state.isPaused) {
     state.lastTime = 0;
     answerInput.focus();
@@ -6359,8 +6391,7 @@ function finishCurrentSession() {
   updateBreatherHud();
   updateInputHint();
   updateKpDisplay();
-  if (pauseBtn) pauseBtn.textContent = "Pause";
-  if (kpPauseBtn) kpPauseBtn.textContent = "Pause";
+  updatePauseControlLabels();
   drawDrops();
   buildSessionReportPopup(state.activeSessionId);
 }
@@ -6604,7 +6635,7 @@ if (pauseBtn) {
   pauseBtn.tabIndex = -1;
   pauseBtn.addEventListener("click", () => {
     initAudio();
-    togglePause();
+    togglePauseOrStart();
   });
 }
 
@@ -6855,12 +6886,10 @@ function setupTouchKeypad() {
 
   // Pause / Restart
   wireKpButton(kpPauseBtn, () => {
-    togglePause();
-    if (kpPauseBtn) kpPauseBtn.textContent = state.isPaused ? "Resume" : "Pause";
+    togglePauseOrStart();
   });
   wireKpButton(kpRestartBtn, () => {
     restartGame();
-    if (kpPauseBtn) kpPauseBtn.textContent = "Pause";
   });
 
   wireKpButton(document.getElementById("kpSpeedDn"), () => {
@@ -7113,6 +7142,7 @@ function getTestState() {
     dropLimit: state.dropLimit,
     textSize: state.textSize,
     isPaused: state.isPaused,
+    hasStarted: state.hasStarted,
     isBreatherMode: state.isBreatherMode,
     cannonOverloadMs: state.cannonOverloadMs,
     wrongSubmissionCount: state.wrongSubmissionTimes.length,
@@ -7218,8 +7248,19 @@ function installTestHooks() {
       updateLoginLink();
       updateBossHud();
       updateBreatherHud();
-      if (pauseBtn) pauseBtn.textContent = "Pause";
+      state.hasStarted = true;
+      state.isPaused = false;
+      updatePauseControlLabels();
       startVisitSession({ forceNew: true });
+      drawDrops();
+      return getTestState();
+    },
+    stageReadyRun() {
+      // Force the real-user "ready/Start" gate (tests otherwise auto-start).
+      state.hasStarted = false;
+      state.isPaused = true;
+      state.drops = [];
+      updatePauseControlLabels();
       drawDrops();
       return getTestState();
     },
@@ -7504,9 +7545,11 @@ function init() {
   startVisitSession();
   answerInput.tabIndex = -1;
 
-  if (pauseBtn) {
-    pauseBtn.textContent = "Pause";
-  }
+  // Real users land at the ready/Start gate (frozen until Start / welcome Play);
+  // tests auto-play so the suite behaves as before.
+  state.hasStarted = IS_TEST_MODE;
+  state.isPaused = !state.hasStarted;
+  updatePauseControlLabels();
 
   setupTouchKeypad();
   updateStaticText();

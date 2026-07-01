@@ -13,8 +13,8 @@ export const RainMathText = {
   support: {
     label: "Donate",
     shortLabel: "Donate",
-    welcomeTitle: "",
-    welcomeBody: "",
+    welcomeTitle: "No ads · No tracking · No sign-in",
+    welcomeBody: "Rain Math runs entirely in your browser — no server, no accounts, nothing collected about your kid. Donations keep it free and ad-free.",
     welcomeLink: "Donate",
   },
   welcome: {
