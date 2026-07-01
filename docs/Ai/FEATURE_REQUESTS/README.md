@@ -36,6 +36,7 @@ Kebab-case slug describing the feature: `answer-space-aware-overload.md`,
 
 ## Index
 Keep this list current (newest meaningful first):
+- `session-active-time.md` — Status: agreed — idle-capped active seat-time so a left-open tab stops inflating session duration.
 - `rounding-and-estimation.md` — Status: landed — `≈` Rounding/estimation (case-based grid: cells=cases, levels=place+size).
 - `boss-mode-control-legibility.md` — Status: landed — make silently-gated boss/challenge controls show their locked state + reason (touch-friendly).
 - `session-continuity-and-finish.md` — Status: landed — one report per sitting (resume recent session) + a "Finish" share-the-report control.
