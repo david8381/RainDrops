@@ -3160,6 +3160,9 @@ function handleWrongInput({ targets = null } = {}) {
       handlePlacementDropFinished(drop, false, "wrong");
     }
   }
+  if (targetsToRecord.length === 0) {
+    heartbeatActiveSession({ persist: true });
+  }
   if (targetsToRecord.some(isPlacementDrop)) {
     const placementIds = new Set(targetsToRecord.filter(isPlacementDrop).map((drop) => drop.id));
     state.drops = state.drops.filter((drop) => !placementIds.has(drop.id));
@@ -3218,6 +3221,7 @@ function processInput(value) {
     const isValidDivisor = !Number.isNaN(typedNum) && Number.isInteger(typedNum) && typedNum >= 2;
     if (isValidDivisor && target.factorRemaining % typedNum === 0) {
       advanceFactorDrop(target, typedNum, { fromTargeting: true });
+      heartbeatActiveSession({ persist: true });
       answerInput.value = "";
       state.currentInput = "";
     } else if (isValidDivisor && target.factorRemaining % typedNum !== 0) {

@@ -182,6 +182,7 @@
  * @typedef {Object} SessionLogEntry
  * @property {string} id
  * @property {string|number} startedAt
+ * @property {number} [activeMs] Idle-capped active seat time. Legacy entries may omit this and fall back to engaged operation time.
  * @property {number} durationMs
  */
 

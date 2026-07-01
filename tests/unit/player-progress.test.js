@@ -192,6 +192,68 @@ describe("player progress profile", () => {
     assert.equal(profile.sessionLog[0].lastSeenAt, new Date(start + 5000).toISOString());
   });
 
+  it("tracks idle-capped active session time", () => {
+    const profile = createDefaultProfile(Date.UTC(2026, 0, 1));
+    const start = Date.UTC(2026, 0, 1, 12, 0, 0);
+
+    recordSessionStart(profile, { id: "visit-1" }, start);
+    recordSessionHeartbeat(profile, "visit-1", start + 30_000);
+    recordSessionHeartbeat(profile, "visit-1", start + 90_000);
+    recordSessionHeartbeat(profile, "visit-1", start + 90_000 + 60 * 60 * 1000);
+
+    const [session] = summarizeSessionLog(profile);
+    assert.equal(session.durationMs, 210_000);
+    assert.equal(profile.sessionLog[0].activeMs, 210_000);
+  });
+
+  it("persists active time and falls legacy duration back to engaged operation time", () => {
+    const now = Date.UTC(2026, 0, 1, 12, 0, 0);
+    const profile = createDefaultProfile(now);
+    profile.sessionLog = [
+      {
+        id: "active",
+        startedAt: new Date(now - 10 * 60 * 1000).toISOString(),
+        lastSeenAt: new Date(now).toISOString(),
+        endedAt: new Date(now).toISOString(),
+        activeMs: 95_000,
+        operations: {
+          add: { opKey: "add", durationMs: 4_000 },
+        },
+      },
+      {
+        id: "legacy",
+        startedAt: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+        lastSeenAt: new Date(now).toISOString(),
+        endedAt: new Date(now).toISOString(),
+        operations: {
+          add: { opKey: "add", durationMs: 4_000 },
+          sub: { opKey: "sub", durationMs: 6_000 },
+        },
+      },
+    ];
+    const store = {
+      version: 1,
+      activeUserId: profile.user.id,
+      profiles: {
+        [profile.user.id]: profile,
+      },
+    };
+    const storage = createMemoryStorage({
+      [PROFILE_STORE_KEY]: JSON.stringify(store),
+    });
+
+    const loaded = readProfile(storage);
+    const sessions = summarizeSessionLog(loaded, 10);
+
+    assert.equal(sessions.find((session) => session.id === "active").durationMs, 95_000);
+    assert.equal(sessions.find((session) => session.id === "legacy").durationMs, 10_000);
+    assert.equal(loaded.sessionLog.find((session) => session.id === "legacy").activeMs, undefined);
+
+    recordSessionHeartbeat(loaded, "legacy", now + 6 * 60 * 60 * 1000);
+    assert.equal(loaded.sessionLog.find((session) => session.id === "legacy").activeMs, 130_000);
+    assert.equal(summarizeSessionLog(loaded, 10).find((session) => session.id === "legacy").durationMs, 130_000);
+  });
+
   it("preserves saved levels and records boss attempts per level", () => {
     const profile = createDefaultProfile();
 

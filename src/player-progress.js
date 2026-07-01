@@ -18,6 +18,7 @@ const PROFILE_STORE_VERSION = 1;
 const RECENT_LIMIT = 20;
 const SESSION_LOG_LIMIT = 50;
 const SESSION_RESPONSE_MS_CAP = 60000;
+const SESSION_IDLE_GAP_CAP_MS = 2 * 60 * 1000;
 const BOSS_READY_SCORE = 100;
 const FINISH_LEVEL_FOCUS_SCORE = 80;
 const DEFAULT_START_LEVEL = 1;
@@ -252,7 +253,7 @@ function normalizeSessionEntry(raw = {}, nowMs = Date.now()) {
   const id = String(raw.id || `session-${nowMs}`);
   const startedAt = raw.startedAt || raw.createdAt || at;
   const lastSeenAt = raw.lastSeenAt || raw.endedAt || startedAt;
-  return {
+  const entry = {
     id,
     startedAt,
     lastSeenAt,
@@ -269,6 +270,10 @@ function normalizeSessionEntry(raw = {}, nowMs = Date.now()) {
     challenges: createSessionChallengeStats(raw.challenges),
     operations: normalizeSessionOperations(raw.operations),
   };
+  if (Number.isFinite(raw.activeMs)) {
+    entry.activeMs = Math.max(0, Math.round(raw.activeMs));
+  }
+  return entry;
 }
 
 function normalizeSessionLog(log = [], nowMs = Date.now()) {
@@ -915,6 +920,13 @@ function updateAllSessionOperationSnapshots(profile, session) {
 function touchSession(profile, session, nowMs = Date.now()) {
   const at = nowIso(nowMs);
   updateAllSessionOperationSnapshots(profile, session);
+  const lastSeenMs = Date.parse(session.lastSeenAt || session.endedAt || session.startedAt);
+  if (Number.isFinite(nowMs) && Number.isFinite(lastSeenMs)) {
+    const gap = nowMs - lastSeenMs;
+    const activeGap = clamp(0, SESSION_IDLE_GAP_CAP_MS, Number.isFinite(gap) ? gap : 0);
+    const activeBase = Number.isFinite(session.activeMs) ? session.activeMs : getLegacySessionEngagedMs(session);
+    session.activeMs = Math.max(0, Math.round(activeBase)) + activeGap;
+  }
   session.lastSeenAt = at;
   session.endedAt = at;
   profile.user.updatedAt = at;
@@ -953,6 +965,7 @@ function recordSessionStart(profile, options = {}, nowMs = Date.now()) {
       textSize,
     },
   }, nowMs);
+  session.activeMs = 0;
   session.operations = createSessionOperations(profile);
   profile.sessionLog.unshift(session);
   if (profile.sessionLog.length > SESSION_LOG_LIMIT) {
@@ -1868,11 +1881,21 @@ function getFinishLevelPracticeProblems(skill) {
     .sort((a, b) => a.mastery - b.mastery || b.attempts - a.attempts || a.statsKey.localeCompare(b.statsKey));
 }
 
+function getLegacySessionEngagedMs(session) {
+  const operations = session?.operations && typeof session.operations === "object"
+    ? Object.values(session.operations)
+    : [];
+  return operations.reduce((sum, operation) => {
+    const duration = Number.isFinite(operation?.durationMs) ? operation.durationMs : 0;
+    return sum + Math.max(0, Math.round(duration));
+  }, 0);
+}
+
 function getSessionDurationMs(session) {
-  const start = new Date(session.startedAt).getTime();
-  const end = new Date(session.endedAt || session.lastSeenAt || session.startedAt).getTime();
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 0;
-  return end - start;
+  if (Number.isFinite(session?.activeMs)) {
+    return Math.max(0, Math.round(session.activeMs));
+  }
+  return getLegacySessionEngagedMs(session);
 }
 
 function summarizeSessionStats(stats = createSessionStats()) {

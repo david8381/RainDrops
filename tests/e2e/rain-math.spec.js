@@ -724,6 +724,27 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#sessionReportOverlay .session-report-donate")).toHaveText("donating");
   });
 
+  test("session duration uses active time instead of long idle wall-clock", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await freezeAutoSpawns(page);
+    await invoke(page, "addDrop", { opKey: "add", text: "1 + 1", answer: 2, answerText: "2", statsKey: "1,1", y: 120 });
+    await invoke(page, "submit", "2");
+
+    await invoke(page, "backdateActiveSession", 6 * 60 * 60 * 1000);
+    await page.locator("#sessionLogLink").click();
+
+    const state = await invoke(page, "getState");
+    const durationMs = state.sessionLog[0].durationMs;
+    expect(durationMs).toBeGreaterThanOrEqual(119_000);
+    expect(durationMs).toBeLessThan(3 * 60 * 1000);
+
+    const expectedDuration = await page.evaluate((ms) => window.RainMathCore.formatDuration(ms), durationMs);
+    await expect(page.locator("#sessionLogOverlay")).toContainText(expectedDuration);
+    await page.locator(".session-log-report").click();
+    await expect(page.locator("#sessionReportOverlay")).toContainText(expectedDuration);
+  });
+
   test("reloads within the grace window resume the same session report", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);

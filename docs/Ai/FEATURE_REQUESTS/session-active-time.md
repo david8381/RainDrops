@@ -1,9 +1,9 @@
 # Feature: Session "active time" (stop idle from inflating duration)
 
-Status: agreed — ready for implementation
-Owner: Codex (planned by Claude; Claude to review)
+Status: landed
+Owner: Codex (planned by Claude; reviewed by Claude)
 Last Updated: 2026-07-01
-Related Commits: (pending)
+Related Commits: (this commit)
 
 ## User Request
 Session durations are absurd when a tab is left open — David has one showing **2400 min**
@@ -94,4 +94,14 @@ mere focus/idle keypresses beyond submissions.
   assert the duration only grew by ≈ the cap, not the jump.
 
 ## Outcome
-(pending implementation by Codex)
+Implemented by Codex on 2026-07-01:
+- Added persisted per-session `activeMs`, accrued in `touchSession` from activity gaps capped
+  at 2 minutes.
+- Changed session headline duration to use `activeMs` when present; legacy sessions without
+  `activeMs` now fall back to summed per-operation engaged time instead of wall-clock, and
+  if a legacy current session is touched it seeds `activeMs` from that engaged-time baseline
+  before adding the capped gap.
+- Added active heartbeats for wrong submissions that do not target a visible drop and for
+  stepwise factor entries, so effort can accrue without inventing mastery stats.
+- Updated unit and focused e2e coverage for idle-capped duration, legacy fallback, and Log /
+  Report consistency.

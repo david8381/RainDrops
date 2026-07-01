@@ -3,6 +3,9 @@
 ## Purpose
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
+## 2026-07-01
+- Changed session/report headline duration from wall-clock to idle-capped active time. Sessions now persist `activeMs`, accrue at most 2 minutes for any idle gap, count no-target wrong submissions and stepwise factor entries as activity, and legacy sessions without `activeMs` fall back to summed per-operation engaged time so left-open tabs no longer show absurd durations.
+
 ## 2026-06-30
 - Rounding L2 fix: nearest-ten level 2 now samples 3-digit numbers (was 3–4 digit); 4-digit→nearest-ten is the same skill as 3-digit and was appearing too early. Big numbers still arrive with the hundred/thousand levels. Carry case still constructs within 100–999.
 - Revised the new **Rounding** operation's mastery grid from input-size buckets to case buckets: each cell now represents a rounding decision (`down`, `up`, `half`, `zero`, or `carry`) scoped by place and size relationship, with sampler tests proving every listed cell can generate an in-case problem.
