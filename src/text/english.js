@@ -14,7 +14,7 @@ export const RainMathText = {
     label: "Donate",
     shortLabel: "Donate",
     welcomeTitle: "No ads · No tracking · No sign-in",
-    welcomeBody: "Rain Math runs entirely in your browser — no server, no accounts, nothing collected about your kid. Donations keep it free and ad-free.",
+    welcomeBody: "Rain Math runs entirely in your browser — no server, no accounts, nothing collected about you. Thank you for your donations.",
     welcomeLink: "Donate",
   },
   welcome: {

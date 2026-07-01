@@ -2094,7 +2094,8 @@ button.primary:hover {
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-.session-report-donate-note {
+.session-report-donate-note,
+.share-badge-donate-note {
   margin: 2px 0 0;
   color: rgba(148, 163, 184, 0.78);
   font-size: 0.68rem;
@@ -2102,7 +2103,8 @@ button.primary:hover {
   text-align: center;
 }
 
-.session-report-donate {
+.session-report-donate,
+.share-badge-donate {
   color: rgba(251, 191, 36, 0.88);
   font-weight: 600;
   text-decoration: none;

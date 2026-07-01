@@ -3807,7 +3807,19 @@ function showShareBadge(opKey, level) {
   share.addEventListener("click", () => shareBadge(data, status));
   buttons.append(close, copy, share);
 
-  card.append(badge, shareText, status, buttons);
+  const donateNote = document.createElement("p");
+  donateNote.className = "share-badge-donate-note";
+  donateNote.append("Rain Math is ad-free, tracking-free, and runs with no server. Thank you for ");
+  const donate = document.createElement("a");
+  donate.className = "share-badge-donate";
+  donate.href = SUPPORT_URL;
+  donate.target = "_blank";
+  donate.rel = "noopener noreferrer";
+  donate.textContent = "donating";
+  donateNote.appendChild(donate);
+  donateNote.append(".");
+
+  card.append(badge, shareText, status, buttons, donateNote);
   overlay.appendChild(card);
   document.body.appendChild(overlay);
   share.focus();
@@ -4798,7 +4810,7 @@ async function shareReportWithParent(sessionId, statusEl) {
       /* cancelled or unsupported — fall back to copying */
     }
   }
-  copyTextToClipboard(url, statusEl, "Link copied — send it to a parent.");
+  copyTextToClipboard(url, statusEl, "Report link copied.");
 }
 
 function openSharedReportView(payload) {
@@ -5130,7 +5142,7 @@ function buildSessionReportPopup(sessionId) {
     shareBtn.type = "button";
     shareBtn.id = "sessionReportShare";
     shareBtn.className = "session-report-share-btn";
-    shareBtn.textContent = "Share with a parent";
+    shareBtn.textContent = "Send report";
     const copyBtn = document.createElement("button");
     copyBtn.type = "button";
     copyBtn.id = "sessionReportCopy";
@@ -5142,7 +5154,7 @@ function buildSessionReportPopup(sessionId) {
     shareBtn.addEventListener("click", () => shareReportWithParent(session.id, shareStatus));
     copyBtn.addEventListener("click", async () => {
       shareStatus.textContent = "Preparing link…";
-      copyTextToClipboard(await getSharedReportLink(state.progressProfile, session.id), shareStatus, "Link copied — paste it to a parent.");
+      copyTextToClipboard(await getSharedReportLink(state.progressProfile, session.id), shareStatus, "Report link copied.");
     });
     share.append(shareBtn, copyBtn, shareStatus);
     card.appendChild(share);
@@ -5236,7 +5248,7 @@ function buildSessionReportPopup(sessionId) {
 
   const donateNote = document.createElement("p");
   donateNote.className = "session-report-donate-note";
-  donateNote.append("Enjoying and benefiting? Please consider ");
+  donateNote.append("Rain Math is ad-free, tracking-free, and runs with no server. Thank you for ");
   const donate = document.createElement("a");
   donate.className = "session-report-donate";
   donate.href = SUPPORT_URL;
@@ -5244,7 +5256,7 @@ function buildSessionReportPopup(sessionId) {
   donate.rel = "noopener noreferrer";
   donate.textContent = "donating";
   donateNote.appendChild(donate);
-  donateNote.append(". It keeps Rain Math ad-free, tracking-free, and running with no server.");
+  donateNote.append(".");
   card.appendChild(donateNote);
 
   overlay.appendChild(card);
