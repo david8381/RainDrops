@@ -823,6 +823,27 @@ function createStoredProfile(name, storage = globalThis.localStorage, nowMs = Da
   return profile;
 }
 
+function importStoredProfile(profile, storage = globalThis.localStorage, nowMs = Date.now()) {
+  const store = readProfileStore(storage, nowMs);
+  const incoming = ensureProfileShape(profile, nowMs);
+  const incomingName = String(incoming.user?.name || "").trim().toLowerCase();
+  const nameMatch = Object.values(store.profiles).find((candidate) => (
+    incomingName && String(candidate.user?.name || "").trim().toLowerCase() === incomingName
+  ));
+  const replaceId = store.profiles[incoming.user.id]
+    ? incoming.user.id
+    : nameMatch?.user?.id;
+  if (replaceId && replaceId !== incoming.user.id) {
+    delete store.profiles[incoming.user.id];
+    incoming.user.id = replaceId;
+  }
+  incoming.user.updatedAt = nowIso(nowMs);
+  store.profiles[incoming.user.id] = incoming;
+  store.activeUserId = incoming.user.id;
+  const next = persistProfileStore(store, storage, nowMs);
+  return ensureProfileShape(next.profiles[next.activeUserId], nowMs);
+}
+
 function switchStoredProfile(userId, storage = globalThis.localStorage, nowMs = Date.now()) {
   const store = readProfileStore(storage, nowMs);
   if (!store.profiles[userId]) return readProfile(storage, nowMs);
@@ -2132,6 +2153,7 @@ export {
   problemMastery,
   isBossMasteredProblem,
   isPlacementPlacedOut,
+  importStoredProfile,
   readProfile,
   readProfileStore,
   recordBossAttempt,

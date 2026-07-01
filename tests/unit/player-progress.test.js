@@ -29,6 +29,7 @@ import {
   getChallengeBest,
   getChallengeBests,
   getFinishLevelPracticeProblems,
+  importStoredProfile,
   isPlacementPlacedOut,
   recordPlacementCredit,
   recordProgressEvent,
@@ -574,6 +575,39 @@ describe("player progress profile", () => {
     assert.equal(david.user.id, "david");
     assert.equal(readProfile(storage).user.name, "david");
     assert.equal(list.find((profile) => profile.id === "david")?.active, true);
+  });
+
+  it("imports a backed-up profile and replaces same-name collisions", () => {
+    const storage = createMemoryStorage();
+    const now = Date.UTC(2026, 0, 1);
+    createStoredProfile("Ada", storage, now);
+
+    const backup = createDefaultProfile(now + 1000);
+    backup.version = 2; // older schema should migrate through ensureProfileShape
+    backup.user = { ...backup.user, id: "ada-backup", name: "Ada" };
+    backup.skills.add.currentLevel = 3;
+    backup.skills.add.totals.attempts = 4;
+
+    const restored = importStoredProfile(backup, storage, now + 2000);
+    const store = readProfileStore(storage, now + 2000);
+
+    assert.equal(restored.version, 3);
+    assert.equal(restored.user.id, "ada");
+    assert.equal(restored.user.name, "Ada");
+    assert.equal(restored.skills.add.currentLevel, 3);
+    assert.equal(restored.skills.add.totals.attempts, 4);
+    assert.equal(store.activeUserId, "ada");
+    assert.equal(Object.values(store.profiles).filter((profile) => profile.user.name === "Ada").length, 1);
+
+    const grace = createDefaultProfile(now + 3000);
+    grace.user = { ...grace.user, id: "grace", name: "Grace" };
+    const added = importStoredProfile(grace, storage, now + 4000);
+    const nextStore = readProfileStore(storage, now + 4000);
+
+    assert.equal(added.user.id, "grace");
+    assert.equal(nextStore.activeUserId, "grace");
+    assert.ok(nextStore.profiles.ada);
+    assert.ok(nextStore.profiles.grace);
   });
 
   it("falls back to defaults when stored data is malformed", () => {

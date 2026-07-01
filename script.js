@@ -116,13 +116,14 @@ const {
 
 const {
   BOSS_READY_SCORE,
-  createStoredProfile,
+  PROFILE_VERSION,
   getFinishLevelPracticeProblems,
   getBlitzBest,
   getChallengeBest,
   getPressureTier,
   getProfileList,
   getSkillUniverseProblems,
+  importStoredProfile,
   isPlacementPlacedOut,
   buildStatsTooltip,
   mirrorLegacyProblemStats,
@@ -144,7 +145,6 @@ const {
   shouldResumeSession,
   summarizeProfile,
   summarizeSessionLog,
-  switchStoredProfile,
   syncSettings,
 } = RainMathProgress;
 
@@ -4535,6 +4535,7 @@ async function copyTextToClipboard(text, statusEl, okMsg = "Copied.") {
 // client JS), just tamper-evidence: someone who edits the decoded JSON and
 // re-encodes will not know to recompute the hash hidden in the id.
 const SHARE_SALT = "rm.aurora.v1";
+const BACKUP_CODE_PREFIX = "RMBAK1:";
 
 // The checksum is disguised as the trailing segment of a plausible export id, so
 // a tamperer editing scores/name won't realize a sibling field must be updated.
@@ -4616,6 +4617,76 @@ async function decodeShareReportCode(code) {
 async function getSharedReportLink(profile = state.progressProfile, sessionId = null) {
   const base = `${window.location.origin}${window.location.pathname}`;
   return `${base}#report=${await getShareReportCode(profile, sessionId)}`;
+}
+
+function buildProfileBackupPayload(profile = state.progressProfile) {
+  const content = {
+    v: 1,
+    app: PROFILE_VERSION,
+    kind: "backup",
+    profile: JSON.parse(JSON.stringify(profile)),
+  };
+  content.id = makeShareId(content);
+  return content;
+}
+
+async function getProfileBackupCode(profile = state.progressProfile) {
+  return `${BACKUP_CODE_PREFIX}${await encodeSharePayload(buildProfileBackupPayload(profile))}`;
+}
+
+async function decodeProfileBackupCode(code) {
+  const trimmed = String(code || "").trim();
+  if (!trimmed.startsWith(BACKUP_CODE_PREFIX)) {
+    return { ok: false, message: "This backup code is not recognized." };
+  }
+  const payload = await decodeShareReportCode(trimmed.slice(BACKUP_CODE_PREFIX.length));
+  if (!payload || payload.kind !== "backup" || payload.v !== 1 || !payload.profile) {
+    return { ok: false, message: "This backup looks damaged." };
+  }
+  if (Number.isFinite(payload.app) && payload.app > PROFILE_VERSION) {
+    return { ok: false, message: "This backup is from a newer version of Rain Math." };
+  }
+  if (!isShareChecksumValid(payload)) {
+    return { ok: false, message: "This backup looks damaged." };
+  }
+  return { ok: true, payload, profile: payload.profile };
+}
+
+function getBackupProfileConflict(profile) {
+  const id = String(profile?.user?.id || "");
+  const name = String(profile?.user?.name || "").trim().toLowerCase();
+  return getProfileList().find((candidate) => (
+    (id && candidate.id === id)
+    || (name && String(candidate.name || "").trim().toLowerCase() === name)
+  )) || null;
+}
+
+async function restoreProfileBackupCode(code, { confirmReplace = true } = {}) {
+  const decoded = await decodeProfileBackupCode(code);
+  if (!decoded.ok) return decoded;
+  const conflict = getBackupProfileConflict(decoded.profile);
+  if (conflict && confirmReplace) {
+    const ok = window.confirm(`Restore will replace ${conflict.name}'s progress — continue?`);
+    if (!ok) return { ok: false, message: "Restore cancelled." };
+  }
+  saveProfile(state.progressProfile);
+  const restored = importStoredProfile(decoded.profile);
+  activateProfile(restored);
+  return {
+    ok: true,
+    profile: JSON.parse(JSON.stringify(restored)),
+    replaced: Boolean(conflict),
+    message: `${restored.user?.name || "Player"} restored.`,
+  };
+}
+
+function getBackupFileName(profile = state.progressProfile) {
+  const safeName = String(profile?.user?.name || "player")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "player";
+  return `rainmath-${safeName}-backup.txt`;
 }
 
 // Share a single report with a parent: native share sheet when available
@@ -5014,79 +5085,6 @@ function rebuildWelcomeMenu() {
   if (wasVisible) buildWelcomeMenu({ firstVisit: false });
 }
 
-function selectWelcomeProfile(profileId) {
-  saveProfile(state.progressProfile);
-  const selected = switchStoredProfile(profileId);
-  activateProfile(selected);
-  rebuildWelcomeMenu();
-}
-
-function buildWelcomeProfileList() {
-  const wrap = document.createElement("div");
-  wrap.className = "welcome-profile-list";
-  const profiles = getProfileList();
-  profiles.forEach((profile) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "welcome-profile-btn";
-    btn.classList.toggle("active", profile.active);
-    btn.setAttribute("aria-pressed", profile.active ? "true" : "false");
-    btn.addEventListener("click", () => selectWelcomeProfile(profile.id));
-
-    const name = document.createElement("span");
-    name.className = "welcome-profile-name";
-    name.textContent = profile.name === "Local Player"
-      ? getText("welcome.localPlayer")
-      : profile.name;
-    const meta = document.createElement("span");
-    meta.className = "welcome-profile-meta";
-    meta.textContent = profile.active
-      ? getText("welcome.playingNow")
-      : formatProfileUpdatedAt(profile.updatedAt);
-
-    btn.appendChild(name);
-    btn.appendChild(meta);
-    wrap.appendChild(btn);
-  });
-  return wrap;
-}
-
-function buildWelcomeCreateForm() {
-  const form = document.createElement("form");
-  form.className = "welcome-create";
-  const input = document.createElement("input");
-  input.id = "welcomeProfileName";
-  input.type = "text";
-  input.maxLength = 40;
-  input.autocomplete = "off";
-  input.placeholder = getText("welcome.newPlayerPlaceholder");
-  const btn = document.createElement("button");
-  btn.type = "submit";
-  btn.textContent = getText("common.create");
-  const error = document.createElement("div");
-  error.className = "welcome-error";
-  error.setAttribute("role", "alert");
-
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const name = input.value.trim();
-    if (!name) {
-      error.textContent = getText("welcome.emptyNameError");
-      input.focus();
-      return;
-    }
-    saveProfile(state.progressProfile);
-    const created = createStoredProfile(name);
-    activateProfile(created);
-    buildWelcomeMenu({ firstVisit: false });
-  });
-
-  form.appendChild(input);
-  form.appendChild(btn);
-  form.appendChild(error);
-  return form;
-}
-
 function buildWelcomeMenu({ firstVisit = false } = {}) {
   closeWelcomeMenu({ focus: false });
   closeTutorialOverlay({ focus: false });
@@ -5142,10 +5140,15 @@ function buildWelcomeMenu({ firstVisit = false } = {}) {
   playerTitle.textContent = getText("welcome.playerTitle");
   const playerSub = document.createElement("p");
   playerSub.textContent = getText("welcome.playerSubtitle");
+  const playerCurrent = document.createElement("div");
+  playerCurrent.className = "welcome-current-player";
+  const currentName = getActiveProfileName() === "Local Player"
+    ? getText("welcome.localPlayer")
+    : getActiveProfileName();
+  playerCurrent.textContent = formatText(getText("welcome.currentPlayer"), { playerName: currentName });
   playerPanel.appendChild(playerTitle);
   playerPanel.appendChild(playerSub);
-  playerPanel.appendChild(buildWelcomeProfileList());
-  playerPanel.appendChild(buildWelcomeCreateForm());
+  playerPanel.appendChild(playerCurrent);
 
   const actionPanel = document.createElement("section");
   actionPanel.className = "welcome-panel welcome-action-panel";
@@ -5191,10 +5194,10 @@ function buildWelcomeMenu({ firstVisit = false } = {}) {
   const loginBtn = document.createElement("button");
   loginBtn.type = "button";
   loginBtn.className = "welcome-login";
+  loginBtn.id = "welcomeLogin";
   loginBtn.textContent = getText("welcome.fullLoginMenu");
   loginBtn.addEventListener("click", () => {
-    closeWelcomeMenu({ focus: false });
-    openLoginPopup();
+    openLoginPopup({ keepWelcome: true });
   });
 
   actions.appendChild(playBtn);
@@ -5885,15 +5888,23 @@ function formatProfileUpdatedAt(value) {
 
 // Login popup lives in src/popups/login-popup.js. openLoginPopup() builds the
 // engine context it needs.
-function openLoginPopup() {
+function openLoginPopup({ keepWelcome = false } = {}) {
   buildLoginPopupView({
     getProgressProfile: () => state.progressProfile,
     getActiveProfileName,
     formatProfileUpdatedAt,
+    createBackupCode: async () => {
+      saveProfile(state.progressProfile);
+      return getProfileBackupCode(state.progressProfile);
+    },
+    getBackupFileName: () => getBackupFileName(state.progressProfile),
+    restoreBackupCode: restoreProfileBackupCode,
+    copyTextToClipboard,
     heartbeatActiveSession,
     activateProfile,
+    onProfileChanged: rebuildWelcomeMenu,
     closeOtherPopups: () => {
-      closeWelcomeMenu({ focus: false });
+      if (!keepWelcome) closeWelcomeMenu({ focus: false });
       closeTutorialOverlay({ focus: false });
       closePlacementOverlay({ focus: false });
       closeShareBadgePopup();
@@ -7079,6 +7090,26 @@ function installTestHooks() {
       if (payload.v === 2) payload.n = "TAMPERED";
       else payload.name = "TAMPERED";
       return encodeSharePayload(payload); // async
+    },
+    getBackupCode() {
+      saveProfile(state.progressProfile);
+      return getProfileBackupCode(state.progressProfile); // async
+    },
+    async getTamperedBackupCode() {
+      const payload = buildProfileBackupPayload(state.progressProfile);
+      payload.profile.user.name = "TAMPERED";
+      return `${BACKUP_CODE_PREFIX}${await encodeSharePayload(payload)}`;
+    },
+    async getNewerBackupCode() {
+      const payload = buildProfileBackupPayload(state.progressProfile);
+      payload.app = PROFILE_VERSION + 1;
+      payload.id = makeShareId(payload);
+      return `${BACKUP_CODE_PREFIX}${await encodeSharePayload(payload)}`;
+    },
+    restoreBackup(code, options = {}) {
+      return restoreProfileBackupCode(code, {
+        confirmReplace: options.confirmReplace ?? false,
+      }); // async
     },
     enableOps(opKeys) {
       Object.keys(opConfig).forEach((key) => {

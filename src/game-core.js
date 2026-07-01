@@ -1905,6 +1905,9 @@ function falseFireCost({ distinctAnswerCount, visibleDistinctAnswers }) {
 // id that carries the checksum). Must be rebuilt in this exact order on both
 // sides for the tamper check to line up.
 function shareContentString(p) {
+  if (p?.kind === "backup") {
+    return JSON.stringify({ v: p.v, app: p.app, kind: p.kind, profile: p.profile });
+  }
   if (p?.v === 2) {
     return JSON.stringify({ v: p.v, n: p.n, r: p.r });
   }

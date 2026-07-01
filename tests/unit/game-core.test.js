@@ -376,6 +376,19 @@ describe("difficulty ranges", () => {
     const compactChecksum = computeShareChecksum(compact, salt);
     assert.equal(verifyShareChecksum({ ...compact, id: compactChecksum }, salt), true);
     assert.equal(verifyShareChecksum({ ...compact, n: "Eve", id: compactChecksum }, salt), false);
+
+    const backup = {
+      v: 1,
+      app: 3,
+      kind: "backup",
+      profile: { user: { id: "ada", name: "Ada" }, skills: { add: { currentLevel: 2 } } },
+    };
+    const backupChecksum = computeShareChecksum(backup, salt);
+    assert.equal(verifyShareChecksum({ ...backup, id: backupChecksum }, salt), true);
+    assert.equal(
+      verifyShareChecksum({ ...backup, profile: { ...backup.profile, user: { id: "ada", name: "Eve" } }, id: backupChecksum }, salt),
+      false
+    );
   });
 
   it("resolves stats-key display labels per operation", () => {

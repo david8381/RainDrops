@@ -98,11 +98,20 @@ test("first visit menu creates a player, starts the tutorial, and enters play", 
   await expect(page.locator(".welcome-support a")).toHaveAttribute("href", "https://ko-fi.com/davidedaniels");
   await expect(page.locator(".welcome-support a")).toHaveText("Donate");
   await expect(page.locator("#supportLink")).toHaveAttribute("href", "https://ko-fi.com/davidedaniels");
+  await expect(page.locator(".welcome-profile-list")).toHaveCount(0);
+  await expect(page.locator(".welcome-create")).toHaveCount(0);
+  await expect(page.locator(".welcome-current-player")).toHaveText("Current player: Local player");
+  await expect(page.locator("#welcomeLogin")).toHaveText("Switch / manage players");
 
-  await page.locator("#welcomeProfileName").fill("Grace Hopper");
-  await page.locator(".welcome-create button").click();
+  await page.locator("#welcomeLogin").click();
+  await expect(page.locator("#loginOverlay")).toBeVisible();
+  await expect(page.locator(".login-backup h3")).toHaveText("Backup / Restore");
+  await page.locator("#profileNameInput").fill("Grace Hopper");
+  await page.getByRole("button", { name: /^Create$/ }).click();
+  await expect(page.locator("#loginOverlay")).toHaveCount(0);
+  await expect(page.locator("#welcomeOverlay")).toBeVisible();
   await expect(page.locator("#loginLink")).toHaveText("Grace Hopper");
-  await expect(page.locator(".welcome-profile-btn.active .welcome-profile-name")).toHaveText("Grace Hopper");
+  await expect(page.locator(".welcome-current-player")).toHaveText("Current player: Grace Hopper");
 
   await page.locator("#welcomeTutorial").click();
   await expect(page.locator("#tutorialOverlay")).toBeVisible();
@@ -980,7 +989,7 @@ test.describe("desktop gameplay", () => {
     await page.locator("#loginLink").click();
     await expect(page.locator("#loginOverlay")).toBeVisible();
     await page.locator("#profileNameInput").fill("Ada Lovelace");
-    await page.getByRole("button", { name: "Create" }).click();
+    await page.getByRole("button", { name: /^Create$/ }).click();
     await expect(page.locator("#loginOverlay")).toHaveCount(0);
     await expect(page.locator("#loginLink")).toHaveText("Ada Lovelace");
     const adaFirstSession = (await invoke(page, "getState")).activeSessionId;
@@ -988,7 +997,7 @@ test.describe("desktop gameplay", () => {
 
     await page.locator("#loginLink").click();
     await page.locator("#profileNameInput").fill("Ben");
-    await page.getByRole("button", { name: "Create" }).click();
+    await page.getByRole("button", { name: /^Create$/ }).click();
     await expect(page.locator("#loginLink")).toHaveText("Ben");
     const benSession = (await invoke(page, "getState")).activeSessionId;
     expect(benSession).not.toBe(adaFirstSession);
@@ -1023,6 +1032,55 @@ test.describe("desktop gameplay", () => {
     state = await invoke(page, "getState");
     expect(state.progressProfile.user.name).toBe("Ada Lovelace");
     expect(state.progressSummary.skills.add.attempts).toBe(0);
+  });
+
+  test("backs up and restores the active local player profile", async ({ page }) => {
+    await openApp(page);
+
+    await page.locator("#loginLink").click();
+    await expect(page.locator(".login-backup h3")).toHaveText("Backup / Restore");
+    await page.locator("#profileNameInput").fill("Ada Backup");
+    await page.getByRole("button", { name: /^Create$/ }).click();
+
+    await invoke(page, "enableOps", ["add"]);
+    await freezeAutoSpawns(page);
+    await invoke(page, "addDrop", {
+      opKey: "add",
+      text: "2 + 2",
+      answer: 4,
+      answerText: "4",
+      statsKey: "2,2",
+      y: 120,
+    });
+    let state = await invoke(page, "submit", "4");
+    expect(state.progressProfile.user.name).toBe("Ada Backup");
+    expect(state.progressSummary.skills.add.attempts).toBe(1);
+
+    const code = await invoke(page, "getBackupCode");
+    expect(code).toMatch(/^RMBAK1:/);
+
+    await page.locator("#loginLink").click();
+    await page.getByRole("button", { name: "Clear Current Stats" }).click();
+    state = await invoke(page, "getState");
+    expect(state.progressProfile.user.name).toBe("Ada Backup");
+    expect(state.progressSummary.skills.add.attempts).toBe(0);
+
+    const restored = await invoke(page, "restoreBackup", code, { confirmReplace: false });
+    expect(restored.ok).toBe(true);
+    expect(restored.replaced).toBe(true);
+    state = await invoke(page, "getState");
+    expect(state.progressProfile.user.name).toBe("Ada Backup");
+    expect(state.progressSummary.skills.add.attempts).toBe(1);
+
+    const tampered = await invoke(page, "getTamperedBackupCode");
+    const bad = await invoke(page, "restoreBackup", tampered, { confirmReplace: false });
+    expect(bad.ok).toBe(false);
+    expect(bad.message).toContain("damaged");
+
+    const newer = await invoke(page, "getNewerBackupCode");
+    const unsupported = await invoke(page, "restoreBackup", newer, { confirmReplace: false });
+    expect(unsupported.ok).toBe(false);
+    expect(unsupported.message).toContain("newer version");
   });
 
   test("boss mode starts from a level card, then boss bombs stun input", async ({ page }) => {

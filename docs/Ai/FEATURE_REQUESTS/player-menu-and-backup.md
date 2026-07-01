@@ -1,9 +1,9 @@
 # Feature: Consolidate the player menu + profile backup/restore
 
-Status: agreed — ready for implementation
-Owner: Codex (planned by Claude; Claude to review)
+Status: landed
+Owner: Codex (planned by Claude; reviewed by Claude)
 Last Updated: 2026-07-01
-Related Commits: (pending)
+Related Commits: (this commit)
 
 ## User Request
 Two problems, one place:
@@ -103,4 +103,18 @@ Reuse the share-link machinery — this is mostly plumbing, not new crypto/compr
   switch/create/clear/backup/restore.
 
 ## Outcome
-(pending implementation by Codex)
+Implemented in the working tree:
+- Welcome is now a game-entry menu only. It shows the current player and a single
+  "Switch / manage players" button that opens Login; the old embedded profile
+  list/create form are gone.
+- Login is the one player manager: switch/create/clear plus Backup / Restore.
+- Active-player backups use an `RMBAK1:` prefixed compressed share payload with
+  `kind:"backup"`, `PROFILE_VERSION`, and the existing tamper checksum. The UI
+  can copy the code or download `rainmath-<name>-backup.txt`.
+- Restore accepts pasted text or a file, rejects damaged/tampered/newer-version
+  backups, confirms before replacing existing id/name matches in normal UI, imports
+  through `importStoredProfile()`, activates the restored player, and starts a fresh
+  session like a profile switch.
+- Added unit coverage for checksum/import behavior and e2e hooks/coverage for
+  backup round-trip, tamper rejection, newer-version rejection, and welcome-menu
+  consolidation.

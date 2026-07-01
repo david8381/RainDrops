@@ -17,15 +17,33 @@ export function closeLoginPopup() {
   if (existing) existing.remove();
 }
 
+function downloadTextFile(filename, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // ctx: { getProgressProfile, getActiveProfileName, formatProfileUpdatedAt,
-//        heartbeatActiveSession, activateProfile, closeOtherPopups }
+//        createBackupCode, getBackupFileName, restoreBackupCode,
+//        copyTextToClipboard, heartbeatActiveSession, activateProfile,
+//        onProfileChanged, closeOtherPopups }
 export function buildLoginPopup(ctx) {
   const {
     getProgressProfile,
     getActiveProfileName,
     formatProfileUpdatedAt,
+    createBackupCode,
+    getBackupFileName,
+    restoreBackupCode,
+    copyTextToClipboard,
     heartbeatActiveSession,
     activateProfile,
+    onProfileChanged,
     closeOtherPopups,
   } = ctx;
 
@@ -71,6 +89,7 @@ export function buildLoginPopup(ctx) {
       const selected = switchStoredProfile(profile.id);
       activateProfile(selected);
       closeLoginPopup();
+      onProfileChanged?.();
     });
 
     const name = document.createElement("span");
@@ -119,6 +138,7 @@ export function buildLoginPopup(ctx) {
     const created = createStoredProfile(name);
     activateProfile(created);
     closeLoginPopup();
+    onProfileChanged?.();
   });
 
   row.appendChild(input);
@@ -127,6 +147,118 @@ export function buildLoginPopup(ctx) {
   form.appendChild(row);
   form.appendChild(error);
   card.appendChild(form);
+
+  const backup = document.createElement("section");
+  backup.className = "login-backup";
+  const backupTitle = document.createElement("h3");
+  backupTitle.textContent = "Backup / Restore";
+  const backupHelp = document.createElement("p");
+  backupHelp.textContent = "Save this player's progress as a code or file, then restore it later on this device or another one.";
+
+  const backupActions = document.createElement("div");
+  backupActions.className = "login-backup-actions";
+  const makeBackupBtn = document.createElement("button");
+  makeBackupBtn.type = "button";
+  makeBackupBtn.textContent = "Create Backup";
+  const copyBackupBtn = document.createElement("button");
+  copyBackupBtn.type = "button";
+  copyBackupBtn.textContent = "Copy Code";
+  copyBackupBtn.disabled = true;
+  const downloadBackupBtn = document.createElement("button");
+  downloadBackupBtn.type = "button";
+  downloadBackupBtn.textContent = "Download";
+  downloadBackupBtn.disabled = true;
+  backupActions.append(makeBackupBtn, copyBackupBtn, downloadBackupBtn);
+
+  const backupOutput = document.createElement("textarea");
+  backupOutput.id = "profileBackupCode";
+  backupOutput.className = "login-backup-code";
+  backupOutput.readOnly = true;
+  backupOutput.rows = 3;
+  backupOutput.placeholder = "Backup code appears here.";
+
+  const restoreLabel = document.createElement("label");
+  restoreLabel.setAttribute("for", "profileRestoreCode");
+  restoreLabel.textContent = "Restore from code or file";
+  const restoreInput = document.createElement("textarea");
+  restoreInput.id = "profileRestoreCode";
+  restoreInput.className = "login-restore-code";
+  restoreInput.rows = 3;
+  restoreInput.placeholder = "Paste a Rain Math backup code.";
+  const restoreRow = document.createElement("div");
+  restoreRow.className = "login-restore-row";
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = ".txt,text/plain";
+  const restoreBtn = document.createElement("button");
+  restoreBtn.type = "button";
+  restoreBtn.className = "primary";
+  restoreBtn.textContent = "Restore";
+  restoreRow.append(fileInput, restoreBtn);
+
+  const backupStatus = document.createElement("div");
+  backupStatus.className = "login-backup-status";
+  backupStatus.setAttribute("role", "status");
+  backupStatus.setAttribute("aria-live", "polite");
+
+  makeBackupBtn.addEventListener("click", async () => {
+    backupStatus.textContent = "Creating backup...";
+    try {
+      const code = await createBackupCode();
+      backupOutput.value = code;
+      copyBackupBtn.disabled = false;
+      downloadBackupBtn.disabled = false;
+      backupStatus.textContent = "Backup ready.";
+    } catch {
+      backupStatus.textContent = "Backup failed. Try again.";
+    }
+  });
+
+  copyBackupBtn.addEventListener("click", () => {
+    copyTextToClipboard(backupOutput.value, backupStatus, "Backup code copied.");
+  });
+
+  downloadBackupBtn.addEventListener("click", () => {
+    if (!backupOutput.value) return;
+    downloadTextFile(getBackupFileName(), backupOutput.value);
+    backupStatus.textContent = "Backup file downloaded.";
+  });
+
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    restoreInput.value = await file.text();
+    backupStatus.textContent = "Backup file loaded.";
+  });
+
+  restoreBtn.addEventListener("click", async () => {
+    const code = restoreInput.value.trim();
+    if (!code) {
+      backupStatus.textContent = "Paste a backup code or choose a file.";
+      restoreInput.focus();
+      return;
+    }
+    backupStatus.textContent = "Checking backup...";
+    const result = await restoreBackupCode(code, { confirmReplace: true });
+    if (!result.ok) {
+      backupStatus.textContent = result.message || "Restore failed.";
+      return;
+    }
+    closeLoginPopup();
+    onProfileChanged?.();
+  });
+
+  backup.append(
+    backupTitle,
+    backupHelp,
+    backupActions,
+    backupOutput,
+    restoreLabel,
+    restoreInput,
+    restoreRow,
+    backupStatus
+  );
+  card.appendChild(backup);
 
   const actions = document.createElement("div");
   actions.className = "login-actions";
@@ -140,6 +272,7 @@ export function buildLoginPopup(ctx) {
     const resetProfile = resetStoredProfile();
     activateProfile(resetProfile);
     closeLoginPopup();
+    onProfileChanged?.();
   });
 
   const closeBtn = document.createElement("button");
