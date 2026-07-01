@@ -3595,45 +3595,123 @@ function closeShareBadgePopup() {
   if (existing) existing.remove();
 }
 
+function cloneRecapBest(best, fields) {
+  if (!best) return null;
+  const out = {};
+  fields.forEach((field) => {
+    if (best[field] !== undefined && best[field] !== null) out[field] = best[field];
+  });
+  if (best.level !== undefined && best.level !== null) out.level = best.level;
+  if (best.at) out.at = best.at;
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+function hasBossClearForLevel(skill, level) {
+  return Boolean(skill?.bossAttempts?.some((attempt) => (
+    attempt.level === level && attempt.result === "cleared"
+  )));
+}
+
 function getShareBadgeData(opKey, level) {
   const skill = state.progressProfile.skills?.[opKey];
   if (!skill) return null;
-  const blitz = getBlitzBest(skill, level);
-  const wave = getChallengeBest(skill, "wave", level);
-  const worksheet = getChallengeBest(skill, "boss", level);
+  const numericLevel = clamp(1, 10, Math.round(Number(level) || skill.currentLevel || 1));
   const playerName = state.progressProfile.user?.name && state.progressProfile.user.name !== "Local Player"
     ? state.progressProfile.user.name
     : "A Rain Math player";
   return {
     opKey,
     opName: opDisplayNames[opKey] || opKey,
-    level,
+    level: numericLevel,
     playerName,
-    blitzText: blitz ? formatBlitzResult(blitz) : "not tried yet",
-    waveText: wave ? formatWaveResult(wave) : "not tried yet",
-    worksheetText: worksheet?.durationMs ? formatDuration(worksheet.durationMs) : "not tried yet",
+    blitz: cloneRecapBest(getBlitzBest(skill, numericLevel), ["durationMs", "fastestDropSeconds", "clearedCount", "score"]),
+    wave: cloneRecapBest(getChallengeBest(skill, "wave", numericLevel), ["maxLoadCleared", "maxLoadReached", "clearedCount", "score"]),
+    worksheet: cloneRecapBest(getChallengeBest(skill, "boss", numericLevel), ["durationMs", "score"]),
+    bossCleared: hasBossClearForLevel(skill, numericLevel),
+    at: new Date().toISOString(),
   };
 }
 
-function getShareBadgeText(data) {
+function getRecapDisplayData(data) {
+  const opKey = data?.opKey || "";
+  const level = clamp(1, 10, Math.round(Number(data?.level) || 1));
+  const playerName = data?.playerName || data?.name || "A Rain Math player";
+  const blitz = data?.blitz || null;
+  const wave = data?.wave || null;
+  const worksheet = data?.worksheet || null;
+  const at = data?.at || new Date().toISOString();
+  return {
+    opKey,
+    opName: data?.opName || opDisplayNames[opKey] || opKey || "Math",
+    level,
+    playerName,
+    blitz,
+    wave,
+    worksheet,
+    bossCleared: Boolean(data?.bossCleared),
+    at,
+    blitzText: blitz ? formatBlitzResult(blitz) : "not tried yet",
+    waveText: wave ? formatWaveResult(wave) : "not tried yet",
+    worksheetText: worksheet?.durationMs ? formatDuration(worksheet.durationMs) : "not tried yet",
+    bossText: data?.bossCleared ? "cleared" : "not cleared yet",
+    dateText: formatSessionStartedAt(at),
+  };
+}
+
+function buildRecapPayload(data) {
+  const display = getRecapDisplayData(data);
+  const content = {
+    v: 1,
+    kind: "recap",
+    name: display.playerName,
+    opKey: display.opKey,
+    level: display.level,
+    blitz: display.blitz,
+    wave: display.wave,
+    worksheet: display.worksheet,
+    bossCleared: display.bossCleared,
+    at: display.at,
+  };
+  content.id = makeShareId(content);
+  return content;
+}
+
+async function getRecapShareCode(data) {
+  return encodeSharePayload(buildRecapPayload(data));
+}
+
+async function getRecapShareLink(data) {
+  const base = `${window.location.origin}${window.location.pathname}`;
+  return `${base}#recap=${await getRecapShareCode(data)}`;
+}
+
+function getShareBadgeText(data, recapLink = "") {
+  const display = getRecapDisplayData(data);
+  const leadVerb = display.bossCleared ? "cleared" : "reached";
   const lines = [
-    `${data.playerName} — Rain Math ${data.opName} Level ${data.level} recap.`,
-    `Blitz: ${data.blitzText}`,
-    `Wave: ${data.waveText}`,
-    `Worksheet: ${data.worksheetText}`,
+    `${display.playerName} ${leadVerb} ${display.opName} Level ${display.level}!`,
+    `Blitz: ${display.blitzText}`,
+    `Wave: ${display.waveText}`,
+    `Worksheet: ${display.worksheetText}`,
+    `Boss: ${display.bossText}`,
   ];
-  if (window.location.protocol.startsWith("http")) {
-    lines.push(window.location.origin);
-  }
+  if (recapLink) lines.push(recapLink);
+  else if (window.location.protocol.startsWith("http")) lines.push(window.location.origin);
   return lines.join("\n");
 }
 
 async function copyShareBadge(data, statusEl) {
-  await copyTextToClipboard(getShareBadgeText(data), statusEl, "Copied recap text.");
+  if (statusEl) statusEl.textContent = "Preparing recap link…";
+  await copyTextToClipboard(
+    getShareBadgeText(data, await getRecapShareLink(data)),
+    statusEl,
+    "Copied recap link."
+  );
 }
 
 async function shareBadge(data, statusEl) {
-  const text = getShareBadgeText(data);
+  if (statusEl) statusEl.textContent = "Preparing recap link…";
+  const text = getShareBadgeText(data, await getRecapShareLink(data));
   if (navigator.share) {
     try {
       await navigator.share({
@@ -3647,6 +3725,38 @@ async function shareBadge(data, statusEl) {
     }
   }
   await copyShareBadge(data, statusEl);
+}
+
+function buildRecapCard(data) {
+  const display = getRecapDisplayData(data);
+  const badge = document.createElement("div");
+  badge.className = "share-badge-art";
+  const title = document.createElement("div");
+  title.className = "share-badge-title";
+  title.textContent = `${display.opName} Level ${display.level}`;
+  const name = document.createElement("div");
+  name.className = "share-badge-name";
+  name.textContent = display.playerName;
+  const rows = document.createElement("div");
+  rows.className = "share-badge-rows";
+  [
+    ["Blitz", display.blitzText],
+    ["Wave", display.waveText],
+    ["Worksheet", display.worksheetText],
+    ["Boss", display.bossText],
+    ["Date", display.dateText],
+  ].forEach(([label, value]) => {
+    const row = document.createElement("div");
+    row.className = "share-badge-row";
+    const l = document.createElement("span");
+    l.textContent = label;
+    const v = document.createElement("strong");
+    v.textContent = value;
+    row.append(l, v);
+    rows.appendChild(row);
+  });
+  badge.append(title, name, rows);
+  return badge;
 }
 
 function showShareBadge(opKey, level) {
@@ -3666,35 +3776,14 @@ function showShareBadge(opKey, level) {
 
   const card = document.createElement("div");
   card.className = "card share-badge-card";
-  const badge = document.createElement("div");
-  badge.className = "share-badge-art";
-  const title = document.createElement("div");
-  title.className = "share-badge-title";
-  title.textContent = `${data.opName} Level ${data.level}`;
-  const name = document.createElement("div");
-  name.className = "share-badge-name";
-  name.textContent = data.playerName;
-  const rows = document.createElement("div");
-  rows.className = "share-badge-rows";
-  [
-    ["Blitz", data.blitzText],
-    ["Wave", data.waveText],
-    ["Worksheet", data.worksheetText],
-  ].forEach(([label, value]) => {
-    const row = document.createElement("div");
-    row.className = "share-badge-row";
-    const l = document.createElement("span");
-    l.textContent = label;
-    const v = document.createElement("strong");
-    v.textContent = value;
-    row.append(l, v);
-    rows.appendChild(row);
-  });
-  badge.append(title, name, rows);
+  const badge = buildRecapCard(data);
 
   const shareText = document.createElement("pre");
   shareText.className = "share-badge-text";
-  shareText.textContent = getShareBadgeText(data);
+  shareText.textContent = getShareBadgeText(data, "Preparing recap link…");
+  getRecapShareLink(data)
+    .then((link) => { shareText.textContent = getShareBadgeText(data, link); })
+    .catch(() => { shareText.textContent = getShareBadgeText(data); });
 
   const status = document.createElement("div");
   status.className = "share-badge-status";
@@ -4502,6 +4591,10 @@ function isViewingSharedReport() {
   return Boolean(state.reportViewProfile || state.reportViewReports);
 }
 
+function isViewingSharedRecap() {
+  return Boolean(state.recapViewData);
+}
+
 // Generic clipboard copy with a textarea fallback, shared by the recap and the
 // share-link buttons.
 async function copyTextToClipboard(text, statusEl, okMsg = "Copied.") {
@@ -4749,12 +4842,90 @@ function exitSharedReportView() {
   answerInput.focus();
 }
 
+function recapDataFromPayload(payload) {
+  if (!payload || payload.kind !== "recap" || payload.v !== 1) return null;
+  const opKey = typeof payload.opKey === "string" ? payload.opKey : "";
+  return {
+    opKey,
+    opName: opDisplayNames[opKey] || opKey || "Math",
+    level: clamp(1, 10, Math.round(Number(payload.level) || 1)),
+    playerName: typeof payload.name === "string" && payload.name.trim()
+      ? payload.name.trim()
+      : "A Rain Math player",
+    blitz: payload.blitz || null,
+    wave: payload.wave || null,
+    worksheet: payload.worksheet || null,
+    bossCleared: Boolean(payload.bossCleared),
+    at: typeof payload.at === "string" ? payload.at : new Date().toISOString(),
+  };
+}
+
+function openSharedRecapView(payload) {
+  const data = recapDataFromPayload(payload);
+  if (!data) return false;
+  state.recapViewData = data;
+  closeWelcomeMenu({ focus: false });
+  closeTutorialOverlay({ focus: false });
+  closeLoginPopup();
+  closeStatsPopup();
+  closeSessionLogPopup();
+  closeSessionReportPopup();
+  closeShareBadgePopup();
+
+  const overlay = document.createElement("div");
+  overlay.className = "overlay share-badge-overlay";
+  overlay.id = "shareBadgeOverlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Shared Rain Math recap");
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) exitSharedRecapView();
+  });
+
+  const card = document.createElement("div");
+  card.className = "card share-badge-card share-badge-card-shared";
+  const banner = document.createElement("p");
+  banner.className = "share-badge-shared";
+  banner.textContent = "Shared recap (read-only).";
+  card.appendChild(banner);
+  card.appendChild(buildRecapCard(data));
+
+  const actions = document.createElement("div");
+  actions.className = "share-badge-buttons";
+  const exit = document.createElement("button");
+  exit.type = "button";
+  exit.className = "primary";
+  exit.textContent = "Exit shared view";
+  exit.addEventListener("click", exitSharedRecapView);
+  actions.appendChild(exit);
+  card.appendChild(actions);
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  exit.focus();
+  return true;
+}
+
+function exitSharedRecapView() {
+  state.recapViewData = null;
+  closeShareBadgePopup();
+  if (window.location.hash) {
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+  }
+  answerInput.focus();
+}
+
 function getReportHashCode() {
   const match = window.location.hash.match(/^#report=(.+)$/);
   return match ? match[1] : null;
 }
 
-// Brief toast (reuses the boss-offer styling) shown when a #report link can't be
+function getRecapHashCode() {
+  const match = window.location.hash.match(/^#recap=(.+)$/);
+  return match ? match[1] : null;
+}
+
+// Brief toast (reuses the boss-offer styling) shown when a shared link can't be
 // decoded — usually because it was truncated/duplicated when copied.
 function showSharedReportError() {
   closeBossOffer();
@@ -4790,10 +4961,24 @@ function openSharedReportFromCode(code) {
   });
 }
 
+function openSharedRecapFromCode(code) {
+  if (!code) return;
+  decodeShareReportCode(code).then((payload) => {
+    if (!(payload && isShareChecksumValid(payload) && openSharedRecapView(payload))) {
+      showSharedReportError();
+    }
+  });
+}
+
 window.addEventListener("hashchange", () => {
-  if (isViewingSharedReport()) return;
-  const code = getReportHashCode();
-  if (code) openSharedReportFromCode(code);
+  if (isViewingSharedReport() || isViewingSharedRecap()) return;
+  const reportCode = getReportHashCode();
+  if (reportCode) {
+    openSharedReportFromCode(reportCode);
+    return;
+  }
+  const recapCode = getRecapHashCode();
+  if (recapCode) openSharedRecapFromCode(recapCode);
 });
 
 function buildSessionLogPopup() {
@@ -6939,6 +7124,8 @@ function getTestState() {
     placementState: cloneForTest(state.placementState),
     tutorialStepIndex: state.tutorialStepIndex,
     viewingSharedReport: isViewingSharedReport(),
+    viewingSharedRecap: isViewingSharedRecap(),
+    recapViewData: cloneForTest(state.recapViewData),
     reportProfileName: getReportProfile()?.user?.name || null,
   };
 }
@@ -7015,6 +7202,7 @@ function installTestHooks() {
       state.factorTargetId = null;
       state.reportViewProfile = null;
       state.reportViewReports = null;
+      state.recapViewData = null;
       answerInput.value = "";
       state.isPaused = false;
       closeWelcomeMenu({ focus: false });
@@ -7082,6 +7270,21 @@ function installTestHooks() {
       recordActiveSessionChallenge(event);
       return getTestState();
     },
+    recordChallengeAttempt(opKey, options = {}) {
+      state.progressProfile = recordChallengeAttempt(state.progressProfile, opKey, options);
+      saveProfile(state.progressProfile);
+      return getTestState();
+    },
+    recordBlitzAttempt(opKey, options = {}) {
+      state.progressProfile = recordBlitzAttempt(state.progressProfile, opKey, options);
+      saveProfile(state.progressProfile);
+      return getTestState();
+    },
+    recordBossClear(opKey, options = {}) {
+      state.progressProfile = recordBossAttempt(state.progressProfile, opKey, options);
+      saveProfile(state.progressProfile);
+      return getTestState();
+    },
     getShareReportCode(sessionId = null) {
       return getShareReportCode(state.progressProfile, sessionId); // async — resolved by page.evaluate
     },
@@ -7092,6 +7295,17 @@ function installTestHooks() {
       if (payload.v === 2) payload.n = "TAMPERED";
       else payload.name = "TAMPERED";
       return encodeSharePayload(payload); // async
+    },
+    getRecapCode(opKey, level = null) {
+      const data = getShareBadgeData(opKey, level || opConfig[opKey]?.difficulty || 1);
+      return data ? getRecapShareCode(data) : ""; // async
+    },
+    async getTamperedRecapCode(opKey, level = null) {
+      const data = getShareBadgeData(opKey, level || opConfig[opKey]?.difficulty || 1);
+      if (!data) return "";
+      const payload = buildRecapPayload(data);
+      payload.level = Math.min(10, (payload.level || 1) + 1);
+      return encodeSharePayload(payload);
     },
     getBackupCode() {
       saveProfile(state.progressProfile);
@@ -7300,10 +7514,13 @@ function init() {
   installTestHooks();
   window.__RAIN_MATH_READY__ = true;
   const sharedCode = getReportHashCode();
+  const sharedRecapCode = getRecapHashCode();
   if (sharedCode) {
     // Parent opened a shared report link — decode (async) and open the read-only
     // view, skipping the welcome menu (or show an error if the link is broken).
     openSharedReportFromCode(sharedCode);
+  } else if (sharedRecapCode) {
+    openSharedRecapFromCode(sharedRecapCode);
   } else if (shouldShowWelcomeOnLoad()) {
     buildWelcomeMenu({ firstVisit: true });
   } else {

@@ -39,4 +39,5 @@ export const state = {
   progressProfile: null,
   reportViewProfile: null,
   reportViewReports: null,
+  recapViewData: null,
 };

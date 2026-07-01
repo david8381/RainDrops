@@ -950,6 +950,97 @@ test.describe("desktop gameplay", () => {
     await parent.close();
   });
 
+  test("shares a recap achievement card a parent opens read-only", async ({ page }) => {
+    await openApp(page);
+
+    await page.locator("#loginLink").click();
+    await page.locator("#profileNameInput").fill("Ada Recap");
+    await page.getByRole("button", { name: /^Create$/ }).click();
+
+    await invoke(page, "recordBossClear", "add", {
+      speedPercent: 30,
+      spawnRate: 3,
+      nowMs: Date.UTC(2026, 6, 1, 12, 0, 0),
+    });
+    await invoke(page, "recordBlitzAttempt", "add", {
+      level: 1,
+      score: 65,
+      durationMs: 65000,
+      speedPercent: 70,
+      spawnRate: 3,
+      maxDropLimit: 3,
+      fastestDropSeconds: 2.4,
+      clearedCount: 28,
+      cleared: false,
+      result: "failed",
+      nowMs: Date.UTC(2026, 6, 1, 12, 1, 0),
+    });
+    await invoke(page, "recordChallengeAttempt", "add", {
+      type: "wave",
+      level: 1,
+      maxLoadCleared: 7,
+      clearedCount: 36,
+      nowMs: Date.UTC(2026, 6, 1, 12, 2, 0),
+    });
+    await invoke(page, "recordChallengeAttempt", "add", {
+      type: "boss",
+      level: 1,
+      durationMs: 44000,
+      score: 9,
+      cleared: true,
+      result: "cleared",
+      nowMs: Date.UTC(2026, 6, 1, 12, 3, 0),
+    });
+
+    const code = await invoke(page, "getRecapCode", "add", 1);
+    expect(code.length).toBeGreaterThan(0);
+    expect(code.length).toBeLessThan(360);
+
+    const parent = await page.context().newPage();
+    await parent.goto(`/?test=1#recap=${code}`);
+    await parent.waitForFunction(() => window.__RAIN_MATH_READY__ && window.__RAIN_MATH_TEST__);
+    await expect(parent.locator("#shareBadgeOverlay")).toBeVisible();
+    await expect(parent.locator("#shareBadgeOverlay")).toContainText("Shared recap (read-only)");
+    await expect(parent.locator("#shareBadgeOverlay")).toContainText("Ada Recap");
+    await expect(parent.locator("#shareBadgeOverlay")).toContainText("Add Level 1");
+    await expect(parent.locator("#shareBadgeOverlay")).toContainText("1:05");
+    await expect(parent.locator("#shareBadgeOverlay")).toContainText("2.4s drops");
+    await expect(parent.locator("#shareBadgeOverlay")).toContainText("7 at once");
+    await expect(parent.locator("#shareBadgeOverlay")).toContainText("44.0s");
+    await expect(parent.locator("#shareBadgeOverlay")).toContainText("cleared");
+    await expect(parent.locator("#shareBadgeOverlay .share-badge-text")).toHaveCount(0);
+    await expect(parent.locator('#shareBadgeOverlay button:has-text("Copy")')).toHaveCount(0);
+    await expect(parent.getByRole("button", { name: /^Share$/ })).toHaveCount(0);
+    let viewState = await parent.evaluate(() => window.__RAIN_MATH_TEST__.getState());
+    expect(viewState.viewingSharedRecap).toBe(true);
+    expect(viewState.viewingSharedReport).toBe(false);
+
+    await parent.locator('#shareBadgeOverlay button:has-text("Exit shared view")').click();
+    viewState = await parent.evaluate(() => window.__RAIN_MATH_TEST__.getState());
+    expect(viewState.viewingSharedRecap).toBe(false);
+    await expect(parent.locator("#shareBadgeOverlay")).toHaveCount(0);
+    await parent.close();
+  });
+
+  test("rejects a tampered recap link via the hidden checksum", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "recordBossClear", "add", {
+      speedPercent: 30,
+      spawnRate: 3,
+      nowMs: Date.UTC(2026, 6, 1, 12, 0, 0),
+    });
+
+    const tampered = await invoke(page, "getTamperedRecapCode", "add", 1);
+    const parent = await page.context().newPage();
+    await parent.goto(`/?test=1#recap=${tampered}`);
+    await parent.waitForFunction(() => window.__RAIN_MATH_READY__ && window.__RAIN_MATH_TEST__);
+    await expect(parent.locator("#bossOfferToast")).toContainText("broken or incomplete");
+    await expect(parent.locator("#shareBadgeOverlay")).toHaveCount(0);
+    const viewState = await parent.evaluate(() => window.__RAIN_MATH_TEST__.getState());
+    expect(viewState.viewingSharedRecap).toBe(false);
+    await parent.close();
+  });
+
   test("stats grid hover text shows problem attempts and mastery state", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
@@ -1462,6 +1553,7 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#shareBadgeOverlay")).toBeVisible();
     await expect(page.locator("#shareBadgeOverlay")).toContainText("Add Level 1");
     await expect(page.locator("#shareBadgeOverlay .share-badge-text")).toContainText("Worksheet");
+    await expect(page.locator("#shareBadgeOverlay .share-badge-text")).toContainText("#recap=");
     await page.locator('#shareBadgeOverlay button:has-text("Close")').click();
 
     // The accuracy grid is still reachable from the summary.

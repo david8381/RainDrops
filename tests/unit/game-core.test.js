@@ -389,6 +389,22 @@ describe("difficulty ranges", () => {
       verifyShareChecksum({ ...backup, profile: { ...backup.profile, user: { id: "ada", name: "Eve" } }, id: backupChecksum }, salt),
       false
     );
+
+    const recap = {
+      v: 1,
+      kind: "recap",
+      name: "Ada",
+      opKey: "add",
+      level: 3,
+      blitz: { durationMs: 65000, fastestDropSeconds: 2.4, clearedCount: 28 },
+      wave: { maxLoadCleared: 7, clearedCount: 36 },
+      worksheet: { durationMs: 44000 },
+      bossCleared: true,
+      at: "2026-07-01T12:00:00.000Z",
+    };
+    const recapChecksum = computeShareChecksum(recap, salt);
+    assert.equal(verifyShareChecksum({ ...recap, id: recapChecksum }, salt), true);
+    assert.equal(verifyShareChecksum({ ...recap, level: 9, id: recapChecksum }, salt), false);
   });
 
   it("resolves stats-key display labels per operation", () => {

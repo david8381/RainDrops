@@ -1,9 +1,9 @@
 # Feature: Shareable recap link (achievement card)
 
-Status: agreed — ready for implementation
-Owner: Codex (planned by Claude; Claude to review)
+Status: landed
+Owner: Codex (planned by Claude; reviewed by Claude)
 Last Updated: 2026-07-01
-Related Commits: (pending)
+Related Commits: (this commit)
 
 ## User Request
 The Recap (boss-victory "badge" popup, also reachable per-level via the badge button)
@@ -91,4 +91,16 @@ toast.
   opens the report (no regression).
 
 ## Outcome
-(pending implementation by Codex)
+Implemented in the working tree:
+- Added a `kind:"recap"` checksum branch in `game-core` so recap payloads are
+  tamper-evident over `{v, kind, name, opKey, level, blitz, wave, worksheet,
+  bossCleared, at}`.
+- Added live recap payload/link helpers in `script.js`; Copy/Share text now
+  includes a generated `#recap=` link while keeping the readable plain-text
+  summary.
+- Extracted `buildRecapCard(data)` and reused it for both the normal Recap popup
+  and the shared read-only recap overlay.
+- Added `#recap=` cold-load and hashchange routing with a "Shared recap
+  (read-only)" banner, Exit button, and no Copy/Share controls.
+- Added test hooks plus unit/e2e coverage for valid recap links, tampered recap
+  rejection, and the live Recap popup exposing the link.

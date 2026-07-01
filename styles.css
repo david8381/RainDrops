@@ -842,6 +842,12 @@ body {
   text-align: left;
 }
 
+.share-badge-shared {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
 .share-badge-art {
   padding: 18px;
   border-radius: 14px;
