@@ -3,12 +3,15 @@ import { describe, it } from "node:test";
 
 import {
   advanceFactorDrop,
+  checkSimplifiedAnswer,
   clamp,
   createDefaultOpConfig,
   createProblemStats,
   expDiffToConversion,
   factorizationProduct,
+  fractionCancelStep,
   formatFactorization,
+  formatFractionText,
   formatFixedScale,
   makeShapeProblem,
   makeShapeProblemFromKey,
@@ -18,13 +21,19 @@ import {
   getPowUniverse,
   getF10Universe,
   makeF10ProblemFromKey,
+  getReduceUniverse,
+  makeReduceProblemFromKey,
   getRoundUniverse,
   makeRoundProblemFromKey,
   roundToPlace,
+  reduceFraction,
+  reduceTypesForLevel,
   roundTypesForLevel,
   factorDifficulty,
+  gcdInt,
   getFactorUniverse,
   generateProblem,
+  generateReduceProblem,
   generateSIProblem,
   generateWeightedProblem,
   getDifficultyRange,
@@ -86,6 +95,7 @@ import {
   falseFireCost,
   isComposite,
   isPrime,
+  isReducedFraction,
   hashString,
   matchesFactorDrop,
   normalizeTypedValue,
@@ -145,6 +155,15 @@ function assertRoundProblemMatchesType(problem, type) {
   }
 }
 
+function classifyReduceProblem(problem) {
+  const g = gcdInt(problem.reduceOriginalNum, problem.reduceOriginalDen);
+  const reduced = reduceFraction(problem.reduceOriginalNum, problem.reduceOriginalDen);
+  if (g === 1) return "reduced";
+  if (reduced.den === 1) return "whole";
+  if (isPrime(g)) return "prime";
+  return "repeated";
+}
+
 describe("numeric utilities", () => {
   it("clamps and normalizes typed numeric input", () => {
     assert.equal(clamp(1, 10, -2), 1);
@@ -191,6 +210,7 @@ describe("difficulty ranges", () => {
     assert.deepEqual(getDifficultyRange("mul", 10), { min: 1, max: 12 });
     assert.deepEqual(getDifficultyRange("f10", 10), { min: 1, max: 4 });
     assert.deepEqual(getDifficultyRange("round", 10), { min: 1, max: 10 });
+    assert.deepEqual(getDifficultyRange("reduce", 10), { min: 1, max: 10 });
     assert.deepEqual(getDifficultyRange("shapes", 10), { min: 2, max: 5 });
     assert.deepEqual(getDifficultyRange("factor", 1), { min: 4, max: 400 });
     assert.deepEqual(getDifficultyRange("factor", 10), { min: 4, max: 400 });
@@ -413,6 +433,7 @@ describe("difficulty ranges", () => {
     // op-specific keys delegate to that op's problem-from-key text
     assert.equal(formatStatsKeyLabel("pow", getPowUniverse(1)[0].statsKey), makePowProblemFromKey(getPowUniverse(1)[0].statsKey).text);
     assert.equal(formatStatsKeyLabel("shapes", getShapesUniverse()[0].statsKey), makeShapeProblemFromKey(getShapesUniverse()[0].statsKey).text);
+    assert.equal(formatStatsKeyLabel("reduce", "red:small:prime"), "single common factor · small");
   });
 
   it("computes course progress percent and formats SI stats keys", () => {
@@ -823,6 +844,24 @@ describe("problem generation", () => {
     assert.match(weighted.text, /≈/);
   });
 
+  it("generates fraction-simplification problems with concept stats keys", () => {
+    const config = createDefaultOpConfig();
+    config.reduce.difficulty = 5;
+    const problem = generateProblem("reduce", config, sequenceRng([0, 0]));
+    assert.equal(problem.opKey, "reduce");
+    assert.match(problem.text, /^\d+\/\d+$/);
+    assert.match(problem.statsKey, /^red:/);
+    assert.equal(checkSimplifiedAnswer(problem.reduceOriginalNum, problem.reduceOriginalDen, problem.answerText), true);
+
+    const direct = generateReduceProblem(2, sequenceRng([0, 0]));
+    assert.equal(direct.opKey, "reduce");
+    assert.equal(checkSimplifiedAnswer(direct.reduceOriginalNum, direct.reduceOriginalDen, direct.answerText), true);
+
+    const weighted = generateWeightedProblem("reduce", config, createProblemStats(), sequenceRng([0, 0]));
+    assert.equal(weighted.opKey, "reduce");
+    assert.match(weighted.statsKey, /^red:/);
+  });
+
   it("builds factors-of-10 problems by structural type", () => {
     // Level gates types by digits + power - 1 (cumulative): L1 has only 1-digit ×/÷10.
     assert.equal(getF10Universe(1).length, 2);
@@ -889,6 +928,56 @@ describe("problem generation", () => {
     assertRoundProblemMatchesType(carryProblem, roundTypesForLevel(7).find((type) => type.statsKey === "r:tenth:extra:carry"));
 
     assert.equal(formatStatsKeyLabel("round", "r:tenth:extra:carry"), "nearest 0.1 · extra precision · carry to next place");
+  });
+
+  it("reduces fractions, cancels common factors, and checks lowest-term answers", () => {
+    assert.equal(gcdInt(12, 18), 6);
+    assert.equal(gcdInt(-12, 18), 6);
+    assert.deepEqual(reduceFraction(12, 18), { num: 2, den: 3 });
+    assert.deepEqual(reduceFraction(6, 3), { num: 2, den: 1 });
+    assert.equal(formatFractionText(2, 1), "2");
+    assert.equal(formatFractionText(2, 3), "2/3");
+    assert.equal(isReducedFraction(2, 3), true);
+    assert.equal(isReducedFraction(4, 6), false);
+
+    assert.deepEqual(fractionCancelStep(12, 18, 2), { num: 6, den: 9 });
+    assert.deepEqual(fractionCancelStep(12, 18, 6), { num: 2, den: 3 });
+    assert.equal(fractionCancelStep(12, 18, 4), null);
+    assert.equal(fractionCancelStep(12, 18, 1), null);
+
+    assert.equal(checkSimplifiedAnswer(12, 18, "2/3"), true);
+    assert.equal(checkSimplifiedAnswer(12, 18, "4/6"), false);
+    assert.equal(checkSimplifiedAnswer(12, 18, "3/2"), false);
+    assert.equal(checkSimplifiedAnswer(6, 3, "2"), true);
+    assert.equal(checkSimplifiedAnswer(6, 3, "2/1"), true);
+    assert.equal(checkSimplifiedAnswer(3, 5, "3/5"), true);
+    assert.equal(checkSimplifiedAnswer(3, 5, "6/10"), false);
+  });
+
+  it("builds fraction-simplification buckets and samples the intended cases", () => {
+    const counts = [1, 2, 3, 2, 3, 2, 2, 3, 4, 4];
+    counts.forEach((count, index) => {
+      assert.equal(reduceTypesForLevel(index + 1).length, count);
+      assert.equal(getReduceUniverse(index + 1).length, count);
+    });
+
+    assert.equal(getReduceUniverse(1)[0].text, "single common factor · small");
+    assert.ok(getReduceUniverse(3).some((type) => type.statsKey === "red:small:reduced"));
+    assert.ok(!getReduceUniverse(3).some((type) => type.statsKey === "red:smallmed:repeated"));
+
+    for (let level = 1; level <= 10; level += 1) {
+      for (const type of reduceTypesForLevel(level)) {
+        const problem = makeReduceProblemFromKey(type.statsKey, sequenceRng([0]));
+        assert.equal(problem.opKey, "reduce");
+        assert.equal(problem.statsKey, type.statsKey);
+        assert.equal(classifyReduceProblem(problem), type.caseName, `${type.statsKey} sampled the wrong kind of fraction`);
+        assert.equal(checkSimplifiedAnswer(problem.reduceOriginalNum, problem.reduceOriginalDen, problem.answerText), true);
+      }
+    }
+
+    const whole = makeReduceProblemFromKey("red:small:whole", sequenceRng([0]));
+    assert.equal(whole.answerText, "2");
+    assert.equal(checkSimplifiedAnswer(whole.reduceOriginalNum, whole.reduceOriginalDen, "2"), true);
   });
 
   it("builds powers & roots with clean answers and a cumulative level ladder", () => {

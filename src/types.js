@@ -11,8 +11,8 @@
 // ---------------------------------------------------------------------------
 
 /**
- * The ten operation identifiers.
- * @typedef {"add"|"sub"|"mul"|"div"|"f10"|"round"|"si"|"shapes"|"pow"|"factor"} OpKey
+ * The eleven operation identifiers.
+ * @typedef {"add"|"sub"|"mul"|"div"|"f10"|"round"|"reduce"|"si"|"shapes"|"pow"|"factor"} OpKey
  */
 
 /**
@@ -31,7 +31,8 @@
 
 /**
  * A generated problem. Output of `generateProblem` / `generateWeightedProblem`
- * (game-core). The factor* fields are present only when `opKey === "factor"`.
+ * (game-core). The factor* fields are present only when `opKey === "factor"`;
+ * the reduce* fields are present only when `opKey === "reduce"`.
  * @typedef {Object} Problem
  * @property {string} text                Display text (e.g. "6 × 7").
  * @property {number|string} answer       Canonical answer (numeric, or a string for SI/factor).
@@ -41,6 +42,12 @@
  * @property {number} [factorOriginal]    factor: the number being factorized.
  * @property {number} [factorRemaining]   factor: product still to be factored out.
  * @property {Object<string,number>} [factorCollected] factor: prime→exponent collected so far.
+ * @property {number} [reduceOriginalNum] reduce: original numerator.
+ * @property {number} [reduceOriginalDen] reduce: original denominator.
+ * @property {number} [reduceNum]         reduce: current numerator after cancellations.
+ * @property {number} [reduceDen]         reduce: current denominator after cancellations.
+ * @property {string} [reduceCase]        reduce: conceptual bucket case.
+ * @property {string} [reduceBand]        reduce: conceptual bucket magnitude.
  */
 
 // ---------------------------------------------------------------------------
@@ -67,6 +74,12 @@
  * @property {Object<string,number>} [factorCollected]
  * @property {number|null} [factorLastPrime]
  * @property {boolean} [factorComplete]   factor: fully factored.
+ * @property {number} [reduceOriginalNum]
+ * @property {number} [reduceOriginalDen]
+ * @property {number} [reduceNum]
+ * @property {number} [reduceDen]
+ * @property {number|null} [reducePreviewFactor]
+ * @property {boolean} [reduceComplete]   reduce: current fraction is in lowest terms.
  * @property {string} [bossKind]          Present on boss-spawned drops (bomb/node/etc.).
  * @property {Object} [placementEntry]    Present on Test Me placement drops.
  */

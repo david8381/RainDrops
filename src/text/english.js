@@ -52,7 +52,7 @@ export const RainMathText = {
         target: ".op-chits",
         kicker: "Start here",
         title: "Choose problem types to work on.",
-        body: "Turn problem types on and off while the game is running. Arithmetic and x10 can mix; Rounding, Shapes, SI, Powers & Roots, and factoring stay in their own lanes so answers do not collide.",
+        body: "Turn problem types on and off while the game is running. Arithmetic and x10 can mix; Rounding, Simplify Fractions, Shapes, SI, Powers & Roots, and factoring stay in their own lanes so answers do not collide.",
         tip: "",
       },
       {
@@ -66,7 +66,7 @@ export const RainMathText = {
         target: ".input-bar",
         kicker: "Typing rules",
         title: "Some answers use Enter.",
-        body: "SI conversions use answers like *1000 or /100 and need Enter. Prime factorization accepts full answers like 2^2*3 plus Enter, or Tab to target a drop and factor it step by step. Tab and Shift+Tab switch factor targets.",
+        body: "SI conversions use answers like *1000 or /100 and need Enter. Simplify Fractions accepts lowest-terms answers like 2/3 plus Enter; Tab can target a fraction so you can type a common factor, press Enter to cancel it, and repeat. Prime factorization accepts full answers like 2^2*3 plus Enter, or Tab to target and factor step by step. Tab and Shift+Tab switch step targets.",
         tip: "If you fire too many impossible answers quickly, the cannon briefly overloads — faster on levels with only a few possible answers. Editing and partial answers do not count.",
       },
       {

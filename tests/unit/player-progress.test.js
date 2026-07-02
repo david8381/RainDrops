@@ -76,6 +76,7 @@ describe("player progress profile", () => {
       "div",
       "f10",
       "round",
+      "reduce",
       "si",
       "shapes",
       "pow",

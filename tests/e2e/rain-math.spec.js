@@ -37,7 +37,7 @@ test("loads without page errors and paints the canvas", async ({ page }) => {
   await expect(page).toHaveTitle("Rain Math");
   await expect(page.locator("#canvas")).toBeVisible();
   await expect(page.locator(".stats .label")).toHaveText("Cleared");
-  await expect(page.locator(".op-chit")).toHaveCount(10);
+  await expect(page.locator(".op-chit")).toHaveCount(11);
   expect(pageErrors).toEqual([]);
 
   const hasPaintedPixel = await page.locator("#canvas").evaluate((canvas) => {
@@ -61,7 +61,7 @@ test("boots over HTTP through the welcome flow and operation chits respond", asy
   if (await page.locator("#welcomeOverlay").isVisible()) {
     await page.locator("#welcomePlay").click();
   }
-  await expect(page.locator(".op-chit")).toHaveCount(10);
+  await expect(page.locator(".op-chit")).toHaveCount(11);
 
   await page.locator('.op-chit[data-op="add"]').click();
   await expect(page.locator('.op-chit[data-op="add"]')).toHaveClass(/active/);
@@ -201,6 +201,160 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#statsOverlay h2")).toHaveText("Rounding — Problem Accuracy");
     await expect(page.locator("#statsOverlay .stats-f10-row")).toHaveCount(4);
     await expect(page.locator("#statsOverlay")).toContainText("nearest 0.1 · normal · half rounds up");
+  });
+
+  test("fraction simplification has its own lane and supports worked cancellation", async ({ page }) => {
+    await openApp(page);
+
+    await page.locator('.op-chit[data-op="add"]').click();
+    await expect(page.locator('.op-chit[data-op="add"]')).toHaveClass(/active/);
+    await page.locator('.op-chit[data-op="reduce"]').click();
+    await expect(page.locator('.op-chit[data-op="reduce"]')).toHaveClass(/active/);
+    await expect(page.locator('.op-chit[data-op="add"]')).not.toHaveClass(/active/);
+    await expect(page.locator('.diff-card[data-op="reduce"]')).toBeVisible();
+    await expect(page.locator("#inputHint")).toContainText("½: type 2/3 + Enter");
+
+    await freezeAutoSpawns(page);
+    const drop = await invoke(page, "addDrop", {
+      opKey: "reduce",
+      text: "12/18",
+      reduceOriginalNum: 12,
+      reduceOriginalDen: 18,
+      reduceNum: 12,
+      reduceDen: 18,
+      reduceCase: "repeated",
+      reduceBand: "small",
+      answerText: "2/3",
+      statsKey: "red:small:repeated",
+      y: 120,
+    });
+
+    await page.waitForFunction((id) => window.__RAIN_MATH_TEST__.getState().factorTargetId === id, drop.id);
+    await page.locator("#answer").fill("2");
+    let state = await invoke(page, "getState");
+    expect(state.drops[0].reducePreviewFactor).toBe(2);
+    expect(state.drops[0].text).toBe("(2·6)/(2·9)");
+    expect(state.drops[0].reduceNum).toBe(12);
+
+    await page.keyboard.press("Enter");
+    state = await invoke(page, "getState");
+    expect(state.score).toBe(0);
+    expect(state.drops[0].reduceNum).toBe(6);
+    expect(state.drops[0].reduceDen).toBe(9);
+    expect(state.drops[0].reduceComplete).toBe(false);
+
+    await page.locator("#answer").fill("3");
+    state = await invoke(page, "getState");
+    expect(state.drops[0].text).toBe("(3·2)/(3·3)");
+
+    await page.keyboard.press("Enter");
+    state = await invoke(page, "getState");
+    expect(state.drops[0].text).toBe("2/3");
+    expect(state.drops[0].reduceComplete).toBe(true);
+    expect(state.score).toBe(0);
+
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#score")).toHaveText("1");
+    expect((await invoke(page, "getState")).drops).toHaveLength(0);
+  });
+
+  test("fraction simplification rejects unreduced answers and handles whole or already-reduced cases", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["reduce"]);
+    await freezeAutoSpawns(page);
+
+    await invoke(page, "addDrop", {
+      opKey: "reduce",
+      text: "12/18",
+      reduceOriginalNum: 12,
+      reduceOriginalDen: 18,
+      reduceNum: 12,
+      reduceDen: 18,
+      reduceCase: "repeated",
+      reduceBand: "small",
+      answerText: "2/3",
+      statsKey: "red:small:repeated",
+      y: 120,
+    });
+
+    let state = await invoke(page, "submit", "4/6", { enter: true });
+    expect(state.score).toBe(0);
+    expect(state.drops).toHaveLength(1);
+    expect(state.problemStats.reduce["red:small:repeated"]).toEqual({ asked: 1, correct: 0 });
+
+    state = await invoke(page, "submit", "2/3", { enter: true });
+    expect(state.score).toBe(1);
+    expect(state.drops).toHaveLength(0);
+
+    const whole = await invoke(page, "addDrop", {
+      opKey: "reduce",
+      text: "6/3",
+      reduceOriginalNum: 6,
+      reduceOriginalDen: 3,
+      reduceNum: 6,
+      reduceDen: 3,
+      reduceCase: "whole",
+      reduceBand: "small",
+      answerText: "2",
+      statsKey: "red:small:whole",
+      y: 120,
+    });
+    await page.waitForFunction((id) => window.__RAIN_MATH_TEST__.getState().factorTargetId === id, whole.id);
+    await page.locator("#answer").fill("3");
+    state = await invoke(page, "getState");
+    expect(state.drops[0].text).toBe("(3·2)/(3·1)");
+    state = await invoke(page, "submit", "3", { enter: true });
+    expect(state.drops[0].text).toBe("2");
+    expect(state.drops[0].reduceComplete).toBe(true);
+    state = await invoke(page, "submit", "", { enter: true });
+    expect(state.drops).toHaveLength(0);
+
+    await invoke(page, "addDrop", {
+      opKey: "reduce",
+      text: "3/5",
+      reduceOriginalNum: 3,
+      reduceOriginalDen: 5,
+      reduceNum: 3,
+      reduceDen: 5,
+      reduceCase: "reduced",
+      reduceBand: "small",
+      answerText: "3/5",
+      statsKey: "red:small:reduced",
+      y: 120,
+    });
+    await page.waitForFunction(() => window.__RAIN_MATH_TEST__.getState().factorTargetId !== null);
+    state = await invoke(page, "submit", "", { enter: true });
+    expect(state.drops).toHaveLength(0);
+  });
+
+  test("fraction simplification rejects invalid common factors without preview", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["reduce"]);
+    await freezeAutoSpawns(page);
+    const drop = await invoke(page, "addDrop", {
+      opKey: "reduce",
+      text: "12/18",
+      reduceOriginalNum: 12,
+      reduceOriginalDen: 18,
+      reduceNum: 12,
+      reduceDen: 18,
+      reduceCase: "repeated",
+      reduceBand: "small",
+      answerText: "2/3",
+      statsKey: "red:small:repeated",
+      y: 120,
+    });
+    await page.waitForFunction((id) => window.__RAIN_MATH_TEST__.getState().factorTargetId === id, drop.id);
+
+    await page.locator("#answer").fill("4");
+    let state = await invoke(page, "getState");
+    expect(state.drops[0].reducePreviewFactor).toBeNull();
+    expect(state.drops[0].text).toBe("12/18");
+
+    state = await invoke(page, "submit", "4", { enter: true });
+    expect(state.score).toBe(0);
+    expect(state.drops).toHaveLength(1);
+    expect(state.problemStats.reduce["red:small:repeated"]).toEqual({ asked: 1, correct: 0 });
   });
 
   test("requires mastery before increasing a level and locks controls during boss", async ({ page }) => {
@@ -731,7 +885,7 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#sessionReportOverlay .session-report-mastery-title")).toContainText("Mastery by level");
     await expect(page.locator("#sessionReportOverlay .session-report-level-line")).toContainText("L1 0% -> 11%");
     await expect(page.locator("#sessionReportOverlay")).toContainText("0/9 -> 1/9 mastered");
-    await expect(page.locator("#sessionReportOverlay .session-report-donate-note")).toContainText("Enjoying and benefiting? Please consider donating.");
+    await expect(page.locator("#sessionReportOverlay .session-report-donate-note")).toContainText("Rain Math is ad-free, tracking-free, and runs with no server. Thank you for donating.");
     await expect(page.locator("#sessionReportOverlay .session-report-donate")).toHaveText("donating");
   });
 
@@ -1885,7 +2039,7 @@ test.describe("mobile gameplay", () => {
 
     await expect(page.locator("#touchKeypad")).toBeVisible();
     await expect(page.locator(".touch-score")).toContainText("Cleared:");
-    await expect(page.locator(".op-chit")).toHaveCount(10);
+    await expect(page.locator(".op-chit")).toHaveCount(11);
     const opChitMetrics = await page.locator(".op-chits").evaluate((el) => {
       const rect = el.getBoundingClientRect();
       const visibleCount = [...el.children].filter((child) => {
@@ -1898,7 +2052,7 @@ test.describe("mobile gameplay", () => {
         visibleCount,
       };
     });
-    expect(opChitMetrics.visibleCount).toBe(10);
+    expect(opChitMetrics.visibleCount).toBe(11);
     expect(opChitMetrics.scrollWidth).toBeLessThanOrEqual(opChitMetrics.clientWidth + 2);
     await page.locator('.kp-key[data-key="1"]').click();
     await page.locator('.kp-key[data-key="2"]').click();

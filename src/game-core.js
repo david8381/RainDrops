@@ -12,6 +12,7 @@ const operationDefaults = {
   div: { enabled: false, difficulty: 1, symbol: "÷", label: "÷" },
   f10: { enabled: false, difficulty: 1, symbol: "×10", label: "x10" },
   round: { enabled: false, difficulty: 1, symbol: "≈", label: "≈" },
+  reduce: { enabled: false, difficulty: 1, symbol: "½", label: "½" },
   si: { enabled: false, difficulty: 1, symbol: "SI", label: "SI" },
   shapes: { enabled: false, difficulty: 1, symbol: "▱", label: "▱" },
   pow: { enabled: false, difficulty: 1, symbol: "xⁿ", label: "xⁿ" },
@@ -141,6 +142,10 @@ function getDifficultyRange(opKey, difficulty) {
 
   if (opKey === "round") {
     return { min: 1, max: ROUND_MAX_LEVEL };
+  }
+
+  if (opKey === "reduce") {
+    return { min: 1, max: REDUCE_MAX_LEVEL };
   }
 
   if (opKey === "si") {
@@ -736,6 +741,214 @@ function generatePowProblem(difficulty = 1, rng = Math.random) {
   return universe[randInt(0, universe.length - 1, rng)];
 }
 
+// Fraction simplification. Mastery is tracked by concept buckets rather than
+// literal fractions: a case (what kind of simplification) at a magnitude band.
+const REDUCE_MAX_LEVEL = 10;
+
+const REDUCE_CASE_LABELS = {
+  prime: "single common factor",
+  repeated: "multiple common factors",
+  whole: "reduces to whole number",
+  reduced: "already lowest terms",
+};
+
+const REDUCE_BAND_LABELS = {
+  small: "small",
+  smallmed: "small-med",
+  med: "medium",
+  two: "two-digit",
+  large: "larger",
+  huge: "large",
+};
+
+const REDUCE_LEVEL_SPECS = [
+  [["small", "prime"]],
+  [["small", "prime"], ["small", "whole"]],
+  [["small", "prime"], ["small", "whole"], ["small", "reduced"]],
+  [["smallmed", "repeated"], ["smallmed", "reduced"]],
+  [["med", "prime"], ["med", "repeated"], ["med", "whole"]],
+  [["two", "prime"], ["two", "reduced"]],
+  [["two", "whole"], ["two", "repeated"]],
+  [["two", "prime"], ["two", "repeated"], ["two", "reduced"]],
+  [["large", "prime"], ["large", "repeated"], ["large", "whole"], ["large", "reduced"]],
+  [["huge", "prime"], ["huge", "repeated"], ["huge", "whole"], ["huge", "reduced"]],
+];
+
+const REDUCE_SAMPLES = {
+  prime: {
+    small: [[4, 6], [6, 9], [8, 10], [10, 15]],
+    med: [[14, 35], [22, 33], [26, 39], [34, 51]],
+    two: [[26, 39], [34, 51], [38, 57], [46, 69]],
+    large: [[46, 69], [58, 87], [62, 93], [74, 111]],
+    huge: [[94, 141], [106, 159], [118, 177], [134, 201]],
+  },
+  repeated: {
+    smallmed: [[8, 12], [12, 18], [16, 20], [18, 24]],
+    med: [[24, 36], [30, 42], [36, 48], [42, 56]],
+    two: [[45, 60], [56, 84], [72, 96], [84, 126]],
+    large: [[84, 126], [96, 144], [108, 162], [132, 198]],
+    huge: [[120, 180], [144, 192], [168, 224], [180, 270]],
+  },
+  whole: {
+    small: [[6, 3], [8, 4], [9, 3], [10, 5], [12, 6]],
+    med: [[18, 6], [21, 7], [24, 8], [30, 10]],
+    two: [[45, 9], [72, 12], [84, 14], [96, 16]],
+    large: [[120, 15], [144, 18], [168, 21], [180, 20]],
+    huge: [[180, 12], [200, 25], [216, 18], [252, 21]],
+  },
+  reduced: {
+    small: [[3, 5], [5, 8], [7, 9], [7, 10]],
+    smallmed: [[5, 12], [7, 11], [11, 14], [13, 16]],
+    two: [[29, 37], [31, 44], [41, 52], [47, 60]],
+    large: [[53, 84], [67, 90], [71, 96], [83, 120]],
+    huge: [[101, 144], [113, 150], [127, 180], [131, 210]],
+  },
+};
+
+function gcdInt(a, b) {
+  let x = Math.abs(Math.trunc(Number(a)));
+  let y = Math.abs(Math.trunc(Number(b)));
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return 0;
+  while (y !== 0) {
+    const r = x % y;
+    x = y;
+    y = r;
+  }
+  return x;
+}
+
+function formatFractionText(num, den) {
+  return den === 1 ? String(num) : `${num}/${den}`;
+}
+
+function reduceFraction(num, den) {
+  const n = Math.trunc(Number(num));
+  const d = Math.trunc(Number(den));
+  if (!Number.isFinite(n) || !Number.isFinite(d) || d === 0) {
+    throw new Error("Cannot reduce an invalid fraction");
+  }
+  const sign = d < 0 ? -1 : 1;
+  const signedNum = n * sign;
+  const signedDen = Math.abs(d);
+  const g = gcdInt(signedNum, signedDen) || 1;
+  return { num: signedNum / g, den: signedDen / g };
+}
+
+function isReducedFraction(num, den) {
+  const n = Math.trunc(Number(num));
+  const d = Math.trunc(Number(den));
+  if (!Number.isFinite(n) || !Number.isFinite(d) || d === 0) return false;
+  return gcdInt(n, d) === 1;
+}
+
+function fractionCancelStep(num, den, factor) {
+  const f = Math.trunc(Number(factor));
+  const n = Math.trunc(Number(num));
+  const d = Math.trunc(Number(den));
+  if (!Number.isFinite(n) || !Number.isFinite(d) || d === 0) return null;
+  if (!Number.isInteger(f) || f <= 1) return null;
+  if (n % f !== 0 || d % f !== 0) return null;
+  return { num: n / f, den: d / f };
+}
+
+function parseSimplifiedFractionInput(value) {
+  const str = String(value == null ? "" : value).trim();
+  if (!str) return null;
+  if (/^\d+$/.test(str)) {
+    const num = Number(str);
+    return num > 0 ? { num, den: 1, isFraction: false } : null;
+  }
+  const match = str.match(/^(\d+)\/(\d+)$/);
+  if (!match) return null;
+  const num = Number(match[1]);
+  const den = Number(match[2]);
+  if (num <= 0 || den <= 0) return null;
+  return { num, den, isFraction: true };
+}
+
+function checkSimplifiedAnswer(origNum, origDen, typed) {
+  const parsed = parseSimplifiedFractionInput(typed);
+  if (!parsed) return false;
+  if (parsed.isFraction && !isReducedFraction(parsed.num, parsed.den)) return false;
+  const expected = reduceFraction(origNum, origDen);
+  return parsed.num === expected.num && parsed.den === expected.den;
+}
+
+function reduceTypeStatsKey(type) {
+  return `red:${type.band}:${type.caseName}`;
+}
+
+function makeReduceType(band, caseName) {
+  const type = { band, caseName };
+  return { ...type, statsKey: reduceTypeStatsKey(type) };
+}
+
+function reduceTypesForLevel(level) {
+  const lvl = clamp(1, REDUCE_MAX_LEVEL, Math.round(level || 1));
+  return REDUCE_LEVEL_SPECS[lvl - 1].map(([band, caseName]) => makeReduceType(band, caseName));
+}
+
+function allReduceTypes() {
+  const byKey = new Map();
+  for (let level = 1; level <= REDUCE_MAX_LEVEL; level += 1) {
+    for (const type of reduceTypesForLevel(level)) {
+      byKey.set(type.statsKey, type);
+    }
+  }
+  return [...byKey.values()];
+}
+
+function reduceTypeFromKey(statsKey) {
+  return allReduceTypes().find((type) => type.statsKey === String(statsKey)) || null;
+}
+
+function reduceTypeLabel(type) {
+  const caseLabel = REDUCE_CASE_LABELS[type.caseName] || type.caseName;
+  const bandLabel = REDUCE_BAND_LABELS[type.band] || type.band;
+  return `${caseLabel} · ${bandLabel}`;
+}
+
+function sampleReducePair(type, rng = Math.random) {
+  const byCase = REDUCE_SAMPLES[type.caseName] || {};
+  const samples = byCase[type.band] || Object.values(byCase)[0] || [[4, 6]];
+  return samples[randInt(0, samples.length - 1, rng)];
+}
+
+function makeReduceProblem(type, rng = Math.random) {
+  const [num, den] = sampleReducePair(type, rng);
+  const reduced = reduceFraction(num, den);
+  const answerText = formatFractionText(reduced.num, reduced.den);
+  return {
+    text: formatFractionText(num, den),
+    answer: answerText,
+    answerText,
+    opKey: "reduce",
+    statsKey: type.statsKey,
+    reduceOriginalNum: num,
+    reduceOriginalDen: den,
+    reduceNum: num,
+    reduceDen: den,
+    reduceCase: type.caseName,
+    reduceBand: type.band,
+    reducePreviewFactor: null,
+    reduceInvalidReason: "",
+  };
+}
+
+function makeReduceProblemFromKey(statsKey, rng = Math.random) {
+  const type = reduceTypeFromKey(statsKey);
+  return makeReduceProblem(type || reduceTypesForLevel(1)[0], rng);
+}
+
+function getReduceUniverse(level) {
+  return reduceTypesForLevel(level).map((type) => ({ statsKey: type.statsKey, text: reduceTypeLabel(type) }));
+}
+
+function generateReduceProblem(difficulty = 1, rng = Math.random) {
+  const types = reduceTypesForLevel(difficulty);
+  return makeReduceProblem(types[randInt(0, types.length - 1, rng)], rng);
+}
+
 function isPrime(n) {
   if (n < 2) return false;
   if (n < 4) return true;
@@ -935,6 +1148,7 @@ function generateProblem(opKey, opConfig, rng = Math.random) {
   if (opKey === "shapes") return P(generateShapesProblem(config.difficulty, rng));
   if (opKey === "pow") return P(generatePowProblem(config.difficulty, rng));
   if (opKey === "round") return P(generateRoundProblem(config.difficulty, rng));
+  if (opKey === "reduce") return P(generateReduceProblem(config.difficulty, rng));
   if (opKey === "si") return P(generateSIProblem(config.difficulty, rng));
   if (opKey === "f10") return P(generateFactorsOfTenProblem(config.difficulty, rng));
 
@@ -1037,6 +1251,15 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
     const items = getRoundUniverse(config.difficulty).map((type) => ({
       value: makeRoundProblemFromKey(type.statsKey, rng),
       weight: getSelectionWeight(getMastery(problemStats, "round", type.statsKey, masteryLookup)),
+    }));
+    if (items.length === 0) return generateProblem(opKey, opConfig, rng);
+    return weightedPick(items, rng);
+  }
+
+  if (opKey === "reduce") {
+    const items = getReduceUniverse(config.difficulty).map((type) => ({
+      value: makeReduceProblemFromKey(type.statsKey, rng),
+      weight: getSelectionWeight(getMastery(problemStats, "reduce", type.statsKey, masteryLookup)),
     }));
     if (items.length === 0) return generateProblem(opKey, opConfig, rng);
     return weightedPick(items, rng);
@@ -1577,6 +1800,10 @@ function formatStatsKeyLabel(opKey, statsKey) {
     const type = roundTypeFromKey(statsKey);
     return type ? roundTypeLabel(type) : statsKey;
   }
+  if (opKey === "reduce") {
+    const type = reduceTypeFromKey(statsKey);
+    return type ? reduceTypeLabel(type) : statsKey;
+  }
   if (opKey === "f10") return formatF10StatsKey(statsKey);
   return statsKey;
 }
@@ -2029,20 +2256,26 @@ export {
   getDistinctAnswerCount,
   falseFireCost,
   advanceFactorDrop,
+  checkSimplifiedAnswer,
   clamp,
   createDefaultOpConfig,
   createProblemStats,
   expDiffToConversion,
   factorizationProduct,
+  fractionCancelStep,
   formatFactorDropText,
   formatFactorization,
+  formatFractionText,
   formatFixedScale,
   formatF10StatsKey,
   factorDifficulty,
+  gcdInt,
   getFactorUniverse,
+  getReduceUniverse,
   generateFactorProblem,
   generateFactorsOfTenProblem,
   generateProblem,
+  generateReduceProblem,
   generateShapesProblem,
   generatePowProblem,
   generateRoundProblem,
@@ -2051,6 +2284,10 @@ export {
   getDifficultyRange,
   getF10Universe,
   makeF10ProblemFromKey,
+  makeReduceProblem,
+  makeReduceProblemFromKey,
+  reduceFraction,
+  reduceTypesForLevel,
   getRoundUniverse,
   makeRoundProblem,
   makeRoundProblemFromKey,
@@ -2072,6 +2309,7 @@ export {
   getSmallestPrimeFactor,
   isComposite,
   isPrime,
+  isReducedFraction,
   lerp,
   matchesFactorDrop,
   normalizeTypedValue,

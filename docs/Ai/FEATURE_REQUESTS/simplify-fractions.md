@@ -1,9 +1,9 @@
 # Feature: Simplify Fractions operation (½)
 
-Status: agreed — ready for implementation
-Owner: Codex (planned by Claude; Claude to review)
+Status: landed
+Owner: Codex (planned by Claude; reviewed by Claude)
 Last Updated: 2026-07-01
-Related Commits: (pending)
+Related Commits: (this commit)
 
 ## User Request
 Add fraction simplification first — it's the atom fraction math reuses (adding fractions
@@ -132,4 +132,17 @@ it as a self-contained component with that in mind.
   whole; already-reduced confirm.
 
 ## Outcome
-(pending implementation by Codex)
+Implemented by Codex:
+- Added `reduce` / `½` as its own operation lane with level range 1–10, profile universe support, stats labels, tutorial copy, and type docs.
+- Added pure `game-core` helpers: `gcdInt`, `reduceFraction`, `isReducedFraction`, `fractionCancelStep`, `checkSimplifiedAnswer`, `getReduceUniverse`, `makeReduceProblem`, and `makeReduceProblemFromKey`.
+- Added conceptual mastery buckets `red:<band>:<case>` for `prime`, `repeated`, `whole`, and `reduced` fraction-simplification cases.
+- Wired fast-path answers so only lowest-terms answers clear on Enter; unreduced equivalents are rejected.
+- Wired target-mode cancellation: a targeted fraction previews `(f·a)/(f·b)` while typing a common factor, Enter commits the cancellation, and an empty Enter clears once the current fraction is in lowest terms.
+- Covered with unit tests for the pure helpers/universe and Playwright tests for lane switching, worked path, fast path, unreduced rejection, invalid common factor rejection, whole-number reduction, and already-reduced confirmation.
+
+Verification run:
+- `npm test`
+- `npm run test:unit`
+- `npm run typecheck`
+- targeted Chromium Playwright: `fraction simplification|loads without page errors`
+- related Chromium Playwright: operation chits, rounding, SI Enter, and factor targeting/boss-node flows

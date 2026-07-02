@@ -36,13 +36,17 @@ import {
 
 const {
   advanceFactorDrop: advanceFactorDropCore,
+  checkSimplifiedAnswer,
   clamp,
   createDefaultOpConfig,
   createProblemStats,
   expDiffToConversion,
+  fractionCancelStep,
+  formatFractionText,
   makeShapeProblemFromKey,
   makePowProblemFromKey,
   makeF10ProblemFromKey,
+  makeReduceProblemFromKey,
   formatF10StatsKey,
   formatPercent,
   formatDuration,
@@ -94,6 +98,7 @@ const {
   getSIPrefixesForDifficulty,
   getSIReferenceRows,
   getRoundUniverse,
+  getReduceUniverse,
   getCourseProgressPercent,
   formatSIStatsKey,
   formatStatsKeyLabel,
@@ -106,6 +111,8 @@ const {
   matchesFactorDrop,
   normalizeTypedValue,
   parseNumericAnswer,
+  isReducedFraction,
+  reduceFraction,
   operators,
   randInt,
   recordProblemResult: recordProblemResultCore,
@@ -644,6 +651,7 @@ function clearCurrentAnswerInput() {
   clearAmbiguousTimer();
   answerInput.value = "";
   state.currentInput = "";
+  clearTargetStepPreview();
   updateKpDisplay();
 }
 
@@ -825,6 +833,7 @@ const OP_SETS = {
   div: "arithmetic",
   f10: "arithmetic",
   round: "round",
+  reduce: "reduce",
   shapes: "shapes",
   pow: "pow",
   si: "si",
@@ -1007,7 +1016,67 @@ function copyProblemToTarget(problem, target) {
     target.factorLastPrime = null;
     target.factorComplete = false;
   }
+  if (problem.opKey === "reduce") {
+    copyReduceFields(problem, target);
+  }
   return target;
+}
+
+function copyReduceFields(problem, target) {
+  target.reduceOriginalNum = problem.reduceOriginalNum;
+  target.reduceOriginalDen = problem.reduceOriginalDen;
+  target.reduceNum = problem.reduceNum ?? problem.reduceOriginalNum;
+  target.reduceDen = problem.reduceDen ?? problem.reduceOriginalDen;
+  target.reduceCase = problem.reduceCase || null;
+  target.reduceBand = problem.reduceBand || null;
+  target.reducePreviewFactor = null;
+  target.reduceInvalidReason = "";
+  target.reduceComplete = isReducedFraction(target.reduceNum, target.reduceDen);
+  target.answer = problem.answerText || problem.answer;
+  target.answerText = problem.answerText || String(problem.answer);
+}
+
+function isReduceProblem(target) {
+  return target?.opKey === "reduce";
+}
+
+function getReduceDisplayText(target) {
+  if (!isReduceProblem(target)) return target?.text || "";
+  const num = target.reduceNum ?? target.reduceOriginalNum;
+  const den = target.reduceDen ?? target.reduceOriginalDen;
+  const previewFactor = target.reducePreviewFactor;
+  if (previewFactor) {
+    const step = fractionCancelStep(num, den, previewFactor);
+    if (step) return `(${previewFactor}\u00b7${step.num})/(${previewFactor}\u00b7${step.den})`;
+  }
+  return formatFractionText(num, den);
+}
+
+function refreshReduceTarget(target) {
+  if (!isReduceProblem(target)) return;
+  target.reducePreviewFactor = null;
+  target.reduceInvalidReason = "";
+  target.reduceComplete = isReducedFraction(target.reduceNum, target.reduceDen);
+  target.text = getReduceDisplayText(target);
+}
+
+function setReducePreview(target, factor) {
+  if (!isReduceProblem(target)) return false;
+  const step = fractionCancelStep(target.reduceNum, target.reduceDen, factor);
+  target.reducePreviewFactor = step ? factor : null;
+  target.reduceInvalidReason = step ? "" : "must divide both";
+  target.text = getReduceDisplayText(target);
+  return Boolean(step);
+}
+
+function commitReducePreview(target) {
+  if (!isReduceProblem(target) || !target.reducePreviewFactor) return false;
+  const step = fractionCancelStep(target.reduceNum, target.reduceDen, target.reducePreviewFactor);
+  if (!step) return false;
+  target.reduceNum = step.num;
+  target.reduceDen = step.den;
+  refreshReduceTarget(target);
+  return true;
 }
 
 function getProblemAnswerKey(problem) {
@@ -1044,6 +1113,9 @@ function makeProblemFromUniverseEntry(opKey, entry, level = opConfig[opKey]?.dif
   }
   if (opKey === "f10") {
     return makeF10ProblemFromKey(statsKey);
+  }
+  if (opKey === "reduce") {
+    return makeReduceProblemFromKey(statsKey);
   }
   if (opKey === "si") {
     const [fromSym, toSym] = statsKey.split(",");
@@ -2137,6 +2209,9 @@ function createDrop() {
     drop.factorCollected = { ...problem.factorCollected };
     drop.factorLastPrime = null;
   }
+  if (problem.opKey === "reduce") {
+    copyReduceFields(problem, drop);
+  }
   state.drops.push(drop);
   return true;
 }
@@ -2282,9 +2357,11 @@ function drawDrops() {
     const dropBottom = drop.y + 22 * dropTextScale;
     const dropRadius = 22 * dropTextScale;
     const isFactor = drop.opKey === "factor";
+    const isReduce = drop.opKey === "reduce";
     const factorComplete = isFactor && drop.factorComplete;
-    const isTargeted = isFactor && state.factorTargetId === drop.id;
-    const isHighlighted = !drop.revealed && !isFactor && (drop.opKey === "si"
+    const reduceComplete = isReduce && drop.reduceComplete;
+    const isTargeted = (isFactor || isReduce) && state.factorTargetId === drop.id;
+    const isHighlighted = !drop.revealed && !isFactor && !isReduce && (drop.opKey === "si"
       ? state.currentInput === drop.answerText
       : hasNumMatch && drop.answer === inputNum);
 
@@ -2292,7 +2369,7 @@ function drawDrops() {
     if (drop.revealed) {
       fillColor = "rgba(148, 163, 184, 0.35)";
       strokeColor = "rgba(148, 163, 184, 0.25)";
-    } else if (isFactor && factorComplete) {
+    } else if ((isFactor && factorComplete) || (isReduce && reduceComplete && isTargeted)) {
       fillColor = "rgba(52, 211, 153, 0.88)";
       strokeColor = "rgba(110, 231, 183, 0.9)";
     } else {
@@ -2303,7 +2380,7 @@ function drawDrops() {
     }
 
     if (isHighlighted || isTargeted) {
-      ctx.shadowColor = isFactor
+      ctx.shadowColor = (isFactor || isReduce)
         ? "rgba(192, 160, 255, 0.9)"
         : masteryShadowColor || "rgba(125, 211, 252, 0.8)";
       ctx.shadowBlur = isTargeted ? 24 : 18;
@@ -2345,12 +2422,14 @@ function drawDrops() {
     let displayText;
     if (drop.revealed && isFactor) {
       displayText = `${drop.factorOriginal}=${getFullFactorization(drop.factorOriginal)}`;
+    } else if (!drop.revealed && isReduce) {
+      displayText = getReduceDisplayText(drop);
     } else if (drop.revealed) {
       displayText = drop.answerText;
     } else {
       displayText = drop.text;
     }
-    const fontSize = getScaledFontSize((drop.revealed || isFactor) ? 14 : 17, 28);
+    const fontSize = getScaledFontSize((drop.revealed || isFactor || isReduce) ? 14 : 17, 28);
     const textX = Math.round(drop.x);
     const textY = Math.round(drop.y + 2);
     ctx.font = `800 ${fontSize}px Space Grotesk, Trebuchet MS, sans-serif`;
@@ -2360,6 +2439,9 @@ function drawDrops() {
 
     // Factor drops in progress: draw main text + remaining in accent color
     const remainingText = isFactor && !drop.revealed ? getFactorRemainingText(drop) : null;
+    const reduceCueText = isReduce && !drop.revealed && isTargeted
+      ? (drop.reduceInvalidReason || (drop.reduceComplete ? "lowest terms \u2713" : (drop.reducePreviewFactor ? "Enter cancels" : "type factor")))
+      : null;
     if (remainingText) {
       // Measure widths to position the two parts
       const mainWidth = ctx.measureText(displayText).width;
@@ -2382,6 +2464,14 @@ function drawDrops() {
       ctx.fillStyle = drop.revealed ? "#94a3b8" : "#f8fafc";
       ctx.strokeText(displayText, textX, textY);
       ctx.fillText(displayText, textX, textY);
+      if (reduceCueText) {
+        const cueSize = Math.max(10, Math.round(fontSize * 0.58));
+        ctx.font = `700 ${cueSize}px Space Grotesk, Trebuchet MS, sans-serif`;
+        ctx.lineWidth = Math.max(2.5, Math.round(cueSize * 0.22));
+        ctx.fillStyle = drop.reduceInvalidReason ? "#fca5a5" : "#fbbf24";
+        ctx.strokeText(reduceCueText, textX, Math.round(textY + fontSize * 0.9));
+        ctx.fillText(reduceCueText, textX, Math.round(textY + fontSize * 0.9));
+      }
     }
     ctx.restore();
   }
@@ -2893,6 +2983,8 @@ function drawBossProblemNode(problem) {
   if (problem.opKey === "factor" && Number.isFinite(problem.factorRemaining)
     && problem.factorRemaining !== problem.factorOriginal) {
     label = String(problem.factorRemaining);
+  } else if (problem.opKey === "reduce") {
+    label = getReduceDisplayText(problem);
   }
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -3009,6 +3101,11 @@ function findDropMatch(value, { enterPressed = false } = {}) {
       if (enterPressed && matchesFactorDrop(value, drop)) return drop;
       continue;
     }
+    // Fraction simplification requires Enter and lowest terms.
+    if (drop.opKey === "reduce") {
+      if (enterPressed && checkSimplifiedAnswer(drop.reduceOriginalNum, drop.reduceOriginalDen, value)) return drop;
+      continue;
+    }
     // SI drops require Enter — skip them on auto-match
     if (drop.opKey === "si" && !enterPressed) continue;
     if (drop.opKey === "si") {
@@ -3032,7 +3129,9 @@ function isInputPossible(inputValue) {
   // If factor drops are visible, any digit input could be the start of a factorization
   const hasFactorDrops = getAnswerTargets().some((d) => d.opKey === "factor" && isAnswerTargetVisible(d));
   if (hasFactorDrops && /^\d+$/.test(inputValue)) return true;
-  const visible = getAnswerTargets().filter((d) => isAnswerTargetVisible(d) && d.opKey !== "si" && d.opKey !== "factor");
+  const hasReduceDrops = getAnswerTargets().some((d) => d.opKey === "reduce" && isAnswerTargetVisible(d));
+  if (hasReduceDrops && /^\d+(\/\d*)?$/.test(inputValue)) return true;
+  const visible = getAnswerTargets().filter((d) => isAnswerTargetVisible(d) && d.opKey !== "si" && d.opKey !== "factor" && d.opKey !== "reduce");
   // Fraction entry (e.g. 9/2 for 4.5): allow while it is still being typed, and
   // accept it once it evaluates to a visible answer. A bare integer can also be
   // the numerator of a fraction when a fractional-answer drop is on screen.
@@ -3144,7 +3243,7 @@ function getMostUrgentVisibleTarget(candidates = getAnswerTargets()) {
 function getWrongSubmissionTargets() {
   const visibleTargets = getAnswerTargets().filter((drop) => isAnswerTargetVisible(drop));
   if (visibleTargets.length === 0) return [];
-  const enterRequired = visibleTargets.filter((drop) => drop.opKey === "si" || drop.opKey === "factor");
+  const enterRequired = visibleTargets.filter((drop) => drop.opKey === "si" || drop.opKey === "factor" || drop.opKey === "reduce");
   const target = getMostUrgentVisibleTarget(enterRequired.length ? enterRequired : visibleTargets);
   return target ? [target] : [];
 }
@@ -3180,9 +3279,7 @@ function handleWrongInput({ targets = null } = {}) {
   // where a wrong answer simply doesn't clear. Only landed bombs cost shields.
   playWrongInput();
   registerWrongSubmission();
-  answerInput.value = "";
-  state.currentInput = "";
-  updateKpDisplay();
+  clearCurrentAnswerInput();
   updateInputHint();
 }
 
@@ -3217,11 +3314,15 @@ function processInput(value) {
   }
   clearAmbiguousTimer();
 
-  // ── Factor targeting mode: primes go to the targeted drop only ──
+  // ── Targeting mode: step through factorization or fraction cancellation. ──
   if (isInFactorTargetMode()) {
     const target = getTargetedFactorDrop();
     if (!target) {
       exitFactorTargeting();
+      return;
+    }
+    if (isReduceProblem(target)) {
+      handleReduceTargetInput(target, value);
       return;
     }
     if (target.factorComplete) return; // waiting for Enter
@@ -3242,7 +3343,7 @@ function processInput(value) {
     return;
   }
 
-  // ── Normal mode: regular drops only, factor drops ignored ──
+  // ── Normal mode: regular immediate-answer drops only; Enter-required drops wait. ──
   const match = findDropMatch(value);
   if (match) {
     if (hasLongerMatch(value)) {
@@ -3264,6 +3365,67 @@ function processInput(value) {
   }
 }
 
+function handleReduceTargetInput(target, value) {
+  if (!isReduceProblem(target)) return;
+  if (value.includes("*") || value.includes("^")) {
+    handleWrongInput({ targets: [target] });
+    return;
+  }
+  if (/^\d+$/.test(value)) {
+    const factor = Number(value);
+    const step = fractionCancelStep(target.reduceNum, target.reduceDen, factor);
+    if (step) {
+      setReducePreview(target, factor);
+    } else {
+      target.reducePreviewFactor = null;
+      target.reduceInvalidReason = "";
+      target.text = getReduceDisplayText(target);
+    }
+    return;
+  }
+  if (/^\d+\/\d*$/.test(value)) {
+    target.reducePreviewFactor = null;
+    target.reduceInvalidReason = "";
+    target.text = getReduceDisplayText(target);
+    return;
+  }
+  handleWrongInput({ targets: [target] });
+}
+
+function commitTargetedReduceAnswer(target, value) {
+  if (!isReduceProblem(target)) return false;
+  const typed = String(value || "").trim();
+  if (!typed) {
+    if (isReducedFraction(target.reduceNum, target.reduceDen)) {
+      handleCorrectAnswer(target);
+    } else {
+      target.reduceInvalidReason = "keep reducing";
+      handleWrongInput({ targets: [target] });
+    }
+    return true;
+  }
+  if (checkSimplifiedAnswer(target.reduceOriginalNum, target.reduceOriginalDen, typed)) {
+    handleCorrectAnswer(target);
+    return true;
+  }
+  if (/^\d+$/.test(typed)) {
+    const factor = Number(typed);
+    if (setReducePreview(target, factor) && commitReducePreview(target)) {
+      heartbeatActiveSession({ persist: true });
+      playPop();
+      answerInput.value = "";
+      state.currentInput = "";
+      updateKpDisplay();
+      return true;
+    }
+    target.reduceInvalidReason = "must divide both";
+    handleWrongInput({ targets: [target] });
+    return true;
+  }
+  handleWrongInput({ targets: [target] });
+  return true;
+}
+
 function couldMatchTargetedFactor(value) {
   if (!value) return false;
   const target = getTargetedFactorDrop();
@@ -3281,7 +3443,7 @@ function advanceFactorDrop(drop, divisor, { fromTargeting = false } = {}) {
   playPop();
 }
 
-// ── Factor Targeting ──
+// ── Step Targeting (prime factors and fraction cancellation) ──
 
 function isInFactorTargetMode() {
   return state.factorTargetId !== null;
@@ -3304,16 +3466,31 @@ function getTargetedFactorDrop() {
   return target;
 }
 
-// Factor problems that can be targeted/stepped right now. In boss mode that means
-// the active ship's factor nodes plus any falling factor bombs; otherwise the
-// visible falling factor drops.
+function clearTargetStepPreview() {
+  if (state.factorTargetId === null) return;
+  const target = getTargetedFactorDrop();
+  if (!isReduceProblem(target)) return;
+  target.reducePreviewFactor = null;
+  target.reduceInvalidReason = "";
+  target.text = getReduceDisplayText(target);
+}
+
+function isTargetableStepProblem(problem) {
+  if (!problem) return false;
+  if (problem.opKey === "factor") return !problem.factorComplete;
+  if (problem.opKey === "reduce") return !problem.revealed && !problem.destroyed;
+  return false;
+}
+
+// Stepwise problems that can be targeted right now. In boss mode that means
+// active ship nodes plus falling bombs; otherwise visible falling drops.
 function getTargetableFactorProblems() {
   if (isBossActive()) {
-    const nodes = getActiveBossParts().filter((p) => p.opKey === "factor" && !p.factorComplete);
-    const bombs = state.drops.filter((d) => d.bossKind === "bomb" && d.opKey === "factor" && isDropVisible(d) && !d.factorComplete);
+    const nodes = getActiveBossParts().filter(isTargetableStepProblem);
+    const bombs = state.drops.filter((d) => d.bossKind === "bomb" && isDropVisible(d) && isTargetableStepProblem(d));
     return [...nodes, ...bombs];
   }
-  return state.drops.filter((d) => d.opKey === "factor" && isDropVisible(d) && !d.revealed && !d.factorComplete);
+  return state.drops.filter((d) => isDropVisible(d) && isTargetableStepProblem(d));
 }
 
 function getVisibleFactorDrops() {
@@ -3358,18 +3535,17 @@ function exitFactorTargeting() {
 // 10. Game Loop
 // ============================================================
 
-// When factoring is the only operation in play, auto-target the most urgent
-// factor drop so the player can factor it (stepwise, or a full a^b*c + Enter)
-// without pressing Tab first. With other operations enabled, targeting stays
-// manual to avoid surprises.
+// When factor or reduce is the only operation in play, auto-target the most
+// urgent stepwise drop so the player can work it without pressing Tab first.
+// With other operations enabled, targeting stays manual to avoid surprises.
 function maybeAutoTargetFactor() {
-  const factorActive = isBossActive()
-    ? state.bossMode.opKey === "factor"
+  const stepOpActive = isBossActive()
+    ? ["factor", "reduce"].includes(state.bossMode.opKey)
     : (() => {
       const enabled = getEnabledOps();
-      return enabled.length === 1 && enabled[0] === "factor";
+      return enabled.length === 1 && ["factor", "reduce"].includes(enabled[0]);
     })();
-  if (!factorActive) return;
+  if (!stepOpActive) return;
   if (state.factorTargetId !== null && getTargetedFactorDrop()) return; // keep a valid current target
   const candidates = getTargetableFactorProblems();
   if (candidates.length === 0) return;
@@ -3482,6 +3658,7 @@ const opDisplayLabels = {
   div: "\u00f7",
   f10: "x10",
   round: "\u2248",
+  reduce: "\u00bd",
   si: "SI",
   shapes: "\u25b1",
   pow: "x\u207f",
@@ -3495,6 +3672,7 @@ const opDisplayNames = {
   div: "Divide",
   f10: "Factors of 10",
   round: "Rounding",
+  reduce: "Simplify Fractions",
   si: "SI Conversions",
   shapes: "Shapes (P & A)",
   pow: "Powers & Roots",
@@ -4026,9 +4204,11 @@ function updateInputHint() {
   const hasShapes = enabled.includes("shapes");
   const hasPow = enabled.includes("pow");
   const hasFactor = enabled.includes("factor");
+  const hasReduce = enabled.includes("reduce");
   if (hasBasic || hasShapes || hasPow) hints.push("Type answer to clear");
   if (hasShapes) hints.push("Shapes: type the value; ○ is the π coefficient");
   if (hasPow) hints.push("Powers/roots: type the value (e.g. 7² → 49, √81 → 9)");
+  if (hasReduce) hints.push("½: type 2/3 + Enter, or Tab to cancel common factors");
   if (hasSI) hints.push("SI: type *1000 or /100 + Enter");
   if (hasFactor) hints.push("p·q: type 2^2*3 + Enter, or Tab to factor");
   hints.push("Spacebar: pause drops until clear");
@@ -5480,6 +5660,7 @@ function isPlacementAnswerCorrect(problem, value) {
   const typed = String(value || "").trim();
   if (!typed || !problem) return false;
   if (problem.opKey === "factor") return matchesFactorDrop(typed, problem);
+  if (problem.opKey === "reduce") return checkSimplifiedAnswer(problem.reduceOriginalNum, problem.reduceOriginalDen, typed);
   if (problem.opKey === "si") return typed === problem.answerText;
   const normalizedTyped = normalizeTypedValue(typed, { allowIncomplete: false });
   const normalizedAnswer = normalizeTypedValue(getPlacementCorrectAnswer(problem), { allowIncomplete: false });
@@ -6236,7 +6417,12 @@ function buildListStats(opKey, stats) {
         problem.statsKey,
         stats[problem.statsKey] || { asked: 0, correct: 0 },
       ])
-    : Object.entries(stats);
+    : opKey === "reduce"
+      ? getReduceUniverse(opConfig.reduce.difficulty).map((problem) => [
+          problem.statsKey,
+          stats[problem.statsKey] || { asked: 0, correct: 0 },
+        ])
+      : Object.entries(stats);
   const wrap = document.createElement("div");
   wrap.className = "stats-f10-list";
 
@@ -6457,9 +6643,7 @@ answerInput.addEventListener("keydown", (event) => {
   }
   if (event.key === "Backspace") {
     event.preventDefault();
-    clearAmbiguousTimer();
-    answerInput.value = "";
-    state.currentInput = "";
+    clearCurrentAnswerInput();
   }
   if (event.key === "Enter") {
     event.preventDefault();
@@ -6467,6 +6651,10 @@ answerInput.addEventListener("keydown", (event) => {
 
     if (isInFactorTargetMode()) {
       const target = getTargetedFactorDrop();
+      if (target && isReduceProblem(target)) {
+        commitTargetedReduceAnswer(target, answerInput.value.trim());
+        return;
+      }
       if (target && target.factorComplete) {
         handleCorrectAnswer(target);
         return;
@@ -6714,8 +6902,8 @@ canvas.addEventListener("click", (event) => {
     const drop = state.drops[i];
     if (!isDropClickable(drop)) continue;
     if (hitTestDrop(drop, x, y)) {
-      if (drop.opKey === "factor") {
-        // Click a factor drop to enter targeting mode on it
+      if (drop.opKey === "factor" || drop.opKey === "reduce") {
+        // Click a stepwise drop to enter targeting mode on it
         enterFactorTargeting(drop);
       } else {
         revealDrop(drop);
@@ -7076,10 +7264,7 @@ function handleKeypadPress(key) {
   }
 
   if (key === "Backspace") {
-    clearAmbiguousTimer();
-    answerInput.value = "";
-    state.currentInput = "";
-    updateKpDisplay();
+    clearCurrentAnswerInput();
     return;
   }
 
@@ -7087,6 +7272,11 @@ function handleKeypadPress(key) {
     if (state.isPaused) return;
     if (isInFactorTargetMode()) {
       const target = getTargetedFactorDrop();
+      if (target && isReduceProblem(target)) {
+        commitTargetedReduceAnswer(target, state.currentInput.trim());
+        updateKpDisplay();
+        return;
+      }
       if (target && target.factorComplete) {
         handleCorrectAnswer(target);
         updateKpDisplay();
@@ -7206,6 +7396,23 @@ function makeTestDrop(overrides = {}) {
     drop.factorLastPrime = overrides.factorLastPrime ?? null;
     drop.factorComplete = overrides.factorComplete ?? false;
     drop.statsKey = overrides.statsKey ?? String(drop.factorOriginal);
+  }
+
+  if (opKey === "reduce") {
+    drop.reduceOriginalNum = overrides.reduceOriginalNum ?? 12;
+    drop.reduceOriginalDen = overrides.reduceOriginalDen ?? 18;
+    drop.reduceNum = overrides.reduceNum ?? drop.reduceOriginalNum;
+    drop.reduceDen = overrides.reduceDen ?? drop.reduceOriginalDen;
+    drop.reduceCase = overrides.reduceCase ?? "repeated";
+    drop.reduceBand = overrides.reduceBand ?? "small";
+    drop.reducePreviewFactor = overrides.reducePreviewFactor ?? null;
+    drop.reduceInvalidReason = overrides.reduceInvalidReason ?? "";
+    drop.reduceComplete = overrides.reduceComplete ?? isReducedFraction(drop.reduceNum, drop.reduceDen);
+    drop.text = overrides.text ?? formatFractionText(drop.reduceNum, drop.reduceDen);
+    const reduced = reduceFraction(drop.reduceOriginalNum, drop.reduceOriginalDen);
+    drop.answerText = overrides.answerText ?? formatFractionText(reduced.num, reduced.den);
+    drop.answer = drop.answerText;
+    drop.statsKey = overrides.statsKey ?? `red:${drop.reduceBand}:${drop.reduceCase}`;
   }
 
   return drop;
@@ -7527,11 +7734,19 @@ function installTestHooks() {
       answerInput.value = String(value);
       state.currentInput = answerInput.value;
       if (enter) {
-        const match = findDropMatch(state.currentInput, { enterPressed: true });
-        if (match) {
-          handleCorrectAnswer(match);
+        const target = isInFactorTargetMode() ? getTargetedFactorDrop() : null;
+        if (target && isReduceProblem(target)) {
+          commitTargetedReduceAnswer(target, state.currentInput.trim());
+        } else if (target && target.factorComplete) {
+          handleCorrectAnswer(target);
         } else {
-          handleWrongInput({ targets: getWrongSubmissionTargets() });
+          if (target) state.factorTargetId = null;
+          const match = findDropMatch(state.currentInput, { enterPressed: true });
+          if (match) {
+            handleCorrectAnswer(match);
+          } else {
+            handleWrongInput({ targets: getWrongSubmissionTargets() });
+          }
         }
       } else {
         processInput(state.currentInput);
