@@ -250,6 +250,12 @@ test.describe("desktop gameplay", () => {
     state = await invoke(page, "submit", "", { enter: true });
     await expect(page.locator("#score")).toHaveText("1");
     expect(state.drops).toHaveLength(0);
+
+    // Grid button opens the fraction stats list (reduce must use the list view).
+    await page.locator('.diff-card[data-op="reduce"] .diff-grid-hint').click();
+    await expect(page.locator("#statsOverlay h2")).toHaveText("Simplify Fractions — Problem Accuracy");
+    await expect(page.locator("#statsOverlay .stats-f10-row")).toHaveCount(4);
+    await expect(page.locator("#statsOverlay")).toContainText("reduce by 2");
   });
 
   test("fraction simplification rejects unreduced answers and handles whole or already-reduced cases", async ({ page }) => {

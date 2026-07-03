@@ -4739,7 +4739,7 @@ function showStatsPopup(opKey) {
   if (opKey === "si") {
     card.appendChild(buildSIReferenceTable());
     card.appendChild(buildListStats(opKey, stats));
-  } else if (opKey === "f10" || opKey === "round" || opKey === "factor" || opKey === "shapes" || opKey === "pow") {
+  } else if (opKey === "f10" || opKey === "round" || opKey === "reduce" || opKey === "factor" || opKey === "shapes" || opKey === "pow") {
     card.appendChild(buildListStats(opKey, stats));
   } else {
     card.appendChild(buildGridStats(opKey, stats));

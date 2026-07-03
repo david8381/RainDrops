@@ -4,6 +4,7 @@
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
 ## 2026-07-03
+- Fixed the ½ (Simplify Fractions) Grid button: `reduce` was missing from the stats-popup list-view routing, so it fell through to the arithmetic grid renderer and broke. Now routed to the list view like the other special ops; e2e opens the reduce grid to guard it.
 - Reworked the Simplify Fractions (½) mastery grid (handled directly): cells are now **factor buckets** (`red:<band>:<kind>:<factor>`) instead of coarse cases — each common factor (÷2, ÷3, ÷5, ÷7, composites ÷4/6/8/9/12, big primes ÷11/13, and **÷1 = already reduced**) is its own cell, so recognizing "÷3 divides both" is a distinct skill. 10 levels of a steady ~4 cells each (40 total, was 26 with 1–3-cell early levels), so a level takes ~12 problems to master instead of ~3. Fractions are generated algorithmically (`f·a / f·b`, coprime) for unlimited variety, replacing the small curated table. Also removed the on-screen "lowest terms ✓ / type factor" cue — the player judges when it is reduced and presses Enter, like factoring.
 
 ## 2026-07-02
