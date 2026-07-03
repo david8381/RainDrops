@@ -745,13 +745,6 @@ function generatePowProblem(difficulty = 1, rng = Math.random) {
 // literal fractions: a case (what kind of simplification) at a magnitude band.
 const REDUCE_MAX_LEVEL = 10;
 
-const REDUCE_CASE_LABELS = {
-  prime: "single common factor",
-  repeated: "multiple common factors",
-  whole: "reduces to whole number",
-  reduced: "already lowest terms",
-};
-
 const REDUCE_BAND_LABELS = {
   small: "small",
   smallmed: "small-med",
@@ -761,49 +754,32 @@ const REDUCE_BAND_LABELS = {
   huge: "large",
 };
 
-const REDUCE_LEVEL_SPECS = [
-  [["small", "prime"]],
-  [["small", "prime"], ["small", "whole"]],
-  [["small", "prime"], ["small", "whole"], ["small", "reduced"]],
-  [["smallmed", "repeated"], ["smallmed", "reduced"]],
-  [["med", "prime"], ["med", "repeated"], ["med", "whole"]],
-  [["two", "prime"], ["two", "reduced"]],
-  [["two", "whole"], ["two", "repeated"]],
-  [["two", "prime"], ["two", "repeated"], ["two", "reduced"]],
-  [["large", "prime"], ["large", "repeated"], ["large", "whole"], ["large", "reduced"]],
-  [["huge", "prime"], ["huge", "repeated"], ["huge", "whole"], ["huge", "reduced"]],
-];
-
-const REDUCE_SAMPLES = {
-  prime: {
-    small: [[4, 6], [6, 9], [8, 10], [10, 15]],
-    med: [[14, 35], [22, 33], [26, 39], [34, 51]],
-    two: [[26, 39], [34, 51], [38, 57], [46, 69]],
-    large: [[46, 69], [58, 87], [62, 93], [74, 111]],
-    huge: [[94, 141], [106, 159], [118, 177], [134, 201]],
-  },
-  repeated: {
-    smallmed: [[8, 12], [12, 18], [16, 20], [18, 24]],
-    med: [[24, 36], [30, 42], [36, 48], [42, 56]],
-    two: [[45, 60], [56, 84], [72, 96], [84, 126]],
-    large: [[84, 126], [96, 144], [108, 162], [132, 198]],
-    huge: [[120, 180], [144, 192], [168, 224], [180, 270]],
-  },
-  whole: {
-    small: [[6, 3], [8, 4], [9, 3], [10, 5], [12, 6]],
-    med: [[18, 6], [21, 7], [24, 8], [30, 10]],
-    two: [[45, 9], [72, 12], [84, 14], [96, 16]],
-    large: [[120, 15], [144, 18], [168, 21], [180, 20]],
-    huge: [[180, 12], [200, 25], [216, 18], [252, 21]],
-  },
-  reduced: {
-    small: [[3, 5], [5, 8], [7, 9], [7, 10]],
-    smallmed: [[5, 12], [7, 11], [11, 14], [13, 16]],
-    two: [[29, 37], [31, 44], [41, 52], [47, 60]],
-    large: [[53, 84], [67, 90], [71, 96], [83, 120]],
-    huge: [[101, 144], [113, 150], [127, 180], [131, 210]],
-  },
+// Sampling range for the coprime multiplier a/b (and the whole-number quotient).
+const REDUCE_BAND_RANGE = {
+  small: [2, 8],
+  smallmed: [3, 11],
+  med: [4, 13],
+  two: [5, 18],
+  large: [9, 28],
+  huge: [15, 44],
 };
+
+// Each cell is [band, kind, factor]:
+//   kind "cancel" — the fraction's GCF is exactly `factor` (num = f*a, den = f*b,
+//                   a and b coprime); factor 1 means already in lowest terms.
+//   kind "whole"  — reduces to an integer (den = factor, num = factor*k).
+const REDUCE_LEVEL_SPECS = [
+  [["small", "cancel", 2], ["small", "cancel", 3], ["small", "cancel", 5], ["small", "cancel", 7]],
+  [["small", "whole", 2], ["small", "whole", 3], ["small", "whole", 4], ["small", "whole", 5]],
+  [["smallmed", "cancel", 4], ["smallmed", "cancel", 6], ["smallmed", "cancel", 8], ["smallmed", "cancel", 9]],
+  [["small", "cancel", 1], ["smallmed", "cancel", 1], ["smallmed", "cancel", 2], ["smallmed", "cancel", 3]],
+  [["two", "cancel", 2], ["two", "cancel", 3], ["two", "cancel", 5], ["two", "cancel", 7]],
+  [["two", "whole", 3], ["two", "whole", 4], ["two", "whole", 6], ["two", "whole", 8]],
+  [["two", "cancel", 4], ["two", "cancel", 6], ["two", "cancel", 9], ["two", "cancel", 12]],
+  [["two", "cancel", 11], ["two", "cancel", 13], ["two", "cancel", 1], ["med", "cancel", 1]],
+  [["large", "cancel", 3], ["large", "cancel", 6], ["large", "whole", 4], ["large", "cancel", 1]],
+  [["huge", "cancel", 7], ["huge", "cancel", 12], ["huge", "whole", 8], ["huge", "cancel", 1]],
+];
 
 function gcdInt(a, b) {
   let x = Math.abs(Math.trunc(Number(a)));
@@ -875,47 +851,64 @@ function checkSimplifiedAnswer(origNum, origDen, typed) {
 }
 
 function reduceTypeStatsKey(type) {
-  return `red:${type.band}:${type.caseName}`;
+  return `red:${type.band}:${type.kind}:${type.factor}`;
 }
 
-function makeReduceType(band, caseName) {
-  const type = { band, caseName };
+function makeReduceType(band, kind, factor) {
+  const type = { band, kind, factor };
   return { ...type, statsKey: reduceTypeStatsKey(type) };
 }
 
 function reduceTypesForLevel(level) {
   const lvl = clamp(1, REDUCE_MAX_LEVEL, Math.round(level || 1));
-  return REDUCE_LEVEL_SPECS[lvl - 1].map(([band, caseName]) => makeReduceType(band, caseName));
-}
-
-function allReduceTypes() {
-  const byKey = new Map();
-  for (let level = 1; level <= REDUCE_MAX_LEVEL; level += 1) {
-    for (const type of reduceTypesForLevel(level)) {
-      byKey.set(type.statsKey, type);
-    }
-  }
-  return [...byKey.values()];
+  return REDUCE_LEVEL_SPECS[lvl - 1].map(([band, kind, factor]) => makeReduceType(band, kind, factor));
 }
 
 function reduceTypeFromKey(statsKey) {
-  return allReduceTypes().find((type) => type.statsKey === String(statsKey)) || null;
+  const parts = String(statsKey).split(":");
+  if (parts[0] !== "red" || parts.length < 4) return null;
+  const band = parts[1];
+  const kind = parts[2];
+  const factor = Number(parts[3]);
+  if (!REDUCE_BAND_RANGE[band] || !Number.isFinite(factor)) return null;
+  return makeReduceType(band, kind, factor);
 }
 
 function reduceTypeLabel(type) {
-  const caseLabel = REDUCE_CASE_LABELS[type.caseName] || type.caseName;
   const bandLabel = REDUCE_BAND_LABELS[type.band] || type.band;
-  return `${caseLabel} · ${bandLabel}`;
+  if (type.kind === "whole") return `reduces to a whole (\u00f7${type.factor}) \u00b7 ${bandLabel}`;
+  if (type.factor === 1) return `already reduced \u00b7 ${bandLabel}`;
+  return `reduce by ${type.factor} \u00b7 ${bandLabel}`;
 }
 
-function sampleReducePair(type, rng = Math.random) {
-  const byCase = REDUCE_SAMPLES[type.caseName] || {};
-  const samples = byCase[type.band] || Object.values(byCase)[0] || [[4, 6]];
-  return samples[randInt(0, samples.length - 1, rng)];
+// A random coprime pair a<b in the band range (consecutive-integer fallback).
+function sampleCoprimePair(range, rng = Math.random) {
+  const [lo, hi] = range;
+  for (let i = 0; i < 200; i += 1) {
+    let a = randInt(lo, hi, rng);
+    let b = randInt(lo, hi, rng);
+    if (a === b) continue;
+    if (a > b) { const t = a; a = b; b = t; }
+    if (gcdInt(a, b) === 1) return [a, b];
+  }
+  return [lo, lo + 1];
 }
 
 function makeReduceProblem(type, rng = Math.random) {
-  const [num, den] = sampleReducePair(type, rng);
+  const range = REDUCE_BAND_RANGE[type.band] || REDUCE_BAND_RANGE.small;
+  let num;
+  let den;
+  if (type.kind === "whole") {
+    const k = randInt(Math.max(2, range[0]), range[1], rng);
+    num = type.factor * k;
+    den = type.factor;
+  } else if (type.factor === 1) {
+    [num, den] = sampleCoprimePair(range, rng);
+  } else {
+    const [a, b] = sampleCoprimePair(range, rng);
+    num = type.factor * a;
+    den = type.factor * b;
+  }
   const reduced = reduceFraction(num, den);
   const answerText = formatFractionText(reduced.num, reduced.den);
   return {
@@ -928,7 +921,7 @@ function makeReduceProblem(type, rng = Math.random) {
     reduceOriginalDen: den,
     reduceNum: num,
     reduceDen: den,
-    reduceCase: type.caseName,
+    reduceCase: type.kind,
     reduceBand: type.band,
     reducePreviewFactor: null,
     reduceInvalidReason: "",

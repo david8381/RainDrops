@@ -2472,9 +2472,6 @@ function drawDrops() {
 
     // Factor drops in progress: draw main text + remaining in accent color
     const remainingText = isFactor && !drop.revealed ? getFactorRemainingText(drop) : null;
-    const reduceCueText = isReduce && !drop.revealed && isTargeted
-      ? (drop.reduceInvalidReason || (drop.reduceComplete ? "lowest terms \u2713" : (drop.reducePreviewFactor ? "Enter cancels" : "type factor")))
-      : null;
     if (remainingText) {
       // Measure widths to position the two parts
       const mainWidth = ctx.measureText(displayText).width;
@@ -2497,14 +2494,6 @@ function drawDrops() {
       ctx.fillStyle = drop.revealed ? "#94a3b8" : "#f8fafc";
       ctx.strokeText(displayText, textX, textY);
       ctx.fillText(displayText, textX, textY);
-      if (reduceCueText) {
-        const cueSize = Math.max(10, Math.round(fontSize * 0.58));
-        ctx.font = `700 ${cueSize}px Space Grotesk, Trebuchet MS, sans-serif`;
-        ctx.lineWidth = Math.max(2.5, Math.round(cueSize * 0.22));
-        ctx.fillStyle = drop.reduceInvalidReason ? "#fca5a5" : "#fbbf24";
-        ctx.strokeText(reduceCueText, textX, Math.round(textY + fontSize * 0.9));
-        ctx.fillText(reduceCueText, textX, Math.round(textY + fontSize * 0.9));
-      }
     }
     ctx.restore();
   }

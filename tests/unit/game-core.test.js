@@ -433,7 +433,7 @@ describe("difficulty ranges", () => {
     // op-specific keys delegate to that op's problem-from-key text
     assert.equal(formatStatsKeyLabel("pow", getPowUniverse(1)[0].statsKey), makePowProblemFromKey(getPowUniverse(1)[0].statsKey).text);
     assert.equal(formatStatsKeyLabel("shapes", getShapesUniverse()[0].statsKey), makeShapeProblemFromKey(getShapesUniverse()[0].statsKey).text);
-    assert.equal(formatStatsKeyLabel("reduce", "red:small:prime"), "single common factor · small");
+    assert.equal(formatStatsKeyLabel("reduce", "red:small:cancel:2"), "reduce by 2 · small");
   });
 
   it("computes course progress percent and formats SI stats keys", () => {
@@ -955,29 +955,36 @@ describe("problem generation", () => {
   });
 
   it("builds fraction-simplification buckets and samples the intended cases", () => {
-    const counts = [1, 2, 3, 2, 3, 2, 2, 3, 4, 4];
+    const counts = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4];
     counts.forEach((count, index) => {
       assert.equal(reduceTypesForLevel(index + 1).length, count);
       assert.equal(getReduceUniverse(index + 1).length, count);
     });
 
-    assert.equal(getReduceUniverse(1)[0].text, "single common factor · small");
-    assert.ok(getReduceUniverse(3).some((type) => type.statsKey === "red:small:reduced"));
-    assert.ok(!getReduceUniverse(3).some((type) => type.statsKey === "red:smallmed:repeated"));
+    assert.equal(getReduceUniverse(1)[0].text, "reduce by 2 · small");
+    assert.ok(getReduceUniverse(4).some((type) => type.statsKey === "red:small:cancel:1")); // ÷1 = already reduced
+    assert.ok(getReduceUniverse(8).some((type) => type.statsKey === "red:two:cancel:13"));
 
+    // Every cell samples a fraction that IS its case: a cancel:F fraction has GCF
+    // exactly F (F=1 → already coprime); a whole fraction reduces to an integer.
     for (let level = 1; level <= 10; level += 1) {
       for (const type of reduceTypesForLevel(level)) {
         const problem = makeReduceProblemFromKey(type.statsKey, sequenceRng([0]));
         assert.equal(problem.opKey, "reduce");
         assert.equal(problem.statsKey, type.statsKey);
-        assert.equal(classifyReduceProblem(problem), type.caseName, `${type.statsKey} sampled the wrong kind of fraction`);
+        const g = gcdInt(problem.reduceOriginalNum, problem.reduceOriginalDen);
+        if (type.kind === "whole") {
+          assert.equal(problem.reduceOriginalNum % problem.reduceOriginalDen, 0, `${type.statsKey} should reduce to a whole`);
+        } else {
+          assert.equal(g, type.factor, `${type.statsKey} should have GCF exactly ${type.factor}`);
+        }
         assert.equal(checkSimplifiedAnswer(problem.reduceOriginalNum, problem.reduceOriginalDen, problem.answerText), true);
       }
     }
 
-    const whole = makeReduceProblemFromKey("red:small:whole", sequenceRng([0]));
-    assert.equal(whole.answerText, "2");
-    assert.equal(checkSimplifiedAnswer(whole.reduceOriginalNum, whole.reduceOriginalDen, "2"), true);
+    const whole = makeReduceProblemFromKey("red:small:whole:3", sequenceRng([0]));
+    assert.equal(whole.reduceOriginalDen % 3, 0);
+    assert.equal(checkSimplifiedAnswer(whole.reduceOriginalNum, whole.reduceOriginalDen, whole.answerText), true);
   });
 
   it("builds powers & roots with clean answers and a cumulative level ladder", () => {
