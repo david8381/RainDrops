@@ -1031,6 +1031,8 @@ function copyReduceFields(problem, target) {
   target.reduceBand = problem.reduceBand || null;
   target.reducePreviewFactor = null;
   target.reduceInvalidReason = "";
+  target.reduceFlashMs = 0;
+  target.reduceFlashText = "";
   target.reduceComplete = isReducedFraction(target.reduceNum, target.reduceDen);
   target.answer = problem.answerText || problem.answer;
   target.answerText = problem.answerText || String(problem.answer);
@@ -1040,8 +1042,28 @@ function isReduceProblem(target) {
   return target?.opKey === "reduce";
 }
 
+const REDUCE_FLASH_MS = 480;
+const REDUCE_AUTO_MS = 220;
+// Pending debounce timer for auto-reduce (so "2/3" typed as an answer isn't
+// eaten as the factor "2" before the "/" arrives).
+let reduceAutoTimer = null;
+function clearReduceAutoTimer() {
+  if (reduceAutoTimer) {
+    clearTimeout(reduceAutoTimer);
+    reduceAutoTimer = null;
+  }
+}
+
+// Briefly show the factored form `(f·x)/(f·y)` after an auto-cancel, then it
+// fades to the reduced fraction (updateDrops clears the timer).
+function startReduceFlash(target, factor, step) {
+  target.reduceFlashText = `(${factor}·${step.num})/(${factor}·${step.den})`;
+  target.reduceFlashMs = REDUCE_FLASH_MS;
+}
+
 function getReduceDisplayText(target) {
   if (!isReduceProblem(target)) return target?.text || "";
+  if (target.reduceFlashMs > 0 && target.reduceFlashText) return target.reduceFlashText;
   const num = target.reduceNum ?? target.reduceOriginalNum;
   const den = target.reduceDen ?? target.reduceOriginalDen;
   const previewFactor = target.reducePreviewFactor;
@@ -2217,6 +2239,17 @@ function createDrop() {
 }
 
 function updateDrops(dt) {
+  // Resolve reduce auto-cancel flashes regardless of fall speed.
+  for (const drop of state.drops) {
+    if (drop.reduceFlashMs > 0) {
+      drop.reduceFlashMs -= dt;
+      if (drop.reduceFlashMs <= 0) {
+        drop.reduceFlashMs = 0;
+        drop.reduceFlashText = "";
+        drop.text = getReduceDisplayText(drop);
+      }
+    }
+  }
   if (!isBossActive() && !isPlacementActive() && state.gameSpeed === 0) return;
 
   const mult = isBossActive() ? getBossSpeedMultiplier()
@@ -3365,26 +3398,45 @@ function processInput(value) {
   }
 }
 
+function applyReduceCancel(target, factor) {
+  const step = fractionCancelStep(target.reduceNum, target.reduceDen, factor);
+  if (!step) return false;
+  // Auto-reduce: flash the factored form, apply the cancel, clear the input.
+  startReduceFlash(target, factor, step);
+  target.reduceNum = step.num;
+  target.reduceDen = step.den;
+  refreshReduceTarget(target);
+  playPop();
+  heartbeatActiveSession({ persist: true });
+  clearCurrentAnswerInput();
+  drawDrops();
+  return true;
+}
+
 function handleReduceTargetInput(target, value) {
   if (!isReduceProblem(target)) return;
+  clearReduceAutoTimer();
   if (value.includes("*") || value.includes("^")) {
     handleWrongInput({ targets: [target] });
     return;
   }
   if (/^\d+$/.test(value)) {
     const factor = Number(value);
-    const step = fractionCancelStep(target.reduceNum, target.reduceDen, factor);
-    if (step) {
-      setReducePreview(target, factor);
-    } else {
-      target.reducePreviewFactor = null;
-      target.reduceInvalidReason = "";
-      target.text = getReduceDisplayText(target);
+    if (fractionCancelStep(target.reduceNum, target.reduceDen, factor)) {
+      // Debounce so a factor typed as the start of an "x/y" answer isn't eaten.
+      reduceAutoTimer = setTimeout(() => {
+        reduceAutoTimer = null;
+        const cur = getTargetedFactorDrop();
+        if (cur && cur.id === target.id && answerInput.value.trim() === String(factor)) {
+          applyReduceCancel(cur, factor);
+        }
+      }, REDUCE_AUTO_MS);
     }
+    // Otherwise the digits so far aren't (yet) a common factor — hold without
+    // penalty; a wrong factor only counts as a miss if the player presses Enter.
     return;
   }
   if (/^\d+\/\d*$/.test(value)) {
-    target.reducePreviewFactor = null;
     target.reduceInvalidReason = "";
     target.text = getReduceDisplayText(target);
     return;
@@ -3394,8 +3446,10 @@ function handleReduceTargetInput(target, value) {
 
 function commitTargetedReduceAnswer(target, value) {
   if (!isReduceProblem(target)) return false;
+  clearReduceAutoTimer();
   const typed = String(value || "").trim();
   if (!typed) {
+    // Enter = "this is lowest terms" — clears if fully reduced, else a miss.
     if (isReducedFraction(target.reduceNum, target.reduceDen)) {
       handleCorrectAnswer(target);
     } else {
@@ -3409,12 +3463,8 @@ function commitTargetedReduceAnswer(target, value) {
     return true;
   }
   if (/^\d+$/.test(typed)) {
-    const factor = Number(typed);
-    if (setReducePreview(target, factor) && commitReducePreview(target)) {
-      heartbeatActiveSession({ persist: true });
-      playPop();
-      answerInput.value = "";
-      state.currentInput = "";
+    // A factor submitted with Enter before the debounce fired — cancel it now.
+    if (applyReduceCancel(target, Number(typed))) {
       updateKpDisplay();
       return true;
     }

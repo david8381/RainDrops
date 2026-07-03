@@ -3,6 +3,9 @@
 ## Purpose
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
+## 2026-07-02
+- Reworked the Simplify Fractions (½) worked path (handled directly): typing a common factor now **auto-reduces** the fraction (with a brief `(f·x)/(f·y)` factoring flash that fades to the reduced form) instead of preview-then-Enter — a short debounce keeps a factor typed as the start of an `x/y` answer from being eaten. Enter is now purely the "this is lowest terms" judgment (clears if reduced, miss if not); typing the reduced answer still clears directly.
+
 ## 2026-07-01
 - Added the Simplify Fractions operation (`½`) in its own compatibility lane. It has pure tested helpers for GCD/reduction/cancellation/lowest-terms answer checking, a concept-bucket mastery universe (`prime`, `repeated`, `whole`, `reduced` across magnitude bands), fast-path lowest-terms answers on Enter, and a targetable worked path that previews `(f·a)/(f·b)` and commits common-factor cancellation on Enter. Tutorial, profile universes, stats labels, type docs, and unit/e2e coverage were updated.
 - Copy pass on the support/share messaging: welcome + report/recap now state the app is ad-free, tracking-free, and server-free as a fact and simply thank donors (rather than "donations keep it that way"); "nothing collected about your kid" -> "about you"; the report share button is now "Send report" and its toasts drop "to a parent"; added a donate link to the recap card.

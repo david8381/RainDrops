@@ -230,32 +230,26 @@ test.describe("desktop gameplay", () => {
     });
 
     await page.waitForFunction((id) => window.__RAIN_MATH_TEST__.getState().factorTargetId === id, drop.id);
-    await page.locator("#answer").fill("2");
-    let state = await invoke(page, "getState");
-    expect(state.drops[0].reducePreviewFactor).toBe(2);
-    expect(state.drops[0].text).toBe("(2·6)/(2·9)");
-    expect(state.drops[0].reduceNum).toBe(12);
 
-    await page.keyboard.press("Enter");
-    state = await invoke(page, "getState");
-    expect(state.score).toBe(0);
-    expect(state.drops[0].reduceNum).toBe(6);
+    // Live auto-reduce: type a common factor and it cancels after a short debounce.
+    await page.locator("#answer").fill("2");
+    await page.waitForFunction(() => window.__RAIN_MATH_TEST__.getState().drops[0].reduceNum === 6);
+    let state = await invoke(page, "getState");
     expect(state.drops[0].reduceDen).toBe(9);
     expect(state.drops[0].reduceComplete).toBe(false);
+    expect(state.score).toBe(0);
 
-    await page.locator("#answer").fill("3");
-    state = await invoke(page, "getState");
-    expect(state.drops[0].text).toBe("(3·2)/(3·3)");
-
-    await page.keyboard.press("Enter");
-    state = await invoke(page, "getState");
-    expect(state.drops[0].text).toBe("2/3");
+    // A factor submitted with Enter cancels immediately.
+    state = await invoke(page, "submit", "3", { enter: true });
+    expect(state.drops[0].reduceNum).toBe(2);
+    expect(state.drops[0].reduceDen).toBe(3);
     expect(state.drops[0].reduceComplete).toBe(true);
     expect(state.score).toBe(0);
 
-    await page.keyboard.press("Enter");
+    // Final Enter confirms lowest terms.
+    state = await invoke(page, "submit", "", { enter: true });
     await expect(page.locator("#score")).toHaveText("1");
-    expect((await invoke(page, "getState")).drops).toHaveLength(0);
+    expect(state.drops).toHaveLength(0);
   });
 
   test("fraction simplification rejects unreduced answers and handles whole or already-reduced cases", async ({ page }) => {
@@ -300,11 +294,9 @@ test.describe("desktop gameplay", () => {
       y: 120,
     });
     await page.waitForFunction((id) => window.__RAIN_MATH_TEST__.getState().factorTargetId === id, whole.id);
-    await page.locator("#answer").fill("3");
-    state = await invoke(page, "getState");
-    expect(state.drops[0].text).toBe("(3·2)/(3·1)");
     state = await invoke(page, "submit", "3", { enter: true });
-    expect(state.drops[0].text).toBe("2");
+    expect(state.drops[0].reduceNum).toBe(2);
+    expect(state.drops[0].reduceDen).toBe(1);
     expect(state.drops[0].reduceComplete).toBe(true);
     state = await invoke(page, "submit", "", { enter: true });
     expect(state.drops).toHaveLength(0);
