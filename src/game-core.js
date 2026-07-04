@@ -146,7 +146,7 @@ function getDifficultyRange(opKey, difficulty, track = TRACKS.standard) {
   }
 
   if (opKey === "reduce") {
-    return { min: 1, max: REDUCE_MAX_LEVEL };
+    return { min: 1, max: (desc ?? TRACKS.standard.reduce).maxLevel };
   }
 
   if (opKey === "si") {
@@ -724,8 +724,8 @@ function generatePowProblem(difficulty = 1, rng = Math.random) {
 
 // Fraction simplification. Mastery is tracked by concept buckets rather than
 // literal fractions: a case (what kind of simplification) at a magnitude band.
-const REDUCE_MAX_LEVEL = 10;
-
+// The per-level cells live in TRACKS.standard.reduce.levelSpecs; the band range
+// and labels below stay here as the generation/label strategy.
 const REDUCE_BAND_LABELS = {
   small: "small",
   smallmed: "small-med",
@@ -744,23 +744,6 @@ const REDUCE_BAND_RANGE = {
   large: [9, 28],
   huge: [15, 44],
 };
-
-// Each cell is [band, kind, factor]:
-//   kind "cancel" — the fraction's GCF is exactly `factor` (num = f*a, den = f*b,
-//                   a and b coprime); factor 1 means already in lowest terms.
-//   kind "whole"  — reduces to an integer (den = factor, num = factor*k).
-const REDUCE_LEVEL_SPECS = [
-  [["small", "cancel", 2], ["small", "cancel", 3], ["small", "cancel", 5], ["small", "cancel", 7]],
-  [["small", "whole", 2], ["small", "whole", 3], ["small", "whole", 4], ["small", "whole", 5]],
-  [["smallmed", "cancel", 4], ["smallmed", "cancel", 6], ["smallmed", "cancel", 8], ["smallmed", "cancel", 9]],
-  [["small", "cancel", 1], ["smallmed", "cancel", 1], ["smallmed", "cancel", 2], ["smallmed", "cancel", 3]],
-  [["two", "cancel", 2], ["two", "cancel", 3], ["two", "cancel", 5], ["two", "cancel", 7]],
-  [["two", "whole", 3], ["two", "whole", 4], ["two", "whole", 6], ["two", "whole", 8]],
-  [["two", "cancel", 4], ["two", "cancel", 6], ["two", "cancel", 9], ["two", "cancel", 12]],
-  [["two", "cancel", 11], ["two", "cancel", 13], ["two", "cancel", 1], ["med", "cancel", 1]],
-  [["large", "cancel", 3], ["large", "cancel", 6], ["large", "whole", 4], ["large", "cancel", 1]],
-  [["huge", "cancel", 7], ["huge", "cancel", 12], ["huge", "whole", 8], ["huge", "cancel", 1]],
-];
 
 function gcdInt(a, b) {
   let x = Math.abs(Math.trunc(Number(a)));
@@ -840,9 +823,10 @@ function makeReduceType(band, kind, factor) {
   return { ...type, statsKey: reduceTypeStatsKey(type) };
 }
 
-function reduceTypesForLevel(level) {
-  const lvl = clamp(1, REDUCE_MAX_LEVEL, Math.round(level || 1));
-  return REDUCE_LEVEL_SPECS[lvl - 1].map(([band, kind, factor]) => makeReduceType(band, kind, factor));
+function reduceTypesForLevel(level, track = TRACKS.standard) {
+  const { maxLevel, levelSpecs } = track.reduce ?? TRACKS.standard.reduce;
+  const lvl = clamp(1, maxLevel, Math.round(level || 1));
+  return levelSpecs[lvl - 1].map(([band, kind, factor]) => makeReduceType(band, kind, factor));
 }
 
 function reduceTypeFromKey(statsKey) {
@@ -914,12 +898,12 @@ function makeReduceProblemFromKey(statsKey, rng = Math.random) {
   return makeReduceProblem(type || reduceTypesForLevel(1)[0], rng);
 }
 
-function getReduceUniverse(level) {
-  return reduceTypesForLevel(level).map((type) => ({ statsKey: type.statsKey, text: reduceTypeLabel(type) }));
+function getReduceUniverse(level, track = TRACKS.standard) {
+  return reduceTypesForLevel(level, track).map((type) => ({ statsKey: type.statsKey, text: reduceTypeLabel(type) }));
 }
 
-function generateReduceProblem(difficulty = 1, rng = Math.random) {
-  const types = reduceTypesForLevel(difficulty);
+function generateReduceProblem(difficulty = 1, rng = Math.random, track = TRACKS.standard) {
+  const types = reduceTypesForLevel(difficulty, track);
   return makeReduceProblem(types[randInt(0, types.length - 1, rng)], rng);
 }
 
@@ -1121,7 +1105,7 @@ function generateProblem(opKey, opConfig, rng = Math.random, track = TRACKS.stan
   if (opKey === "shapes") return P(generateShapesProblem(config.difficulty, rng));
   if (opKey === "pow") return P(generatePowProblem(config.difficulty, rng));
   if (opKey === "round") return P(generateRoundProblem(config.difficulty, rng, track));
-  if (opKey === "reduce") return P(generateReduceProblem(config.difficulty, rng));
+  if (opKey === "reduce") return P(generateReduceProblem(config.difficulty, rng, track));
   if (opKey === "si") return P(generateSIProblem(config.difficulty, rng));
   if (opKey === "f10") return P(generateFactorsOfTenProblem(config.difficulty, rng, track));
 
@@ -1237,7 +1221,7 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
   }
 
   if (opKey === "reduce") {
-    const items = getReduceUniverse(config.difficulty).map((type) => ({
+    const items = getReduceUniverse(config.difficulty, track).map((type) => ({
       value: makeReduceProblemFromKey(type.statsKey, rng),
       weight: getSelectionWeight(getMastery(problemStats, "reduce", type.statsKey, masteryLookup)),
     }));

@@ -430,7 +430,7 @@ function getSkillUniverseSize(opKey, level, track = TRACKS.standard) {
   }
 
   if (opKey === "reduce") {
-    return getReduceUniverse(level).length;
+    return getReduceUniverse(level, track).length;
   }
 
   return Math.max(1, count);
@@ -482,7 +482,7 @@ function getSkillUniverseProblems(opKey, level, track = TRACKS.standard) {
   }
 
   if (opKey === "reduce") {
-    return getReduceUniverse(level);
+    return getReduceUniverse(level, track);
   }
 
   if (opKey === "si") {

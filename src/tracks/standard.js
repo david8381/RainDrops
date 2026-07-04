@@ -53,4 +53,24 @@ export const standard = {
       ],
     ],
   },
+
+  // Simplify fractions: level N → the concept cells in levelSpecs[N-1]. Each cell
+  // is [band, kind, factor] (kind: "cancel" GCF=factor, or "whole" → integer).
+  // The band→sampling-range and label maps stay in game-core (generation strategy).
+  reduce: {
+    kind: "reduce",
+    maxLevel: 10,
+    levelSpecs: [
+      [["small", "cancel", 2], ["small", "cancel", 3], ["small", "cancel", 5], ["small", "cancel", 7]],
+      [["small", "whole", 2], ["small", "whole", 3], ["small", "whole", 4], ["small", "whole", 5]],
+      [["smallmed", "cancel", 4], ["smallmed", "cancel", 6], ["smallmed", "cancel", 8], ["smallmed", "cancel", 9]],
+      [["small", "cancel", 1], ["smallmed", "cancel", 1], ["smallmed", "cancel", 2], ["smallmed", "cancel", 3]],
+      [["two", "cancel", 2], ["two", "cancel", 3], ["two", "cancel", 5], ["two", "cancel", 7]],
+      [["two", "whole", 3], ["two", "whole", 4], ["two", "whole", 6], ["two", "whole", 8]],
+      [["two", "cancel", 4], ["two", "cancel", 6], ["two", "cancel", 9], ["two", "cancel", 12]],
+      [["two", "cancel", 11], ["two", "cancel", 13], ["two", "cancel", 1], ["med", "cancel", 1]],
+      [["large", "cancel", 3], ["large", "cancel", 6], ["large", "whole", 4], ["large", "cancel", 1]],
+      [["huge", "cancel", 7], ["huge", "cancel", 12], ["huge", "whole", 8], ["huge", "cancel", 1]],
+    ],
+  },
 };
