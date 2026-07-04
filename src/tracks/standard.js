@@ -120,4 +120,27 @@ export const standard = {
     ],
     thresholds: [1, 1, 2, 3, 5, 6, 6, 7, 7, 8, 8, 9, 9],
   },
+
+  // Shapes (partial seam): the level GATE (`defs` — which shapes unlock at which
+  // level) and the dimension bounds are data; the per-shape enumeration and
+  // area/perimeter/volume formulas stay in game-core as the generation strategy.
+  // dimMin/dimMax bound 2D dims; d3Max caps multi-dimension 3D shapes; sphereMax
+  // caps the sphere radius.
+  shapes: {
+    kind: "shapes",
+    dimMin: 2,
+    dimMax: 5,
+    d3Max: 4,
+    sphereMax: 6,
+    defs: [
+      { id: "sq", level: 1, name: "Square" },
+      { id: "rect", level: 2, name: "Rectangle" },
+      { id: "tri", level: 3, name: "Triangle" },
+      { id: "cir", level: 4, name: "Circle" },
+      { id: "cube", level: 5, name: "Cube" },
+      { id: "rprism", level: 6, name: "Rectangular prism" },
+      { id: "cyl", level: 7, name: "Cylinder" },
+      { id: "sph", level: 8, name: "Sphere" },
+    ],
+  },
 };

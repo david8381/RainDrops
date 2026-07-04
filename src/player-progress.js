@@ -405,7 +405,7 @@ function getSkillUniverseSize(opKey, level, track = TRACKS.standard) {
   }
 
   if (opKey === "shapes") {
-    return getShapesUniverse(level).length;
+    return getShapesUniverse(level, track).length;
   }
 
   if (opKey === "pow") {
@@ -466,7 +466,7 @@ function getSkillUniverseProblems(opKey, level, track = TRACKS.standard) {
   }
 
   if (opKey === "shapes") {
-    return getShapesUniverse(level).map((problem) => ({ statsKey: problem.statsKey, text: problem.text }));
+    return getShapesUniverse(level, track).map((problem) => ({ statsKey: problem.statsKey, text: problem.text }));
   }
 
   if (opKey === "pow") {

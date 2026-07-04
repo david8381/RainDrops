@@ -154,7 +154,8 @@ function getDifficultyRange(opKey, difficulty, track = TRACKS.standard) {
   }
 
   if (opKey === "shapes") {
-    return { min: SHAPES_DIM_MIN, max: SHAPES_DIM_MAX };
+    const s = desc ?? TRACKS.standard.shapes;
+    return { min: s.dimMin, max: s.dimMax };
   }
 
   if (opKey === "pow") {
@@ -500,25 +501,12 @@ function shiftDecimalSimple(value, shift) {
 // One operation whose level gates which shapes appear (cumulative), focused on
 // knowing the formulas rather than big-number arithmetic, so dimensions stay
 // small. Round shapes (circle) answer as the coefficient of π, like before.
-const SHAPES_DIM_MIN = 2;
-const SHAPES_DIM_MAX = 5;
-const SHAPE_DEFS = [
-  { id: "sq", level: 1, name: "Square" },
-  { id: "rect", level: 2, name: "Rectangle" },
-  { id: "tri", level: 3, name: "Triangle" },
-  { id: "cir", level: 4, name: "Circle" },
-  // 3D from level 5; round shapes answer as the coefficient of π. Dimension
-  // combinations that would give a non-clean answer are filtered out.
-  { id: "cube", level: 5, name: "Cube" },
-  { id: "rprism", level: 6, name: "Rectangular prism" },
-  { id: "cyl", level: 7, name: "Cylinder" },
-  { id: "sph", level: 8, name: "Sphere" },
-];
-const SHAPES_MAX_LEVEL = SHAPE_DEFS.length;
-
-function shapesActiveDefs(level) {
-  const cap = clamp(1, SHAPES_MAX_LEVEL, Math.round(level || 1));
-  return SHAPE_DEFS.filter((def) => def.level <= cap);
+// Shapes gate + bounds live in TRACKS.standard.shapes; the per-shape enumeration
+// (below) and formulas stay here as the generation strategy.
+function shapesActiveDefs(level, track = TRACKS.standard) {
+  const { defs } = track.shapes ?? TRACKS.standard.shapes;
+  const cap = clamp(1, defs.length, Math.round(level || 1));
+  return defs.filter((def) => def.level <= cap);
 }
 
 function makeShapeProblem(shapeId, metric, dims) {
@@ -583,56 +571,56 @@ function makeShapeProblemFromKey(statsKey) {
   return makeShapeProblem(shapeId, metric, dimStrs.map(Number));
 }
 
-function getShapesUniverse(level) {
+function getShapesUniverse(level, track = TRACKS.standard) {
+  const { dimMin, dimMax, d3Max, sphereMax } = track.shapes ?? TRACKS.standard.shapes;
   const problems = [];
-  const D3_MAX = 4; // tighter cap for multi-dimension 3D shapes
-  for (const def of shapesActiveDefs(level)) {
+  for (const def of shapesActiveDefs(level, track)) {
     if (def.id === "sq") {
-      for (let s = SHAPES_DIM_MIN; s <= SHAPES_DIM_MAX; s += 1) {
+      for (let s = dimMin; s <= dimMax; s += 1) {
         for (const metric of ["P", "A"]) pushShapeProblem(problems, "sq", metric, [s]);
       }
     } else if (def.id === "rect") {
-      for (let l = SHAPES_DIM_MIN; l <= SHAPES_DIM_MAX; l += 1) {
-        for (let w = l; w <= SHAPES_DIM_MAX; w += 1) {
+      for (let l = dimMin; l <= dimMax; l += 1) {
+        for (let w = l; w <= dimMax; w += 1) {
           for (const metric of ["P", "A"]) pushShapeProblem(problems, "rect", metric, [l, w]);
         }
       }
     } else if (def.id === "tri") {
-      for (let b = SHAPES_DIM_MIN; b <= SHAPES_DIM_MAX; b += 1) {
-        for (let h = b; h <= SHAPES_DIM_MAX; h += 1) pushShapeProblem(problems, "tri", "A", [b, h]);
+      for (let b = dimMin; b <= dimMax; b += 1) {
+        for (let h = b; h <= dimMax; h += 1) pushShapeProblem(problems, "tri", "A", [b, h]);
       }
-      for (let a = SHAPES_DIM_MIN; a <= SHAPES_DIM_MAX; a += 1) {
-        for (let b = a; b <= SHAPES_DIM_MAX; b += 1) {
-          for (let c = b; c <= SHAPES_DIM_MAX; c += 1) {
+      for (let a = dimMin; a <= dimMax; a += 1) {
+        for (let b = a; b <= dimMax; b += 1) {
+          for (let c = b; c <= dimMax; c += 1) {
             if (a + b > c) pushShapeProblem(problems, "tri", "P", [a, b, c]);
           }
         }
       }
     } else if (def.id === "cir") {
-      for (let r = SHAPES_DIM_MIN; r <= SHAPES_DIM_MAX; r += 1) {
+      for (let r = dimMin; r <= dimMax; r += 1) {
         for (const metric of ["C", "A"]) pushShapeProblem(problems, "cir", metric, [r]);
       }
     } else if (def.id === "cube") {
-      for (let s = SHAPES_DIM_MIN; s <= SHAPES_DIM_MAX; s += 1) {
+      for (let s = dimMin; s <= dimMax; s += 1) {
         for (const metric of ["SA", "V"]) pushShapeProblem(problems, "cube", metric, [s]);
       }
     } else if (def.id === "rprism") {
-      for (let l = SHAPES_DIM_MIN; l <= D3_MAX; l += 1) {
-        for (let w = l; w <= D3_MAX; w += 1) {
-          for (let h = w; h <= D3_MAX; h += 1) {
+      for (let l = dimMin; l <= d3Max; l += 1) {
+        for (let w = l; w <= d3Max; w += 1) {
+          for (let h = w; h <= d3Max; h += 1) {
             for (const metric of ["SA", "V"]) pushShapeProblem(problems, "rprism", metric, [l, w, h]);
           }
         }
       }
     } else if (def.id === "cyl") {
-      for (let r = SHAPES_DIM_MIN; r <= D3_MAX; r += 1) {
-        for (let h = SHAPES_DIM_MIN; h <= D3_MAX; h += 1) {
+      for (let r = dimMin; r <= d3Max; r += 1) {
+        for (let h = dimMin; h <= d3Max; h += 1) {
           for (const metric of ["SA", "V"]) pushShapeProblem(problems, "cyl", metric, [r, h]);
         }
       }
     } else {
-      // sphere — radius up to 6 so the divisible-by-3 volumes have some variety
-      for (let r = SHAPES_DIM_MIN; r <= 6; r += 1) {
+      // sphere — radius up to sphereMax so the divisible-by-3 volumes have variety
+      for (let r = dimMin; r <= sphereMax; r += 1) {
         for (const metric of ["SA", "V"]) pushShapeProblem(problems, "sph", metric, [r]);
       }
     }
@@ -640,8 +628,8 @@ function getShapesUniverse(level) {
   return problems;
 }
 
-function generateShapesProblem(difficulty = 1, rng = Math.random) {
-  const universe = getShapesUniverse(difficulty);
+function generateShapesProblem(difficulty = 1, rng = Math.random, track = TRACKS.standard) {
+  const universe = getShapesUniverse(difficulty, track);
   return universe[randInt(0, universe.length - 1, rng)];
 }
 
@@ -1090,7 +1078,7 @@ function generateProblem(opKey, opConfig, rng = Math.random, track = TRACKS.stan
   // literal TS widens to `string`) back to the OpKey union.
   const P = (p) => /** @type {import('./types.js').Problem} */ (p);
   if (opKey === "factor") return P(generateFactorProblem(config.difficulty, rng, track));
-  if (opKey === "shapes") return P(generateShapesProblem(config.difficulty, rng));
+  if (opKey === "shapes") return P(generateShapesProblem(config.difficulty, rng, track));
   if (opKey === "pow") return P(generatePowProblem(config.difficulty, rng, track));
   if (opKey === "round") return P(generateRoundProblem(config.difficulty, rng, track));
   if (opKey === "reduce") return P(generateReduceProblem(config.difficulty, rng, track));
@@ -1182,7 +1170,7 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
   }
 
   if (opKey === "shapes") {
-    const items = getShapesUniverse(config.difficulty).map((problem) => ({
+    const items = getShapesUniverse(config.difficulty, track).map((problem) => ({
       value: problem,
       weight: getSelectionWeight(getMastery(problemStats, "shapes", problem.statsKey, masteryLookup)),
     }));
@@ -2049,7 +2037,7 @@ function getAnswerUniverse(opKey, level, track = TRACKS.standard) {
   // non-guessable spaces and their universe entries carry no fixed answer — they
   // yield an empty set here, which falseFireCost treats as a large space (cost 1).
   const universe =
-    opKey === "shapes" ? getShapesUniverse(level)
+    opKey === "shapes" ? getShapesUniverse(level, track)
     : opKey === "pow" ? getPowUniverse(level, track)
     : [];
   for (const p of universe) {
@@ -2263,7 +2251,6 @@ export {
   getShapesUniverse,
   makeShapeProblem,
   makeShapeProblemFromKey,
-  SHAPE_DEFS,
   getPowUniverse,
   makePowProblem,
   makePowProblemFromKey,
