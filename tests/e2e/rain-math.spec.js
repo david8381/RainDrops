@@ -527,6 +527,35 @@ test.describe("desktop gameplay", () => {
     expect((await invoke(page, "getState")).opConfig.add.difficulty).toBe(1);
   });
 
+  test("Quit exits a challenge back to practice without ending the session", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await invoke(page, "startBoss", "add");
+    expect((await invoke(page, "getState")).bossMode.active).toBe(true);
+    // The on-canvas escape hatch appears during a challenge.
+    await expect(page.locator("#challengeExitBtn")).toBeVisible();
+
+    // Quit abandons the challenge (no report opens) and hides the exit button.
+    await page.locator("#challengeExitBtn").click();
+    const state = await invoke(page, "getState");
+    expect(state.bossMode).toBe(null);
+    expect(state.viewingSharedReport).toBe(false);
+    await expect(page.locator("#challengeExitBtn")).toBeHidden();
+    await expect(page.locator("#sessionReportOverlay")).toHaveCount(0);
+  });
+
+  test("Start button pulses at the ready gate when a type is selected", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await invoke(page, "stageReadyRun");
+    await expect(page.locator("#pauseBtn")).toHaveText("Start");
+    await expect(page.locator("#pauseBtn")).toHaveClass(/suggest-start/);
+
+    // Pressing Start clears the nudge.
+    await page.locator("#pauseBtn").click();
+    await expect(page.locator("#pauseBtn")).not.toHaveClass(/suggest-start/);
+  });
+
   test("updates speed, drops, and text size controls", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);

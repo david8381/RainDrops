@@ -182,6 +182,7 @@ const answerInput = document.getElementById("answer");
 const pauseBtn = document.getElementById("pauseBtn");
 const restartBtn = document.getElementById("restartBtn");
 const finishBtn = document.getElementById("finishBtn");
+const challengeExitBtn = document.getElementById("challengeExitBtn");
 const speedSlider = document.getElementById("speedSlider");
 const speedValueEl = document.getElementById("speedValue");
 const dropLimitSlider = document.getElementById("dropLimitSlider");
@@ -2170,6 +2171,9 @@ function completeBossVictory() {
 }
 function updateBossHud() {
   updateScoreDisplay();
+  // The on-canvas "Quit challenge" escape hatch is shown whenever a challenge is
+  // active, independent of the (intentionally hidden) boss HUD text.
+  if (challengeExitBtn) challengeExitBtn.classList.toggle("hidden", !state.bossMode?.active);
   if (!bossHudEl) return;
   if (!state.bossMode?.active) {
     bossHudEl.classList.add("hidden");
@@ -4271,6 +4275,7 @@ function updateOpChits() {
   buildDiffCards();
   buildKpDiffStrip();
   updateInputHint();
+  updatePauseControlLabels();
 }
 
 function updateInputHint() {
@@ -6641,8 +6646,15 @@ function pauseControlLabel() {
 }
 
 function updatePauseControlLabels() {
-  if (pauseBtn) pauseBtn.textContent = pauseControlLabel();
-  if (kpPauseBtn) kpPauseBtn.textContent = pauseControlLabel();
+  const label = pauseControlLabel();
+  // Nudge the player toward the next step: when the run is staged at the
+  // ready/Start gate and there is a problem type to play, pulse the Start button.
+  const suggestStart = !state.hasStarted && !isControlLocked() && getEnabledOps().length > 0;
+  for (const btn of [pauseBtn, kpPauseBtn]) {
+    if (!btn) continue;
+    btn.textContent = label;
+    btn.classList.toggle("suggest-start", suggestStart);
+  }
 }
 
 // Begin a ready run (the player pressed Start / Play). Toggling problem types
@@ -6978,6 +6990,19 @@ if (restartBtn) {
 if (finishBtn) {
   finishBtn.tabIndex = -1;
   finishBtn.addEventListener("click", finishCurrentSession);
+}
+
+// Quit an in-progress challenge (Blitz/Wave/Worksheet) and return to the
+// ready/Start gate. Nothing is recorded — attempts only save on completion — so
+// this is a clean bail-out, not a "Finish" (which ends the whole session).
+function quitChallenge() {
+  if (!state.bossMode?.active) return;
+  initAudio();
+  resetRunState();
+}
+if (challengeExitBtn) {
+  challengeExitBtn.tabIndex = -1;
+  challengeExitBtn.addEventListener("click", quitChallenge);
 }
 
 // Practice controls

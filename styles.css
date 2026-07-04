@@ -548,6 +548,29 @@ body {
   }
 }
 
+/* Nudge the Start button when a problem type is staged and the run is waiting at
+   the ready gate — the suggested next step is to press Start. */
+@keyframes suggestStartPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(91, 217, 255, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(91, 217, 255, 0.22);
+  }
+}
+
+.suggest-start {
+  animation: suggestStartPulse 1.3s ease-in-out infinite;
+  border-color: rgba(91, 217, 255, 0.7) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .suggest-start {
+    animation: none;
+    border-color: rgba(91, 217, 255, 0.7) !important;
+  }
+}
+
 .diff-ready.needs-ready,
 .kp-diff-ready.needs-ready {
   color: #fbbf24;
@@ -977,6 +1000,36 @@ body {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Explicit escape hatch out of a challenge (Blitz/Wave/Worksheet). The boss text
+   HUD is intentionally hidden, so this floats on the play area as the one clear
+   way back to practice — distinct from Finish (which ends the whole session). */
+.challenge-exit {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 6;
+  pointer-events: auto;
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 7px 12px;
+  border-radius: 999px;
+  color: var(--text);
+  background: rgba(70, 20, 28, 0.92);
+  border: 1px solid rgba(240, 96, 96, 0.55);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.challenge-exit:hover {
+  background: rgba(120, 32, 42, 0.96);
+}
+
+.challenge-exit:active {
+  transform: scale(0.94);
 }
 
 .breather-hud {
