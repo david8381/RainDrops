@@ -29,6 +29,7 @@ import {
   recordChallengeAttempt,
   getChallengeBest,
   getChallengeBests,
+  viewSkillForTrack,
   getFinishLevelPracticeProblems,
   importStoredProfile,
   isPlacementPlacedOut,
@@ -66,7 +67,7 @@ describe("player progress profile", () => {
   it("creates a backend-ready local profile with all skills", () => {
     const profile = createDefaultProfile(Date.UTC(2026, 0, 1));
 
-    assert.equal(profile.version, 3);
+    assert.equal(profile.version, 4);
     assert.equal(profile.user.id, "local-default");
     assert.deepEqual(profile.sessionLog, []);
     assert.deepEqual(Object.keys(profile.skills), [
@@ -82,7 +83,7 @@ describe("player progress profile", () => {
       "pow",
       "factor",
     ]);
-    assert.equal(profile.skills.add.currentLevel, 1);
+    assert.equal(profile.skills.add.tracks.standard.currentLevel, 1);
     assert.equal(profile.skills.add.readiness, 0);
     assert.equal(profile.settings.textSize, "normal");
   });
@@ -264,23 +265,23 @@ describe("player progress profile", () => {
     assert.equal(summarizeProfile(profile).skills.add.bossAttemptedForLevel, false);
 
     recordBossAttempt(profile, "add", Date.UTC(2026, 0, 1));
-    assert.equal(profile.skills.add.bossAttempts.length, 4);
-    assert.equal(profile.skills.add.bossAttempts[0].level, 1);
-    assert.equal(profile.skills.add.bossAttempts[0].result, "cleared");
-    assert.equal(profile.skills.add.bossAttempts[0].temporary, false);
-    assert.equal(profile.skills.add.bossAttempts[0].pressureTier, "calm");
-    assert.equal(profile.skills.add.bossAttempts[3].level, 2);
-    assert.equal(profile.skills.add.bossAttempts[3].pressureTier, "steady");
-    assert.equal(profile.skills.add.bossAttempts[3].speedPercent, 30);
-    assert.equal(profile.skills.add.bossAttempts[3].inferred, false);
+    assert.equal(profile.skills.add.tracks.standard.bossAttempts.length, 4);
+    assert.equal(profile.skills.add.tracks.standard.bossAttempts[0].level, 1);
+    assert.equal(profile.skills.add.tracks.standard.bossAttempts[0].result, "cleared");
+    assert.equal(profile.skills.add.tracks.standard.bossAttempts[0].temporary, false);
+    assert.equal(profile.skills.add.tracks.standard.bossAttempts[0].pressureTier, "calm");
+    assert.equal(profile.skills.add.tracks.standard.bossAttempts[3].level, 2);
+    assert.equal(profile.skills.add.tracks.standard.bossAttempts[3].pressureTier, "steady");
+    assert.equal(profile.skills.add.tracks.standard.bossAttempts[3].speedPercent, 30);
+    assert.equal(profile.skills.add.tracks.standard.bossAttempts[3].inferred, false);
     assert.equal(summarizeProfile(profile).skills.add.bossAttemptedForLevel, true);
     assert.equal(summarizeProfile(profile).skills.add.bossClearedCurrentPressureTier, true);
 
     recordBossAttempt(profile, "add", { pressureTier: "blitz", nowMs: Date.UTC(2026, 0, 2) });
-    assert.equal(profile.skills.add.bossAttempts.length, 8);
-    assert.equal(profile.skills.add.bossAttempts.at(-1).pressureTier, "blitz");
+    assert.equal(profile.skills.add.tracks.standard.bossAttempts.length, 8);
+    assert.equal(profile.skills.add.tracks.standard.bossAttempts.at(-1).pressureTier, "blitz");
     recordBossAttempt(profile, "add", { pressureTier: "blitz", nowMs: Date.UTC(2026, 0, 3) });
-    assert.equal(profile.skills.add.bossAttempts.length, 8);
+    assert.equal(profile.skills.add.tracks.standard.bossAttempts.length, 8);
 
     syncSettings(profile, { speed: 80 });
     const pressureSummary = summarizeProfile(profile).skills.add;
@@ -293,7 +294,7 @@ describe("player progress profile", () => {
     );
 
     syncSettings(profile, { difficulties: { add: 3 } });
-    assert.equal(profile.skills.add.currentLevel, 3);
+    assert.equal(profile.skills.add.tracks.standard.currentLevel, 3);
     assert.equal(summarizeProfile(profile).skills.add.bossAttemptedForLevel, false);
   });
 
@@ -322,9 +323,9 @@ describe("player progress profile", () => {
     assert.equal(summary.unlockedLevel, 1);
     assert.equal(summary.blitzUnlockedLevel, 0);
     assert.equal(summary.bossAttemptedForLevel, false);
-    assert.equal(profile.skills.add.bossAttempts.length, 0);
-    assert.equal(profile.skills.add.levelAdvances.length, 1);
-    assert.equal(profile.skills.add.levelAdvances[0].result, "mastered");
+    assert.equal(profile.skills.add.tracks.standard.bossAttempts.length, 0);
+    assert.equal(profile.skills.add.tracks.standard.levelAdvances.length, 1);
+    assert.equal(profile.skills.add.tracks.standard.levelAdvances[0].result, "mastered");
 
     syncSettings(profile, { difficulties: { add: 2 } });
     summary = summarizeProfile(profile).skills.add;
@@ -360,7 +361,7 @@ describe("player progress profile", () => {
     });
 
     summary = summarizeProfile(profile).skills.add;
-    assert.equal(profile.skills.add.blitzAttempts.length, 2);
+    assert.equal(profile.skills.add.tracks.standard.blitzAttempts.length, 2);
     assert.equal(summary.blitzBest.score, 65);
     assert.equal(summary.blitzBest.durationMs, 65000);
     assert.equal(summary.blitzBest.fastestDropSeconds, 2.5);
@@ -457,7 +458,7 @@ describe("player progress profile", () => {
     });
 
     let summary = summarizeProfile(profile).skills.add;
-    assert.equal(profile.skills.add.challengeAttempts.length, 4);
+    assert.equal(profile.skills.add.tracks.standard.challengeAttempts.length, 4);
     assert.equal(summary.challengeBests.blitz.score, 44);
     assert.equal(summary.challengeBests.blitz.durationMs, 44000);
     assert.equal(summary.challengeBests.wave.score, 6);
@@ -486,8 +487,8 @@ describe("player progress profile", () => {
     assert.equal(summary.challengeBests.blitz.score, 40);
     assert.equal(summary.challengeBests.wave.level, 2);
     assert.equal(summary.challengeBests.wave.maxLoadReached, 8);
-    assert.equal(getChallengeBest(profile.skills.add, "wave", 1).level, 2);
-    assert.equal(getChallengeBests(profile.skills.add, 1).boss.durationMs, 72000);
+    assert.equal(getChallengeBest(viewSkillForTrack(profile.skills.add), "wave", 1).level, 2);
+    assert.equal(getChallengeBests(viewSkillForTrack(profile.skills.add), 1).boss.durationMs, 72000);
   });
 
   it("reports per-level challenge bests, carrying better scores down without overwriting", () => {
@@ -587,16 +588,16 @@ describe("player progress profile", () => {
     const backup = createDefaultProfile(now + 1000);
     backup.version = 2; // older schema should migrate through ensureProfileShape
     backup.user = { ...backup.user, id: "ada-backup", name: "Ada" };
-    backup.skills.add.currentLevel = 3;
+    backup.skills.add.tracks.standard.currentLevel = 3;
     backup.skills.add.totals.attempts = 4;
 
     const restored = importStoredProfile(backup, storage, now + 2000);
     const store = readProfileStore(storage, now + 2000);
 
-    assert.equal(restored.version, 3);
+    assert.equal(restored.version, 4);
     assert.equal(restored.user.id, "ada");
     assert.equal(restored.user.name, "Ada");
-    assert.equal(restored.skills.add.currentLevel, 3);
+    assert.equal(restored.skills.add.tracks.standard.currentLevel, 3);
     assert.equal(restored.skills.add.totals.attempts, 4);
     assert.equal(store.activeUserId, "ada");
     assert.equal(Object.values(store.profiles).filter((profile) => profile.user.name === "Ada").length, 1);
@@ -664,9 +665,9 @@ describe("player progress profile", () => {
 
     const loaded = readProfile(storage);
 
-    assert.equal(loaded.skills.add.currentLevel, 1);
+    assert.equal(loaded.skills.add.tracks.standard.currentLevel, 1);
     assert.equal(loaded.settings.difficulties.add, 1);
-    assert.equal(loaded.skills.mul.currentLevel, 3);
+    assert.equal(loaded.skills.mul.tracks.standard.currentLevel, 3);
     assert.equal(loaded.settings.difficulties.mul, 3);
   });
 
@@ -736,10 +737,10 @@ describe("player progress profile", () => {
     const first = skill.problems[universe[0].statsKey];
     const summary = computeSkillReadiness(skill);
 
-    assert.equal(skill.placementCredits.length, 1);
-    assert.equal(skill.placementCredits[0].placedOutThrough, 2);
-    assert.deepEqual(skill.levelAdvances.map((advance) => advance.level), [1, 2]);
-    assert.deepEqual(skill.levelAdvances.map((advance) => advance.result), ["placed-out", "placed-out"]);
+    assert.equal(skill.tracks.standard.placementCredits.length, 1);
+    assert.equal(skill.tracks.standard.placementCredits[0].placedOutThrough, 2);
+    assert.deepEqual(skill.tracks.standard.levelAdvances.map((advance) => advance.level), [1, 2]);
+    assert.deepEqual(skill.tracks.standard.levelAdvances.map((advance) => advance.result), ["placed-out", "placed-out"]);
     assert.equal(first.attempts, 0);
     assert.equal(first.correct, 0);
     assert.equal(isPlacementPlacedOut(first), true);
@@ -984,8 +985,8 @@ describe("player progress profile", () => {
     assert.equal(profile.settings.pressureTier, "quick");
     assert.equal(profile.settings.speed, 67);
     assert.equal(profile.settings.rate, 9);
-    assert.equal(profile.skills.add.currentLevel, 6);
-    assert.equal(profile.skills.mul.currentLevel, 8);
+    assert.equal(profile.skills.add.tracks.standard.currentLevel, 6);
+    assert.equal(profile.skills.mul.tracks.standard.currentLevel, 8);
     assert.equal(getPressureTier(profile.settings.speed).key, "quick");
   });
 

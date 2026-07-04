@@ -15,7 +15,7 @@ import { TRACKS, getActiveTrack } from "./curriculum.js";
 
 const STORAGE_KEY = "rainMath.profile.v1";
 const PROFILE_STORE_KEY = "rainMath.profiles.v1";
-const PROFILE_VERSION = 3;
+const PROFILE_VERSION = 4;
 const PROFILE_STORE_VERSION = 1;
 const RECENT_LIMIT = 20;
 const SESSION_LOG_LIMIT = 50;
@@ -304,15 +304,72 @@ function makeUserId(name, existingIds = []) {
   return `${base}-${index}`;
 }
 
+// A skill's per-problem fact stats (`problems`, `totals`, `recent`, pressure
+// compatibility) are UNIVERSAL — knowing 7×8 is knowing it in any curriculum, so
+// they live on the skill and are shared across tracks. What a track *covers* —
+// its current level and the level-indexed progress records (boss clears, level
+// advances, placement credits, blitz/challenge bests) — is PER-TRACK and lives
+// under `skill.tracks[trackId]`. See docs/Ai/FEATURE_REQUESTS/curriculum-tracks.md.
+function createDefaultCoverage(nowMs = Date.now()) {
+  return {
+    currentLevel: DEFAULT_START_LEVEL,
+    bossAttempts: [],
+    levelAdvances: [],
+    placementCredits: [],
+    blitzAttempts: [],
+    challengeAttempts: [],
+    createdAt: nowIso(nowMs),
+  };
+}
+
+// Non-mutating read of a track's coverage: the stored record, or a fresh default
+// for a track this skill hasn't been played on yet. Never attaches to the skill.
+function readCoverage(skill, trackId = "standard") {
+  return skill?.tracks?.[trackId] || createDefaultCoverage();
+}
+
+// Mutating: return the track's coverage record, materializing it on the skill if
+// this is the first time the track is touched. Use on write paths only.
+function ensureCoverage(skill, trackId = "standard", nowMs = Date.now()) {
+  if (!skill.tracks || typeof skill.tracks !== "object") skill.tracks = {};
+  if (!skill.tracks[trackId]) skill.tracks[trackId] = createDefaultCoverage(nowMs);
+  return skill.tracks[trackId];
+}
+
+// A track-resolved "view" of a skill: shared fact stats plus the active track's
+// coverage fields flattened to the top level, so the many bare-`skill` readers
+// (getUnlockedLevel, hasBossAttemptForLevel, …) see the right per-track values
+// without changing their signatures. Read-only — writes go through ensureCoverage.
+function viewSkillForTrack(skill, trackId = "standard") {
+  if (!skill) return skill;
+  return { ...skill, ...readCoverage(skill, trackId) };
+}
+
+// Normalize one track's coverage record (used both for already-`tracks`-shaped
+// profiles and for folding a legacy flat skill's coverage into tracks.standard).
+function normalizeCoverage(cov = {}, nowMs = Date.now()) {
+  const level = Number(cov.currentLevel);
+  return {
+    currentLevel: Number.isFinite(level) && level > 0 ? Math.round(level) : DEFAULT_START_LEVEL,
+    bossAttempts: normalizeBossAttempts(cov.bossAttempts),
+    levelAdvances: normalizeLevelAdvances(cov.levelAdvances),
+    placementCredits: normalizePlacementCredits(cov.placementCredits),
+    blitzAttempts: normalizeBlitzAttempts(cov.blitzAttempts),
+    challengeAttempts: normalizeChallengeAttempts(
+      Array.isArray(cov.challengeAttempts) && cov.challengeAttempts.length > 0
+        ? cov.challengeAttempts
+        : (cov.blitzAttempts || []).map((attempt) => ({ ...attempt, type: "blitz" }))
+    ),
+    createdAt: cov.createdAt || nowIso(nowMs),
+  };
+}
+
 function createEmptySkill(opKey, nowMs = Date.now()) {
   return {
     opKey,
-    currentLevel: DEFAULT_START_LEVEL,
     readiness: 0,
     bossReady: false,
     bossThreshold: BOSS_READY_SCORE,
-    bossAttempts: [],
-    levelAdvances: [],
     totals: {
       attempts: 0,
       correct: 0,
@@ -327,10 +384,8 @@ function createEmptySkill(opKey, nowMs = Date.now()) {
     },
     recent: [],
     problems: {},
-    placementCredits: [],
     pressureTiers: createPressureTierStatsMap(),
-    blitzAttempts: [],
-    challengeAttempts: [],
+    tracks: { standard: createDefaultCoverage(nowMs) },
     createdAt: nowIso(nowMs),
     updatedAt: nowIso(nowMs),
   };
@@ -675,6 +730,33 @@ function ensureProfileShape(profile, nowMs = Date.now()) {
   const priorSkills = profile.skills || {};
   for (const opKey of Object.keys(operationDefaults)) {
     const rawSkill = priorSkills[opKey] || {};
+    // Per-track coverage (v4): use already-migrated `tracks` if present, else fold
+    // the legacy flat coverage fields (v3 and earlier) into tracks.standard so no
+    // existing progress is lost. Standard always exists.
+    /** @type {Record<string, any>} */
+    let tracks;
+    if (rawSkill.tracks && typeof rawSkill.tracks === "object") {
+      tracks = {};
+      for (const [trackId, cov] of Object.entries(rawSkill.tracks)) {
+        tracks[trackId] = normalizeCoverage(cov, nowMs);
+      }
+      if (!tracks.standard) tracks.standard = createDefaultCoverage(nowMs);
+    } else {
+      tracks = {
+        standard: normalizeCoverage(
+          {
+            currentLevel: rawSkill.currentLevel,
+            bossAttempts: rawSkill.bossAttempts,
+            levelAdvances: rawSkill.levelAdvances,
+            placementCredits: rawSkill.placementCredits,
+            blitzAttempts: rawSkill.blitzAttempts,
+            challengeAttempts: rawSkill.challengeAttempts,
+            createdAt: rawSkill.createdAt,
+          },
+          nowMs
+        ),
+      };
+    }
     const nextSkill = {
       ...createEmptySkill(opKey, nowMs),
       ...rawSkill,
@@ -684,24 +766,22 @@ function ensureProfileShape(profile, nowMs = Date.now()) {
         ...(rawSkill.totals || {}),
       },
       problems: { ...(rawSkill.problems || {}) },
-      placementCredits: normalizePlacementCredits(rawSkill.placementCredits),
       recent: Array.isArray(rawSkill.recent) ? rawSkill.recent : [],
-      bossAttempts: normalizeBossAttempts(rawSkill.bossAttempts),
-      levelAdvances: normalizeLevelAdvances(rawSkill.levelAdvances),
-      blitzAttempts: normalizeBlitzAttempts(rawSkill.blitzAttempts),
-      challengeAttempts: normalizeChallengeAttempts(
-        Array.isArray(rawSkill.challengeAttempts) && rawSkill.challengeAttempts.length > 0
-          ? rawSkill.challengeAttempts
-          : (rawSkill.blitzAttempts || []).map((attempt) => ({
-            ...attempt,
-            type: "blitz",
-          }))
-      ),
       pressureTiers: createPressureTierStatsMap(rawSkill.pressureTiers || rawSkill.speedTiers),
+      tracks,
     };
+    // Drop any legacy flat coverage fields now carried under `tracks`.
+    delete nextSkill.currentLevel;
+    delete nextSkill.bossAttempts;
+    delete nextSkill.levelAdvances;
+    delete nextSkill.placementCredits;
+    delete nextSkill.blitzAttempts;
+    delete nextSkill.challengeAttempts;
+
     const hasPractice = nextSkill.totals.attempts > 0 || Object.keys(nextSkill.problems).length > 0;
-    if (sourceVersion < PROFILE_VERSION && !hasPractice && nextSkill.currentLevel === LEGACY_START_LEVEL) {
-      nextSkill.currentLevel = DEFAULT_START_LEVEL;
+    const standardCoverage = nextSkill.tracks.standard;
+    if (sourceVersion < PROFILE_VERSION && !hasPractice && standardCoverage.currentLevel === LEGACY_START_LEVEL) {
+      standardCoverage.currentLevel = DEFAULT_START_LEVEL;
       if (next.settings.difficulties?.[opKey] === LEGACY_START_LEVEL) {
         next.settings.difficulties[opKey] = DEFAULT_START_LEVEL;
       }
@@ -909,9 +989,10 @@ function findSession(profile, sessionId) {
 function getSkillSessionSnapshot(profile, opKey) {
   const skill = profile.skills?.[opKey];
   if (!skill) return createSessionMasterySnapshot();
-  const summary = computeSkillReadiness(skill, getActiveTrack(profile.activeTrack));
+  const track = getActiveTrack(profile.activeTrack);
+  const summary = computeSkillReadiness(skill, track);
   return createSessionMasterySnapshot({
-    level: skill.currentLevel,
+    level: readCoverage(skill, track.id).currentLevel,
     readiness: summary.readiness,
     masteredCount: summary.masteredCount,
     universeCount: summary.universeCount,
@@ -923,10 +1004,12 @@ function getSkillSessionSnapshot(profile, opKey) {
 
 function computeSkillReadinessForLevel(skill, level, track = TRACKS.standard) {
   if (!skill) return computeSkillReadiness(skill, track);
-  if (skill.currentLevel === level) return computeSkillReadiness(skill, track);
+  const cov = readCoverage(skill, track.id);
+  if (cov.currentLevel === level) return computeSkillReadiness(skill, track);
+  // Override just this track's current level (computeSkillReadiness reads coverage).
   return computeSkillReadiness({
     ...skill,
-    currentLevel: level,
+    tracks: { ...skill.tracks, [track.id]: { ...cov, currentLevel: level } },
   }, track);
 }
 
@@ -936,7 +1019,7 @@ function getSkillSessionLevelSnapshots(profile, opKey) {
   const track = getActiveTrack(profile.activeTrack);
   const desc = track[opKey];
   const maxLevel = desc?.kind === "timesTable" ? desc.maxLevel : 10;
-  const highestLevel = clamp(1, maxLevel, Math.max(1, Math.round(skill.currentLevel || 1)));
+  const highestLevel = clamp(1, maxLevel, Math.max(1, Math.round(readCoverage(skill, track.id).currentLevel || 1)));
   const levels = {};
   for (let level = 1; level <= highestLevel; level += 1) {
     const summary = computeSkillReadinessForLevel(skill, level, track);
@@ -1178,18 +1261,20 @@ function parseBossAttemptOptions(profile, optionsOrNowMs) {
 function recordBossAttempt(profile, opKey, optionsOrNowMs = Date.now()) {
   const skill = profile.skills?.[opKey];
   if (!skill) return profile;
-  if (!Array.isArray(skill.bossAttempts)) skill.bossAttempts = [];
+  const track = getActiveTrack(profile.activeTrack);
+  const coverage = ensureCoverage(skill, track.id);
   const { nowMs, pressure, speedPercent, spawnRate } = parseBossAttemptOptions(profile, optionsOrNowMs);
-  const level = skill.currentLevel;
+  const level = coverage.currentLevel;
   const at = nowIso(nowMs);
-  const summary = computeSkillReadiness(skill, getActiveTrack(profile.activeTrack));
+  const summary = computeSkillReadiness(skill, track);
+  const view = viewSkillForTrack(skill, track.id);
   const pressureIndex = getPressureTierIndex(pressure.key);
   for (let clearedLevel = 1; clearedLevel <= level; clearedLevel += 1) {
     for (let i = 0; i <= pressureIndex; i += 1) {
       const clearedPressure = PRESSURE_TIERS[i];
-      if (hasBossAttemptForPressureTier(skill, clearedLevel, clearedPressure.key)) continue;
+      if (hasBossAttemptForPressureTier(view, clearedLevel, clearedPressure.key)) continue;
       const inferred = !(clearedLevel === level && clearedPressure.key === pressure.key);
-      skill.bossAttempts.push({
+      coverage.bossAttempts.push({
         level: clearedLevel,
         readiness: summary.readiness,
         pressureTier: clearedPressure.key,
@@ -1213,15 +1298,16 @@ function recordBossAttempt(profile, opKey, optionsOrNowMs = Date.now()) {
 function recordLevelAdvance(profile, opKey, options = {}) {
   const skill = profile.skills?.[opKey];
   if (!skill) return profile;
-  if (!Array.isArray(skill.levelAdvances)) skill.levelAdvances = [];
-  const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
-  const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : skill.currentLevel));
-  const at = nowIso(nowMs);
   const track = getActiveTrack(profile.activeTrack);
+  const coverage = ensureCoverage(skill, track.id);
+  const view = viewSkillForTrack(skill, track.id);
+  const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
+  const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : coverage.currentLevel));
+  const at = nowIso(nowMs);
   for (let clearedLevel = 1; clearedLevel <= level; clearedLevel += 1) {
-    if (hasLevelAdvanceForLevel(skill, clearedLevel)) continue;
+    if (hasLevelAdvanceForLevel(view, clearedLevel)) continue;
     const summary = computeSkillReadinessForLevel(skill, clearedLevel, track);
-    skill.levelAdvances.push({
+    coverage.levelAdvances.push({
       level: clearedLevel,
       readiness: summary.readiness,
       masteredCount: summary.masteredCount,
@@ -1378,11 +1464,13 @@ function getChallengeBestsByLevel(skill) {
 function recordChallengeAttempt(profile, opKey, options = {}) {
   const skill = profile.skills?.[opKey];
   if (!skill) return profile;
-  if (!Array.isArray(skill.challengeAttempts)) skill.challengeAttempts = [];
+  const track = getActiveTrack(profile.activeTrack);
+  const coverage = ensureCoverage(skill, track.id);
+  const view = viewSkillForTrack(skill, track.id);
   const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
   const at = nowIso(nowMs);
   const type = ["blitz", "wave", "boss"].includes(options.type) ? options.type : "blitz";
-  const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : getBlitzUnlockedLevel(skill) || skill.currentLevel));
+  const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : getBlitzUnlockedLevel(view) || coverage.currentLevel));
   const durationMs = Number.isFinite(options.durationMs) ? Math.max(0, Math.round(options.durationMs)) : null;
   const fastestDropSeconds = Number.isFinite(options.fastestDropSeconds)
     ? Math.max(0.1, Math.round(options.fastestDropSeconds * 10) / 10)
@@ -1398,7 +1486,7 @@ function recordChallengeAttempt(profile, opKey, options = {}) {
     : durationMs !== null
       ? Math.round(durationMs / 1000)
       : 0;
-  skill.challengeAttempts.push({
+  coverage.challengeAttempts.push({
     type,
     level,
     score: clamp(0, 999999, Math.round(Number.isFinite(options.score) ? options.score : scoreFallback)),
@@ -1425,10 +1513,12 @@ function recordChallengeAttempt(profile, opKey, options = {}) {
 function recordBlitzAttempt(profile, opKey, options = {}) {
   const skill = profile.skills?.[opKey];
   if (!skill) return profile;
-  if (!Array.isArray(skill.blitzAttempts)) skill.blitzAttempts = [];
+  const track = getActiveTrack(profile.activeTrack);
+  const coverage = ensureCoverage(skill, track.id);
+  const view = viewSkillForTrack(skill, track.id);
   const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
   const at = nowIso(nowMs);
-  const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : getBlitzUnlockedLevel(skill) || skill.currentLevel));
+  const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : getBlitzUnlockedLevel(view) || coverage.currentLevel));
   const speedPercent = normalizeSpeedPercent(options.speedPercent ?? options.maxSpeedPercent ?? profile.settings?.speed);
   const load = normalizeLoad(options.spawnRate ?? options.maxDropLimit ?? profile.settings?.rate);
   const durationMs = Number.isFinite(options.durationMs) ? Math.max(0, Math.round(options.durationMs)) : null;
@@ -1436,7 +1526,7 @@ function recordBlitzAttempt(profile, opKey, options = {}) {
     ? Math.max(0.1, Math.round(options.fastestDropSeconds * 10) / 10)
     : null;
   const scoreFallback = durationMs !== null ? Math.round(durationMs / 1000) : speedPercent;
-  skill.blitzAttempts.push({
+  coverage.blitzAttempts.push({
     level,
     score: clamp(0, 999999, Math.round(Number.isFinite(options.score) ? options.score : scoreFallback)),
     durationMs,
@@ -1603,7 +1693,9 @@ function recordProgressEvent(profile, event, nowMs = Date.now()) {
 function recordPlacementCredit(profile, opKey, options = {}, nowMs = Date.now()) {
   if (!profile?.skills?.[opKey]) return profile;
   const skill = profile.skills[opKey];
-  const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : skill.currentLevel || 1));
+  const track = getActiveTrack(profile.activeTrack);
+  const coverage = ensureCoverage(skill, track.id);
+  const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : coverage.currentLevel || 1));
   const placedOutThrough = clamp(
     0,
     10,
@@ -1612,7 +1704,7 @@ function recordPlacementCredit(profile, opKey, options = {}, nowMs = Date.now())
   const source = options.source || "test-me";
   const at = nowIso(nowMs);
   const entries = placedOutThrough > 0
-    ? getSkillUniverseProblems(opKey, placedOutThrough, getActiveTrack(profile.activeTrack))
+    ? getSkillUniverseProblems(opKey, placedOutThrough, track)
     : [];
 
   for (const entry of entries) {
@@ -1631,8 +1723,7 @@ function recordPlacementCredit(profile, opKey, options = {}, nowMs = Date.now())
     }
   }
 
-  if (!Array.isArray(skill.placementCredits)) skill.placementCredits = [];
-  skill.placementCredits.push({
+  coverage.placementCredits.push({
     level,
     placedOutThrough,
     problemCount: entries.length,
@@ -1640,7 +1731,7 @@ function recordPlacementCredit(profile, opKey, options = {}, nowMs = Date.now())
     source,
     at,
   });
-  skill.placementCredits = normalizePlacementCredits(skill.placementCredits).slice(-20);
+  coverage.placementCredits = normalizePlacementCredits(coverage.placementCredits).slice(-20);
   if (placedOutThrough > 0) {
     recordLevelAdvance(profile, opKey, {
       level: placedOutThrough,
@@ -1651,7 +1742,7 @@ function recordPlacementCredit(profile, opKey, options = {}, nowMs = Date.now())
   skill.totals.distinct = Object.keys(skill.problems).length;
   skill.updatedAt = at;
   profile.user.updatedAt = at;
-  updateSkillReadiness(skill, getActiveTrack(profile.activeTrack));
+  updateSkillReadiness(skill, track);
   return profile;
 }
 
@@ -1777,7 +1868,11 @@ function summarizePressureTierStats(pressureTiers = {}) {
 
 const summarizeSpeedTierStats = summarizePressureTierStats;
 
-function computeSkillReadiness(skill, track = TRACKS.standard) {
+function computeSkillReadiness(rawSkill, track = TRACKS.standard) {
+  // Read against the active track's coverage: `skill.currentLevel` and the
+  // level-indexed records (boss clears, advances, blitz bests) below are the
+  // track's, while `problems`/`totals` (facts) are the shared universals.
+  const skill = viewSkillForTrack(rawSkill, track.id);
   const problems = Object.values(skill.problems);
   const attempts = skill.totals.attempts;
   const universeCount = getSkillUniverseSize(skill.opKey, skill.currentLevel, track);
@@ -1896,8 +1991,9 @@ function getWeakProblems(skill, limit = 4) {
 
 /** @returns {import('./types.js').PracticeSuggestion[]} */
 function getUnseenProblems(skill, limit = 4, track = TRACKS.standard) {
-  const seen = new Set(Object.keys(skill.problems));
-  return getSkillUniverseProblems(skill.opKey, skill.currentLevel, track)
+  const view = viewSkillForTrack(skill, track.id);
+  const seen = new Set(Object.keys(view.problems));
+  return getSkillUniverseProblems(view.opKey, view.currentLevel, track)
     .filter((problem) => !seen.has(problem.statsKey))
     .slice(0, limit)
     .map((problem) => ({
@@ -1938,11 +2034,12 @@ function getPracticeSuggestions(skill, limit = 4, track = TRACKS.standard) {
 
 function getFinishLevelPracticeProblems(skill, track = TRACKS.standard) {
   if (!skill) return [];
+  const view = viewSkillForTrack(skill, track.id);
   const summary = computeSkillReadiness(skill, track);
   if (summary.readiness < FINISH_LEVEL_FOCUS_SCORE || summary.readiness >= BOSS_READY_SCORE) {
     return [];
   }
-  return getSkillUniverseProblems(skill.opKey, skill.currentLevel, track)
+  return getSkillUniverseProblems(view.opKey, view.currentLevel, track)
     .map((problem) => {
       const stored = skill.problems[problem.statsKey];
       return {
@@ -2088,15 +2185,16 @@ function summarizeProfile(profile) {
   const currentPressureTier = getPressureTier(currentSpeedPercent);
   const track = getActiveTrack(profile.activeTrack);
   for (const [opKey, skill] of Object.entries(profile.skills)) {
+    const view = viewSkillForTrack(skill, track.id);
     const readiness = computeSkillReadiness(skill, track);
     skills[opKey] = {
       ...readiness,
       opKey,
-      currentLevel: skill.currentLevel,
+      currentLevel: view.currentLevel,
       currentPressureTier: { ...currentPressureTier },
       currentSpeedPercent,
       currentSpawnRate,
-      bossClearedCurrentPressureTier: hasBossAttemptForPressureTier(skill, skill.currentLevel, currentPressureTier.key),
+      bossClearedCurrentPressureTier: hasBossAttemptForPressureTier(view, view.currentLevel, currentPressureTier.key),
       totals: { ...skill.totals },
     };
   }
@@ -2131,9 +2229,10 @@ function syncSettings(profile, settings = {}, nowMs = Date.now()) {
     },
   };
   if (settings.difficulties) {
+    const trackId = getActiveTrack(profile.activeTrack).id;
     for (const [opKey, level] of Object.entries(settings.difficulties)) {
       if (profile.skills[opKey]) {
-        profile.skills[opKey].currentLevel = level;
+        ensureCoverage(profile.skills[opKey], trackId, nowMs).currentLevel = level;
       }
     }
   }
@@ -2185,6 +2284,9 @@ export {
   getProfileList,
   getBossSpeedTierClears,
   getBossPressureTierClears,
+  viewSkillForTrack,
+  readCoverage,
+  ensureCoverage,
   getChallengeBest,
   getChallengeBests,
   getBlitzBest,

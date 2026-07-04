@@ -106,19 +106,22 @@ structure, which facts are in level N, boss/level clears, current level, "master
 level N" — is **per-track**.
 
 Agreed direction:
-- **A. File reorg** — `src/tracks/<track>.js` data modules + `src/curriculum.js` as
-  the thin registry (`TRACKS` + `getActiveTrack`). Behavior-preserving.
-- **B. Shared facts / per-track coverage** — split the op record: `problems`
+- **A. File reorg** ✅ (commit ef8870a) — `src/tracks/<track>.js` data modules +
+  `src/curriculum.js` as the thin registry (`TRACKS` + `getActiveTrack`).
+  Behavior-preserving.
+- **B. Shared facts / per-track coverage** ✅ — split the op record: `problems`
   (per-fact stats), `totals`, `recent`, `pressureTiers` stay **shared**;
   `currentLevel` + `bossAttempts` + `levelAdvances` + `placementCredits` +
-  blitz/challenge bests move to `tracks[trackId]`. Readiness recomputes from the
-  shared facts against the **active track's** universe; the level-clear/"mastered"
-  gate reads the per-track records; reports label the track. Profile migration
-  (existing progress → `tracks.standard`) + `PROFILE_VERSION` bump.
-- **C. Data-fy all 11 ops** into `standard.js` — each op gets a declarative `kind`;
-  algorithmic pieces (shapes render, SI, factorization) stay as named generator
-  **strategies** the data selects (level DEFINITIONS become fully declarative; the
-  rendering code stays code). One op per commit, snapshot green each.
+  blitz/challenge bests moved to `tracks[trackId]`. Readiness recomputes from the
+  shared facts against the **active track's** universe via a track-resolved view
+  (`viewSkillForTrack`, so the ~12 bare-`skill` readers kept their signatures);
+  writers use `ensureCoverage`. `PROFILE_VERSION` 3→4 migration folds existing
+  progress into `tracks.standard`. e2e proves a Standard clear doesn't carry to
+  Times Tables while facts do. 99 unit + 231 e2e (6 projects) green.
+- **C. Data-fy all 11 ops** (next) into `standard.js` — each op gets a declarative
+  `kind`; algorithmic pieces (shapes render, SI, factorization) stay as named
+  generator **strategies** the data selects (level DEFINITIONS become fully
+  declarative; the rendering code stays code). One op per commit, snapshot green each.
 
 Still deferred: more real tracks (Saxon, Math-U-See — data additions once B+C land);
 per-op mastery thresholds stay global (seam: `TRACKS[id].progression`).

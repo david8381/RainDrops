@@ -127,6 +127,8 @@ const {
   PROFILE_VERSION,
   deleteStoredProfile,
   getFinishLevelPracticeProblems,
+  viewSkillForTrack,
+  ensureCoverage,
   getBlitzBest,
   getChallengeBest,
   getPressureTier,
@@ -381,7 +383,7 @@ function applyProfileSettingsToControls() {
   const savedDifficulties = settings.difficulties || {};
   const summary = summarizeProfile(state.progressProfile);
   for (const opKey of Object.keys(opConfig)) {
-    const savedLevel = savedDifficulties[opKey] ?? state.progressProfile.skills?.[opKey]?.currentLevel;
+    const savedLevel = savedDifficulties[opKey] ?? summary.skills[opKey]?.currentLevel;
     // Resume at least at the level after the highest cleared boss, so a
     // temporarily lowered selector (e.g. to replay a cleared level) does not
     // strand the player below their actual progress on reload.
@@ -3882,8 +3884,11 @@ function hasBossClearForLevel(skill, level) {
 }
 
 function getShareBadgeData(opKey, level) {
-  const skill = state.progressProfile.skills?.[opKey];
-  if (!skill) return null;
+  const rawSkill = state.progressProfile.skills?.[opKey];
+  if (!rawSkill) return null;
+  // Resolve the active track's coverage so currentLevel / boss clears are this
+  // track's, not a stale flat field.
+  const skill = viewSkillForTrack(rawSkill, getCurriculumTrack().id);
   const numericLevel = clamp(1, 10, Math.round(Number(level) || skill.currentLevel || 1));
   const playerName = state.progressProfile.user?.name && state.progressProfile.user.name !== "Local Player"
     ? state.progressProfile.user.name
@@ -6364,9 +6369,14 @@ function setActiveTrackForProfile(trackId) {
   const track = getActiveTrack(trackId);
   if (state.progressProfile.activeTrack === track.id) return;
   state.progressProfile.activeTrack = track.id;
+  // Materialize this track's per-op coverage and clamp each level into the track's
+  // range. Each track keeps its own current level, so no progress is lost either
+  // way — switching back to Standard restores Standard's levels untouched.
   for (const opKey of Object.keys(opConfig)) {
     const skill = state.progressProfile.skills?.[opKey];
-    if (skill) skill.currentLevel = clamp(1, getOpMaxLevel(opKey), Math.round(skill.currentLevel || 1));
+    if (!skill) continue;
+    const coverage = ensureCoverage(skill, track.id);
+    coverage.currentLevel = clamp(1, getOpMaxLevel(opKey), Math.round(coverage.currentLevel || 1));
   }
   saveProfile(state.progressProfile);
   activateProfile(state.progressProfile);

@@ -143,22 +143,33 @@
  */
 
 /**
+ * A track's per-track "coverage" record inside `StoredSkill.tracks`: the current
+ * level and level-indexed progress for one curriculum track. Fact stats are NOT
+ * here — they are universal and live on the skill (`problems`/`totals`/`recent`).
+ * @typedef {Object} SkillCoverage
+ * @property {number} currentLevel
+ * @property {Array}  bossAttempts          Per-level boss clears.
+ * @property {Array}  levelAdvances         Per-level mastery advances.
+ * @property {Array}  placementCredits      Test Me "placed-out" credit.
+ * @property {Array}  blitzAttempts
+ * @property {Array}  challengeAttempts
+ * @property {string} [createdAt]
+ */
+
+/**
  * Per-operation durable stats for one player. `createEmptySkill()`.
+ * Fact stats (`problems`/`totals`/`recent`/`pressureTiers`) are shared/universal;
+ * per-curriculum-track progress lives under `tracks[trackId]` (see SkillCoverage).
  * @typedef {Object} StoredSkill
  * @property {OpKey}  opKey
- * @property {number} currentLevel
- * @property {number} readiness             0–100 (persisted snapshot).
+ * @property {number} readiness             0–100 (persisted cache; reflects the active track).
  * @property {boolean} bossReady
  * @property {number} bossThreshold
- * @property {Array}  bossAttempts
- * @property {Array}  levelAdvances
  * @property {SkillTotals} totals
  * @property {Array}  recent                Bounded recent-outcome ring (for recency weighting).
  * @property {Object<string, ProblemStat>} problems  statsKey → per-problem record.
- * @property {Array}  placementCredits      Test Me "placed-out" credit.
  * @property {Object} pressureTiers         Per-pressure-tier compatibility stats.
- * @property {Array}  blitzAttempts
- * @property {Array}  challengeAttempts
+ * @property {Object<string, SkillCoverage>} tracks   trackId → per-track coverage.
  */
 
 /**

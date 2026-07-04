@@ -208,9 +208,38 @@ test.describe("curriculum tracks", () => {
     // Back to Standard: all 11 chits return and the mul level clamps to 10.
     const back = await invoke(page, "setTrack", "standard");
     expect(back.progressProfile.activeTrack).toBe("standard");
-    expect(back.progressProfile.skills.mul.currentLevel).toBeLessThanOrEqual(10);
+    expect(back.progressProfile.skills.mul.tracks.standard.currentLevel).toBeLessThanOrEqual(10);
     await expect(page.locator(".op-chit:visible")).toHaveCount(11);
     await expect(page.locator('.op-chit[data-op="add"]')).toBeVisible();
+  });
+
+  // The core coherence guarantee (v2): per-problem FACT stats are universal and
+  // shared, but a track's COVERAGE (its levels/boss clears) is per-track — so
+  // clearing a level on Standard must NOT mark it done on Times Tables.
+  test("progress is per-track — a Standard clear doesn't carry to Times Tables, but facts do", async ({ page }) => {
+    await openApp(page);
+
+    // On Standard: practice + boss-clear mul level 2.
+    await invoke(page, "enableOps", ["mul"]);
+    await invoke(page, "setOpDifficulty", "mul", 2, { force: true });
+    await invoke(page, "masterCurrentLevel", "mul");
+    await invoke(page, "recordBossClear", "mul");
+    const std = await invoke(page, "getState");
+    const factCount = Object.keys(std.progressProfile.skills.mul.problems).length;
+    expect(factCount).toBeGreaterThan(0);
+    expect(std.progressProfile.skills.mul.tracks.standard.bossAttempts.length).toBeGreaterThan(0);
+    expect(std.progressSummary.skills.mul.bossAttemptedForLevel).toBe(true);
+
+    // Switch to Times Tables: the boss clear does NOT carry, but the facts do.
+    const tt = await invoke(page, "setTrack", "timesTables");
+    expect(Object.keys(tt.progressProfile.skills.mul.problems).length).toBe(factCount); // facts shared
+    expect(tt.progressProfile.skills.mul.tracks.timesTables.bossAttempts.length).toBe(0); // coverage fresh
+    expect(tt.progressSummary.skills.mul.bossAttemptedForLevel).toBe(false);
+
+    // Standard's coverage is untouched when we come back.
+    const back = await invoke(page, "setTrack", "standard");
+    expect(back.progressProfile.skills.mul.tracks.standard.bossAttempts.length).toBeGreaterThan(0);
+    expect(back.progressSummary.skills.mul.bossAttemptedForLevel).toBe(true);
   });
 
   // Desktop-only: the diff-card is desktop chrome (mobile uses the keypad strip).
@@ -517,8 +546,8 @@ test.describe("desktop gameplay", () => {
     expect(state.placementVisible).toBe(false);
     expect(state.opConfig.add.enabled).toBe(true);
     expect(state.opConfig.add.difficulty).toBe(3);
-    expect(state.progressProfile.skills.add.placementCredits.at(-1).placedOutThrough).toBe(2);
-    expect(state.progressProfile.skills.add.levelAdvances.map((advance) => advance.level)).toEqual([1, 2]);
+    expect(state.progressProfile.skills.add.tracks.standard.placementCredits.at(-1).placedOutThrough).toBe(2);
+    expect(state.progressProfile.skills.add.tracks.standard.levelAdvances.map((advance) => advance.level)).toEqual([1, 2]);
 
     state = await invoke(page, "setOpDifficulty", "add", 2);
     expect(state.opConfig.add.difficulty).toBe(2);
@@ -1525,7 +1554,7 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#dropLimitSlider")).toBeDisabled();
     await invoke(page, "setControls", { speed: 90, drops: 10 });
     const state = await invoke(page, "forceBossVictory");
-    const actualClear = state.progressProfile.skills.add.bossAttempts.find((attempt) => (
+    const actualClear = state.progressProfile.skills.add.tracks.standard.bossAttempts.find((attempt) => (
       attempt.level === 1 && attempt.inferred === false
     ));
 
@@ -1628,10 +1657,10 @@ test.describe("desktop gameplay", () => {
 
     state = await invoke(page, "advanceBossTime", 1900);
     expect(state.opConfig.add.difficulty).toBe(1); // blitz does not change the level
-    expect(state.progressProfile.skills.add.blitzAttempts.at(-1).level).toBe(1);
-    expect(state.progressProfile.skills.add.blitzAttempts.at(-1).result).toBe("shields-down");
-    expect(state.progressProfile.skills.add.blitzAttempts.at(-1).durationMs).toBeGreaterThanOrEqual(0);
-    expect(state.progressProfile.skills.add.blitzAttempts.at(-1).fastestDropSeconds).toBeGreaterThan(0);
+    expect(state.progressProfile.skills.add.tracks.standard.blitzAttempts.at(-1).level).toBe(1);
+    expect(state.progressProfile.skills.add.tracks.standard.blitzAttempts.at(-1).result).toBe("shields-down");
+    expect(state.progressProfile.skills.add.tracks.standard.blitzAttempts.at(-1).durationMs).toBeGreaterThanOrEqual(0);
+    expect(state.progressProfile.skills.add.tracks.standard.blitzAttempts.at(-1).fastestDropSeconds).toBeGreaterThan(0);
   });
 
   test("full boss mode runs Wave 1, Wave 2, then the mothership", async ({ page }) => {
@@ -1685,7 +1714,7 @@ test.describe("desktop gameplay", () => {
 
     state = await invoke(page, "forceBossVictory");
     expect(state.opConfig.add.difficulty).toBe(2);
-    const attempts = state.progressProfile.skills.add.challengeAttempts;
+    const attempts = state.progressProfile.skills.add.tracks.standard.challengeAttempts;
     expect(attempts.some((attempt) => attempt.type === "blitz" && attempt.level === 1)).toBe(true);
     expect(attempts.some((attempt) => attempt.type === "wave" && attempt.level === 1)).toBe(true);
     expect(attempts.some((attempt) => attempt.type === "boss" && attempt.level === 1 && attempt.cleared)).toBe(true);
