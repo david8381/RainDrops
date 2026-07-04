@@ -142,7 +142,7 @@ function getDifficultyRange(opKey, difficulty, track = TRACKS.standard) {
   }
 
   if (opKey === "round") {
-    return { min: 1, max: ROUND_MAX_LEVEL };
+    return { min: 1, max: (desc ?? TRACKS.standard.round).maxLevel };
   }
 
   if (opKey === "reduce") {
@@ -236,7 +236,6 @@ function generateFactorsOfTenProblem(difficulty = 1, rng = Math.random, track = 
 // Rounding & estimation. Like factors-of-10, mastery is per conceptual bucket
 // rather than per literal number. Here each bucket is a rounding case (down,
 // up, half, zero, carry) scoped to a level's place and size relationship.
-const ROUND_MAX_LEVEL = 10;
 const ROUND_PLACES = {
   ten: 10,
   hundred: 100,
@@ -307,32 +306,12 @@ function makeRoundType(placeKey, relation, caseName, minValue, maxValue, inputDe
   return { ...type, statsKey: roundTypeStatsKey(type) };
 }
 
-function roundLevelSpecs(level) {
-  const int = 0;
-  if (level === 1) return [["ten", "norm", ["down", "up", "half", "zero"], 10, 99, int]];
-  if (level === 2) return [["ten", "big", ["down", "up", "half", "zero", "carry"], 100, 999, int]];
-  if (level === 3) return [["ten", "cross", ["down", "up"], 1, 9, int]];
-  if (level === 4) return [["hundred", "norm", ["down", "up", "half", "zero"], 100, 9999, int]];
-  if (level === 5) {
-    return [
-      ["hundred", "cross", ["down", "up", "half"], 1, 99, int],
-      ["thousand", "norm", ["down", "up", "half", "zero", "carry"], 1000, 99999, int],
-    ];
-  }
-  if (level === 6) return [["tenth", "norm", ["down", "up", "half", "zero"], 1, 9.99, 2]];
-  if (level === 7) return [["tenth", "extra", ["down", "up", "half", "carry"], 1, 99.999, 3]];
-  if (level === 8) return [["hundredth", "norm", ["down", "up", "half", "zero"], 1, 9.999, 3]];
-  if (level === 9) {
-    return [
-      ["tenth", "cross", ["down", "up", "half"], 0.01, 0.09, 2],
-      ["hundredth", "cross", ["down", "up", "half"], 0.001, 0.009, 3],
-    ];
-  }
-  return [
-    ["thousandth", "norm", ["down", "up", "half", "zero", "carry"], 1, 9.9999, 4],
-    ["tenth", "mix", ["down", "up"], 1, 99.999, 3],
-    ["hundredth", "mix", ["half"], 1, 99.999, 3],
-  ];
+function roundLevelSpecs(level, track = TRACKS.standard) {
+  // Level N → levelSpecs[N-1]; the last entry doubles as the level-maxLevel
+  // block (callers clamp `level` to [1, maxLevel] before calling).
+  const { levelSpecs } = track.round ?? TRACKS.standard.round;
+  const last = levelSpecs.length - 1;
+  return level >= 1 && level <= last ? levelSpecs[level - 1] : levelSpecs[last];
 }
 
 function makeRoundTypesFromSpecs(specs) {
@@ -341,14 +320,16 @@ function makeRoundTypesFromSpecs(specs) {
   );
 }
 
-function roundTypesForLevel(level) {
-  const lvl = clamp(1, ROUND_MAX_LEVEL, Math.round(level || 1));
-  return makeRoundTypesFromSpecs(roundLevelSpecs(lvl));
+function roundTypesForLevel(level, track = TRACKS.standard) {
+  const { maxLevel } = track.round ?? TRACKS.standard.round;
+  const lvl = clamp(1, maxLevel, Math.round(level || 1));
+  return makeRoundTypesFromSpecs(roundLevelSpecs(lvl, track));
 }
 
 function allRoundTypes() {
   const byKey = new Map();
-  for (let level = 1; level <= ROUND_MAX_LEVEL; level += 1) {
+  const { maxLevel } = TRACKS.standard.round;
+  for (let level = 1; level <= maxLevel; level += 1) {
     for (const type of roundTypesForLevel(level)) {
       byKey.set(type.statsKey, type);
     }
@@ -428,12 +409,12 @@ function makeRoundProblemFromKey(statsKey, rng = Math.random) {
   return makeRoundProblem(type, rng);
 }
 
-function getRoundUniverse(level) {
-  return roundTypesForLevel(level).map((type) => ({ statsKey: type.statsKey, text: roundTypeLabel(type) }));
+function getRoundUniverse(level, track = TRACKS.standard) {
+  return roundTypesForLevel(level, track).map((type) => ({ statsKey: type.statsKey, text: roundTypeLabel(type) }));
 }
 
-function generateRoundProblem(difficulty = 1, rng = Math.random) {
-  const types = roundTypesForLevel(difficulty);
+function generateRoundProblem(difficulty = 1, rng = Math.random, track = TRACKS.standard) {
+  const types = roundTypesForLevel(difficulty, track);
   return makeRoundProblem(types[randInt(0, types.length - 1, rng)], rng);
 }
 
@@ -1139,7 +1120,7 @@ function generateProblem(opKey, opConfig, rng = Math.random, track = TRACKS.stan
   if (opKey === "factor") return P(generateFactorProblem(config.difficulty, rng, track));
   if (opKey === "shapes") return P(generateShapesProblem(config.difficulty, rng));
   if (opKey === "pow") return P(generatePowProblem(config.difficulty, rng));
-  if (opKey === "round") return P(generateRoundProblem(config.difficulty, rng));
+  if (opKey === "round") return P(generateRoundProblem(config.difficulty, rng, track));
   if (opKey === "reduce") return P(generateReduceProblem(config.difficulty, rng));
   if (opKey === "si") return P(generateSIProblem(config.difficulty, rng));
   if (opKey === "f10") return P(generateFactorsOfTenProblem(config.difficulty, rng, track));
@@ -1247,7 +1228,7 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
   }
 
   if (opKey === "round") {
-    const items = getRoundUniverse(config.difficulty).map((type) => ({
+    const items = getRoundUniverse(config.difficulty, track).map((type) => ({
       value: makeRoundProblemFromKey(type.statsKey, rng),
       weight: getSelectionWeight(getMastery(problemStats, "round", type.statsKey, masteryLookup)),
     }));

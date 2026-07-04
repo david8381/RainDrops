@@ -426,7 +426,7 @@ function getSkillUniverseSize(opKey, level, track = TRACKS.standard) {
   }
 
   if (opKey === "round") {
-    return getRoundUniverse(level).length;
+    return getRoundUniverse(level, track).length;
   }
 
   if (opKey === "reduce") {
@@ -478,7 +478,7 @@ function getSkillUniverseProblems(opKey, level, track = TRACKS.standard) {
   }
 
   if (opKey === "round") {
-    return getRoundUniverse(level);
+    return getRoundUniverse(level, track);
   }
 
   if (opKey === "reduce") {
