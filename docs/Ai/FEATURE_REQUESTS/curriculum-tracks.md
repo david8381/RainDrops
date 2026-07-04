@@ -118,10 +118,14 @@ Agreed direction:
   writers use `ensureCoverage`. `PROFILE_VERSION` 3→4 migration folds existing
   progress into `tracks.standard`. e2e proves a Standard clear doesn't carry to
   Times Tables while facts do. 99 unit + 231 e2e (6 projects) green.
-- **C. Data-fy all 11 ops** (next) into `standard.js` — each op gets a declarative
-  `kind`; algorithmic pieces (shapes render, SI, factorization) stay as named
-  generator **strategies** the data selects (level DEFINITIONS become fully
-  declarative; the rendering code stays code). One op per commit, snapshot green each.
+- **C. Data-fy all 11 ops** ✅ — every op's level definition now lives in
+  `src/tracks/standard.js`, read via the threaded track (`track[op] ??
+  TRACKS.standard[op]`, so alternate tracks can override): f10 (maxDigits/maxPower),
+  factor (minN/maxN/levelOffset), round (per-level spec tuples), reduce (per-level
+  concept cells), pow (cumulative rung ladder), si (prefixes + unlock thresholds),
+  shapes (partial — the level gate `defs` + dimension bounds are data; per-shape
+  enumeration + area/volume formulas stay in game-core as the generation strategy).
+  One op per commit (1d41212…a2694c2), the byte-for-byte snapshot green at each.
 
 Still deferred: more real tracks (Saxon, Math-U-See — data additions once B+C land);
 per-op mastery thresholds stay global (seam: `TRACKS[id].progression`).
