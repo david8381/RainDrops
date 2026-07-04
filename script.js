@@ -6992,13 +6992,29 @@ if (finishBtn) {
   finishBtn.addEventListener("click", finishCurrentSession);
 }
 
-// Quit an in-progress challenge (Blitz/Wave/Worksheet) and return to the
-// ready/Start gate. Nothing is recorded — attempts only save on completion — so
-// this is a clean bail-out, not a "Finish" (which ends the whole session).
+// Quit an in-progress challenge (Blitz/Wave/Worksheet) and drop straight back
+// into normal practice — mirrors the challenge-complete transition (clear the
+// boss state + refresh) but abandons rather than records. Normal play resumes on
+// its own: hasStarted stays true and speed/drops are read-time overrides of
+// bossMode, so clearing it restores the player's settings. Unlike Restart it
+// keeps the run (and Cleared count) going; unlike Finish it does not end the
+// session.
 function quitChallenge() {
   if (!state.bossMode?.active) return;
   initAudio();
-  resetRunState();
+  state.bossMode = null;
+  state.isBreatherMode = false;
+  state.drops = [];
+  state.factorTargetId = null;
+  state.spawnTimer = 0;
+  resetCannonOverload({ clearCooldown: true });
+  updateBossHud();
+  updateBreatherHud();
+  updateControlDisplay();
+  updateDifficultyDisplays();
+  updateOpChits();
+  drawDrops();
+  answerInput.focus();
 }
 if (challengeExitBtn) {
   challengeExitBtn.tabIndex = -1;

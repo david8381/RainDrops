@@ -527,21 +527,29 @@ test.describe("desktop gameplay", () => {
     expect((await invoke(page, "getState")).opConfig.add.difficulty).toBe(1);
   });
 
-  test("Quit exits a challenge back to practice without ending the session", async ({ page }) => {
+  test("Quit exits a challenge back to live practice without ending the session", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
     await invoke(page, "startBoss", "add");
     expect((await invoke(page, "getState")).bossMode.active).toBe(true);
-    // The on-canvas escape hatch appears during a challenge.
+    // Board should be running the challenge, then Quit appears as the escape hatch.
     await expect(page.locator("#challengeExitBtn")).toBeVisible();
 
-    // Quit abandons the challenge (no report opens) and hides the exit button.
     await page.locator("#challengeExitBtn").click();
-    const state = await invoke(page, "getState");
-    expect(state.bossMode).toBe(null);
-    expect(state.viewingSharedReport).toBe(false);
+    let state = await invoke(page, "getState");
+    expect(state.bossMode).toBe(null);          // challenge abandoned
+    expect(state.hasStarted).toBe(true);        // still a LIVE run, not the paused gate
+    expect(state.isPaused).toBe(false);
+    expect(state.viewingSharedReport).toBe(false); // no report (not a Finish)
     await expect(page.locator("#challengeExitBtn")).toBeHidden();
     await expect(page.locator("#sessionReportOverlay")).toHaveCount(0);
+
+    // Normal practice actually resumes: the live spawn path now produces an
+    // ordinary add problem, not a boss/challenge drop.
+    await invoke(page, "clearDrops");
+    const drop = await invoke(page, "spawnGeneratedDrop");
+    expect(drop.opKey).toBe("add");
+    expect(drop.bossKind).toBeFalsy();
   });
 
   test("Start button pulses at the ready gate when a type is selected", async ({ page }) => {
