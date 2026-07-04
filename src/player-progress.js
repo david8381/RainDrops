@@ -11,6 +11,7 @@ import {
   operationDefaults,
   clamp,
 } from "./game-core.js";
+import { TRACKS } from "./curriculum.js";
 
 const STORAGE_KEY = "rainMath.profile.v1";
 const PROFILE_STORE_KEY = "rainMath.profiles.v1";
@@ -335,8 +336,9 @@ function createEmptySkill(opKey, nowMs = Date.now()) {
   };
 }
 
-function getSkillUniverseSize(opKey, level) {
-  const range = getDifficultyRange(opKey, level);
+function getSkillUniverseSize(opKey, level, track = TRACKS.standard) {
+  if (track?.[opKey]?.kind === "timesTable") return track[opKey].factors;
+  const range = getDifficultyRange(opKey, level, track);
   const count = Math.max(0, range.max - range.min + 1);
 
   if (opKey === "add" || opKey === "mul" || opKey === "div") {
@@ -379,12 +381,21 @@ function getSkillUniverseSize(opKey, level) {
   return Math.max(1, count);
 }
 
-function getSkillUniverseProblems(opKey, level) {
-  const range = getDifficultyRange(opKey, level);
+function getSkillUniverseProblems(opKey, level, track = TRACKS.standard) {
+  const symbols = { add: "+", sub: "-", mul: "×", div: "÷" };
+  const desc = track?.[opKey];
+  if (desc?.kind === "timesTable") {
+    const n = clamp(1, desc.maxLevel, Math.round(level || 1));
+    const list = [];
+    for (let b = 1; b <= desc.factors; b += 1) {
+      list.push({ statsKey: `${n},${b}`, text: `${n} ${symbols[opKey]} ${b}` });
+    }
+    return list;
+  }
+  const range = getDifficultyRange(opKey, level, track);
   const problems = [];
 
   if (opKey === "add" || opKey === "sub" || opKey === "mul" || opKey === "div") {
-    const symbols = { add: "+", sub: "-", mul: "×", div: "÷" };
     for (let a = range.min; a <= range.max; a += 1) {
       for (let b = range.min; b <= range.max; b += 1) {
         if (opKey === "sub" && b > a) continue;

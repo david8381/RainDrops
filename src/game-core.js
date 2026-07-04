@@ -1,3 +1,5 @@
+import { TRACKS } from "./curriculum.js";
+
 const operators = {
   add: { symbol: "+", fn: (a, b) => a + b },
   sub: { symbol: "-", fn: (a, b) => a - b },
@@ -124,16 +126,15 @@ function shiftDecimal(value, fromScale, shiftPower) {
   return String(value * pow10(-toScale));
 }
 
-function getDifficultyRange(opKey, difficulty) {
+function getDifficultyRange(opKey, difficulty, track = TRACKS.standard) {
   const d = clamp(1, 10, difficulty);
   const t = (d - 1) / 9;
+  const desc = track?.[opKey];
 
-  if (opKey === "add" || opKey === "sub") {
-    return { min: 1, max: Math.round(lerp(3, 20, t)) };
-  }
-
-  if (opKey === "mul" || opKey === "div") {
-    return { min: 1, max: Math.round(lerp(3, 12, t)) };
+  if (opKey === "add" || opKey === "sub" || opKey === "mul" || opKey === "div") {
+    if (desc?.kind === "timesTable") return { min: 1, max: desc.factors };
+    const r = desc?.kind === "range" ? desc : TRACKS.standard[opKey];
+    return { min: r.min, max: Math.round(lerp(r.maxLo, r.maxHi, t)) };
   }
 
   if (opKey === "f10") {
@@ -1130,9 +1131,9 @@ function generateFactorProblem(difficulty = 1, rng = Math.random) {
  * @param {() => number} [rng]
  * @returns {import('./types.js').Problem}
  */
-function generateProblem(opKey, opConfig, rng = Math.random) {
+function generateProblem(opKey, opConfig, rng = Math.random, track = TRACKS.standard) {
   const config = opConfig[opKey];
-  const range = getDifficultyRange(opKey, config.difficulty);
+  const range = getDifficultyRange(opKey, config.difficulty, track);
 
   // The sub-generators return valid Problems; cast to settle opKey (a string
   // literal TS widens to `string`) back to the OpKey union.
@@ -1146,12 +1147,19 @@ function generateProblem(opKey, opConfig, rng = Math.random) {
   if (opKey === "f10") return P(generateFactorsOfTenProblem(config.difficulty, rng));
 
   const op = operators[opKey];
+  const arithDesc = track?.[opKey];
   let a = 0;
   let b = 0;
   let answer = 0;
   let statsKey;
 
-  if (opKey === "div") {
+  if (arithDesc?.kind === "timesTable") {
+    // Level N is the N times table: N × (1..factors).
+    a = clamp(1, arithDesc.maxLevel, Math.round(config.difficulty || 1));
+    b = randInt(1, arithDesc.factors, rng);
+    answer = op.fn(a, b);
+    statsKey = `${a},${b}`;
+  } else if (opKey === "div") {
     const quotient = randInt(range.min, range.max, rng);
     b = randInt(range.min, range.max, rng);
     a = quotient * b;
@@ -1208,9 +1216,9 @@ function weightedPick(items, rng = Math.random) {
   return items[items.length - 1].value;
 }
 
-function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.random, masteryLookup = null) {
+function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.random, masteryLookup = null, track = TRACKS.standard) {
   const config = opConfig[opKey];
-  const range = getDifficultyRange(opKey, config.difficulty);
+  const range = getDifficultyRange(opKey, config.difficulty, track);
 
   if (opKey === "factor") {
     const nums = getFactorUniverseNumbers(config.difficulty);
@@ -1301,21 +1309,30 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
   }
 
   const op = operators[opKey];
+  const arithDesc = track?.[opKey];
   const pairs = [];
 
-  for (let a = range.min; a <= range.max; a += 1) {
-    for (let b = range.min; b <= range.max; b += 1) {
-      let statsKey;
-      if (opKey === "div") {
-        statsKey = `${a},${b}`;
-      } else if (opKey === "sub") {
-        if (b > a) continue;
-        statsKey = `${a},${b}`;
-      } else {
-        statsKey = `${a},${b}`;
+  if (arithDesc?.kind === "timesTable") {
+    const n = clamp(1, arithDesc.maxLevel, Math.round(config.difficulty || 1));
+    for (let b = 1; b <= arithDesc.factors; b += 1) {
+      const statsKey = `${n},${b}`;
+      pairs.push({ a: n, b, statsKey, weight: getSelectionWeight(getMastery(problemStats, opKey, statsKey, masteryLookup)) });
+    }
+  } else {
+    for (let a = range.min; a <= range.max; a += 1) {
+      for (let b = range.min; b <= range.max; b += 1) {
+        let statsKey;
+        if (opKey === "div") {
+          statsKey = `${a},${b}`;
+        } else if (opKey === "sub") {
+          if (b > a) continue;
+          statsKey = `${a},${b}`;
+        } else {
+          statsKey = `${a},${b}`;
+        }
+        const mastery = getMastery(problemStats, opKey, statsKey, masteryLookup);
+        pairs.push({ a, b, statsKey, weight: getSelectionWeight(mastery) });
       }
-      const mastery = getMastery(problemStats, opKey, statsKey, masteryLookup);
-      pairs.push({ a, b, statsKey, weight: getSelectionWeight(mastery) });
     }
   }
 
@@ -2048,10 +2065,16 @@ function randomFallTimeSec(maxFallTimeSec, rng = Math.random) {
  * @param {number} level
  * @returns {Set<string>}
  */
-function getAnswerUniverse(opKey, level) {
+function getAnswerUniverse(opKey, level, track = TRACKS.standard) {
   const set = new Set();
+  const arithDesc = track?.[opKey];
   if (opKey === "add" || opKey === "sub" || opKey === "mul" || opKey === "div") {
-    const { min, max } = getDifficultyRange(opKey, level);
+    if (arithDesc?.kind === "timesTable") {
+      const n = clamp(1, arithDesc.maxLevel, Math.round(level || 1));
+      for (let b = 1; b <= arithDesc.factors; b += 1) set.add(String(operators[opKey].fn(n, b)));
+      return set;
+    }
+    const { min, max } = getDifficultyRange(opKey, level, track);
     for (let a = min; a <= max; a += 1) {
       for (let b = min; b <= max; b += 1) {
         if (opKey === "div") set.add(String(a)); // answer is the quotient; a ranges over quotients
