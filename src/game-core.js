@@ -150,7 +150,7 @@ function getDifficultyRange(opKey, difficulty, track = TRACKS.standard) {
   }
 
   if (opKey === "si") {
-    return { min: 1, max: getSIPrefixesForDifficulty(d).length };
+    return { min: 1, max: getSIPrefixesForDifficulty(d, track).length };
   }
 
   if (opKey === "shapes") {
@@ -418,35 +418,20 @@ function generateRoundProblem(difficulty = 1, rng = Math.random, track = TRACKS.
   return makeRoundProblem(types[randInt(0, types.length - 1, rng)], rng);
 }
 
-const siPrefixes = [
-  { sym: "k", exp: 3, name: "kilo" },
-  { sym: "", exp: 0, name: "base" },
-  { sym: "c", exp: -2, name: "centi" },
-  { sym: "m", exp: -3, name: "milli" },
-  { sym: "h", exp: 2, name: "hecto" },
-  { sym: "da", exp: 1, name: "deca" },
-  { sym: "d", exp: -1, name: "deci" },
-  { sym: "M", exp: 6, name: "mega" },
-  { sym: "μ", exp: -6, name: "micro" },
-  { sym: "G", exp: 9, name: "giga" },
-  { sym: "n", exp: -9, name: "nano" },
-  { sym: "T", exp: 12, name: "tera" },
-  { sym: "p", exp: -12, name: "pico" },
-];
-
-function getSIPrefixesForDifficulty(difficulty) {
+function getSIPrefixesForDifficulty(difficulty, track = TRACKS.standard) {
+  const { prefixes, thresholds } = track.si ?? TRACKS.standard.si;
   const d = clamp(1, 10, difficulty);
-  const thresholds = [1, 1, 2, 3, 5, 6, 6, 7, 7, 8, 8, 9, 9];
-  return siPrefixes.filter((_, i) => d >= thresholds[i]);
+  return prefixes.filter((_, i) => d >= thresholds[i]);
 }
 
 // Display rows for the SI "Prefix Reference" table: all prefixes in descending
 // exponent order, each with its base-10 (superscript) and readable factor
 // strings, plus whether it is unlocked at the given difficulty. Pure data so
 // the renderer in script.js stays a thin DOM loop.
-function getSIReferenceRows(difficulty) {
-  const activeSyms = new Set(getSIPrefixesForDifficulty(difficulty).map((p) => p.sym));
-  return siPrefixes
+function getSIReferenceRows(difficulty, track = TRACKS.standard) {
+  const { prefixes } = track.si ?? TRACKS.standard.si;
+  const activeSyms = new Set(getSIPrefixesForDifficulty(difficulty, track).map((p) => p.sym));
+  return prefixes
     .slice()
     .sort((a, b) => b.exp - a.exp)
     .map((p) => {
@@ -474,8 +459,8 @@ function expDiffToConversion(expDiff) {
   return expDiff > 0 ? `*${factor}` : `/${factor}`;
 }
 
-function generateSIProblem(difficulty, rng = Math.random) {
-  const prefixes = getSIPrefixesForDifficulty(difficulty);
+function generateSIProblem(difficulty, rng = Math.random, track = TRACKS.standard) {
+  const prefixes = getSIPrefixesForDifficulty(difficulty, track);
   if (prefixes.length < 2) return null;
 
   let fromIdx = randInt(0, prefixes.length - 1, rng);
@@ -1109,7 +1094,7 @@ function generateProblem(opKey, opConfig, rng = Math.random, track = TRACKS.stan
   if (opKey === "pow") return P(generatePowProblem(config.difficulty, rng, track));
   if (opKey === "round") return P(generateRoundProblem(config.difficulty, rng, track));
   if (opKey === "reduce") return P(generateReduceProblem(config.difficulty, rng, track));
-  if (opKey === "si") return P(generateSIProblem(config.difficulty, rng));
+  if (opKey === "si") return P(generateSIProblem(config.difficulty, rng, track));
   if (opKey === "f10") return P(generateFactorsOfTenProblem(config.difficulty, rng, track));
 
   const op = operators[opKey];
@@ -1233,7 +1218,7 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
   }
 
   if (opKey === "si") {
-    const prefixes = getSIPrefixesForDifficulty(config.difficulty);
+    const prefixes = getSIPrefixesForDifficulty(config.difficulty, track);
     const pairs = [];
     for (let i = 0; i < prefixes.length; i += 1) {
       for (let j = 0; j < prefixes.length; j += 1) {
@@ -2051,7 +2036,7 @@ function getAnswerUniverse(opKey, level, track = TRACKS.standard) {
     return set;
   }
   if (opKey === "si") {
-    const prefixes = getSIPrefixesForDifficulty(level);
+    const prefixes = getSIPrefixesForDifficulty(level, track);
     for (const from of prefixes) {
       for (const to of prefixes) {
         if (from !== to) set.add(expDiffToConversion(from.exp - to.exp));
@@ -2305,7 +2290,6 @@ export {
   shiftDecimal,
   shiftDecimalSimple,
   siBaseUnits,
-  siPrefixes,
   getSIReferenceRows,
   toSuperscript,
   hashString,

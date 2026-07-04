@@ -96,4 +96,28 @@ export const standard = {
       { kind: "neg10", aFrom: 1, aTo: 6 },
     ],
   },
+
+  // SI unit conversions: `prefixes` (in unlock order) with each prefix's unlock
+  // threshold in `thresholds` — level N exposes prefixes[i] where N ≥
+  // thresholds[i]. The conversion/render math (siBaseUnits, expDiffToConversion)
+  // stays in game-core.
+  si: {
+    kind: "si",
+    prefixes: [
+      { sym: "k", exp: 3, name: "kilo" },
+      { sym: "", exp: 0, name: "base" },
+      { sym: "c", exp: -2, name: "centi" },
+      { sym: "m", exp: -3, name: "milli" },
+      { sym: "h", exp: 2, name: "hecto" },
+      { sym: "da", exp: 1, name: "deca" },
+      { sym: "d", exp: -1, name: "deci" },
+      { sym: "M", exp: 6, name: "mega" },
+      { sym: "μ", exp: -6, name: "micro" },
+      { sym: "G", exp: 9, name: "giga" },
+      { sym: "n", exp: -9, name: "nano" },
+      { sym: "T", exp: 12, name: "tera" },
+      { sym: "p", exp: -12, name: "pico" },
+    ],
+    thresholds: [1, 1, 2, 3, 5, 6, 6, 7, 7, 8, 8, 9, 9],
+  },
 };

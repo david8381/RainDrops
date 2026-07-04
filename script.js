@@ -1187,7 +1187,7 @@ function makeProblemFromUniverseEntry(opKey, entry, level = opConfig[opKey]?.dif
   }
   if (opKey === "si") {
     const [fromSym, toSym] = statsKey.split(",");
-    const prefixes = getSIPrefixesForDifficulty(level);
+    const prefixes = getSIPrefixesForDifficulty(level, getCurriculumTrack());
     const from = prefixes.find((prefix) => (prefix.sym || "base") === fromSym);
     const to = prefixes.find((prefix) => (prefix.sym || "base") === toSym);
     if (!from || !to) return null;
@@ -6477,7 +6477,7 @@ function buildGridStats(opKey, stats) {
 
 
 function buildSIReferenceTable() {
-  const rows = getSIReferenceRows(opConfig.si.difficulty);
+  const rows = getSIReferenceRows(opConfig.si.difficulty, getCurriculumTrack());
 
   const wrap = document.createElement("div");
   wrap.className = "si-ref-wrap";

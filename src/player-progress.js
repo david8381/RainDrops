@@ -413,7 +413,7 @@ function getSkillUniverseSize(opKey, level, track = TRACKS.standard) {
   }
 
   if (opKey === "si") {
-    const prefixes = getSIPrefixesForDifficulty(level);
+    const prefixes = getSIPrefixesForDifficulty(level, track);
     return prefixes.length * Math.max(0, prefixes.length - 1);
   }
 
@@ -486,7 +486,7 @@ function getSkillUniverseProblems(opKey, level, track = TRACKS.standard) {
   }
 
   if (opKey === "si") {
-    const prefixes = getSIPrefixesForDifficulty(level);
+    const prefixes = getSIPrefixesForDifficulty(level, track);
     for (const from of prefixes) {
       for (const to of prefixes) {
         if (from === to) continue;
