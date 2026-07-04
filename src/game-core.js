@@ -162,7 +162,8 @@ function getDifficultyRange(opKey, difficulty, track = TRACKS.standard) {
   }
 
   if (opKey === "factor") {
-    return { min: 4, max: FACTOR_MAX_N };
+    const f = desc ?? TRACKS.standard.factor;
+    return { min: f.minN, max: f.maxN };
   }
 
   return { min: 1, max: 10 };
@@ -1054,8 +1055,6 @@ function getFullFactorization(n) {
 //                   + (# primes with exponent > 1) + Ω(n) - 4
 // where Ω(n) is the count of prime factors with multiplicity. A level holds every
 // composite whose difficulty is <= level (cumulative), e.g. L1 = {6} (2·3).
-const FACTOR_MAX_N = 400;
-
 function primeIndex(p) {
   let count = 0;
   for (let k = 2; k <= p; k += 1) {
@@ -1088,19 +1087,20 @@ function factorDifficulty(n) {
   return primeIndex(largestPrime) + maxExponent + numPrimesWithPower + omega - 4;
 }
 
-function getFactorUniverseNumbers(level) {
-  // Level 1 of pure {6} was too thin, so the ladder is shifted by one: a level
-  // holds every composite of difficulty <= level + 1 (L1 = difficulty <= 2).
-  const lvl = clamp(1, 99, Math.round(level || 1)) + 1;
+function getFactorUniverseNumbers(level, track = TRACKS.standard) {
+  // Level 1 of pure {6} was too thin, so the ladder is shifted by levelOffset: a
+  // level holds every composite of difficulty <= level + levelOffset.
+  const { minN, maxN, levelOffset } = track.factor ?? TRACKS.standard.factor;
+  const lvl = clamp(1, 99, Math.round(level || 1)) + levelOffset;
   const nums = [];
-  for (let n = 4; n <= FACTOR_MAX_N; n += 1) {
+  for (let n = minN; n <= maxN; n += 1) {
     if (factorDifficulty(n) <= lvl) nums.push(n);
   }
   return nums;
 }
 
-function getFactorUniverse(level) {
-  return getFactorUniverseNumbers(level).map((n) => ({ statsKey: String(n), text: String(n) }));
+function getFactorUniverse(level, track = TRACKS.standard) {
+  return getFactorUniverseNumbers(level, track).map((n) => ({ statsKey: String(n), text: String(n) }));
 }
 
 function makeFactorProblem(n) {
@@ -1117,8 +1117,8 @@ function makeFactorProblem(n) {
   };
 }
 
-function generateFactorProblem(difficulty = 1, rng = Math.random) {
-  const nums = getFactorUniverseNumbers(difficulty);
+function generateFactorProblem(difficulty = 1, rng = Math.random, track = TRACKS.standard) {
+  const nums = getFactorUniverseNumbers(difficulty, track);
   const n = nums.length ? nums[randInt(0, nums.length - 1, rng)] : 6;
   return makeFactorProblem(n);
 }
@@ -1136,7 +1136,7 @@ function generateProblem(opKey, opConfig, rng = Math.random, track = TRACKS.stan
   // The sub-generators return valid Problems; cast to settle opKey (a string
   // literal TS widens to `string`) back to the OpKey union.
   const P = (p) => /** @type {import('./types.js').Problem} */ (p);
-  if (opKey === "factor") return P(generateFactorProblem(config.difficulty, rng));
+  if (opKey === "factor") return P(generateFactorProblem(config.difficulty, rng, track));
   if (opKey === "shapes") return P(generateShapesProblem(config.difficulty, rng));
   if (opKey === "pow") return P(generatePowProblem(config.difficulty, rng));
   if (opKey === "round") return P(generateRoundProblem(config.difficulty, rng));
@@ -1219,8 +1219,8 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
   const range = getDifficultyRange(opKey, config.difficulty, track);
 
   if (opKey === "factor") {
-    const nums = getFactorUniverseNumbers(config.difficulty);
-    if (nums.length === 0) return generateFactorProblem(config.difficulty, rng);
+    const nums = getFactorUniverseNumbers(config.difficulty, track);
+    if (nums.length === 0) return generateFactorProblem(config.difficulty, rng, track);
     const items = nums.map((n) => ({
       value: makeFactorProblem(n),
       weight: getSelectionWeight(getMastery(problemStats, "factor", String(n), masteryLookup)),

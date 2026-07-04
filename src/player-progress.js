@@ -418,7 +418,7 @@ function getSkillUniverseSize(opKey, level, track = TRACKS.standard) {
   }
 
   if (opKey === "factor") {
-    return getFactorUniverse(level).length;
+    return getFactorUniverse(level, track).length;
   }
 
   if (opKey === "f10") {
@@ -502,7 +502,7 @@ function getSkillUniverseProblems(opKey, level, track = TRACKS.standard) {
   }
 
   if (opKey === "factor") {
-    return getFactorUniverse(level);
+    return getFactorUniverse(level, track);
   }
 
   return [];

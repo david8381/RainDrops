@@ -18,4 +18,8 @@ export const standard = {
   // Factors of 10: cumulative types with (digits + power - 1) ≤ level, over
   // digits 1..maxDigits and powers 1..maxPower, each in × and ÷.
   f10: { kind: "f10", maxDigits: 4, maxPower: 4 },
+
+  // Prime factoring: composites n in [minN, maxN] whose factor-difficulty ≤
+  // level + levelOffset (cumulative).
+  factor: { kind: "factor", minN: 4, maxN: 400, levelOffset: 1 },
 };
