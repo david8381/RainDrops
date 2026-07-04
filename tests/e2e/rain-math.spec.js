@@ -243,6 +243,24 @@ test.describe("curriculum tracks", () => {
     expect(back.progressSummary.skills.mul.bossAttemptedForLevel).toBe(true);
   });
 
+  // The selector level is per-track: switching must NOT inherit the other track's
+  // level (a Standard L2 selector shouldn't open Times Tables at L2).
+  test("selector level does not leak across tracks on switch", async ({ page }) => {
+    await openApp(page);
+
+    // Sit at Standard mul level 2.
+    await invoke(page, "setOpDifficulty", "mul", 2, { force: true });
+    expect((await invoke(page, "getState")).opConfig.mul.difficulty).toBe(2);
+
+    // Switch to Times Tables → opens at level 1 (its own coverage), not 2.
+    const tt = await invoke(page, "setTrack", "timesTables");
+    expect(tt.opConfig.mul.difficulty).toBe(1);
+
+    // Switch back → Standard's own level 2 is restored.
+    const back = await invoke(page, "setTrack", "standard");
+    expect(back.opConfig.mul.difficulty).toBe(2);
+  });
+
   // Desktop-only: the diff-card is desktop chrome (mobile uses the keypad strip).
   test.describe("desktop diff card", () => {
     test.skip(({ isMobile }) => isMobile, "desktop-only diff cards");

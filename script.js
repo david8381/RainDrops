@@ -381,10 +381,13 @@ function heartbeatActiveSession({ persist = false } = {}) {
 
 function applyProfileSettingsToControls() {
   const settings = state.progressProfile.settings || {};
-  const savedDifficulties = settings.difficulties || {};
   const summary = summarizeProfile(state.progressProfile);
   for (const opKey of Object.keys(opConfig)) {
-    const savedLevel = savedDifficulties[opKey] ?? summary.skills[opKey]?.currentLevel;
+    // Resume from the ACTIVE track's saved level (per-track coverage), not the
+    // profile-global `settings.difficulties` — otherwise switching tracks would
+    // inherit the other track's selector position (e.g. Standard L2 → Times
+    // Tables would open at L2 the player hasn't earned there).
+    const savedLevel = summary.skills[opKey]?.currentLevel;
     // Resume at least at the level after the highest cleared boss, so a
     // temporarily lowered selector (e.g. to replay a cleared level) does not
     // strand the player below their actual progress on reload.
