@@ -138,7 +138,7 @@ function getDifficultyRange(opKey, difficulty, track = TRACKS.standard) {
   }
 
   if (opKey === "f10") {
-    return { min: 1, max: F10_MAX_DIGITS };
+    return { min: 1, max: (desc ?? TRACKS.standard.f10).maxDigits };
   }
 
   if (opKey === "round") {
@@ -172,14 +172,12 @@ function getDifficultyRange(opKey, difficulty, track = TRACKS.standard) {
 // is (significant digits, power of 10, ×/÷); the concrete number is random, so
 // mastery accrues per type rather than per value. difficulty = digits + power - 1,
 // and a level holds every type with digits + power - 1 <= level (cumulative).
-const F10_MAX_DIGITS = 4;
-const F10_MAX_POWER = 4;
-
-function f10TypesForLevel(level) {
+function f10TypesForLevel(level, track = TRACKS.standard) {
+  const { maxDigits, maxPower } = track.f10 ?? TRACKS.standard.f10;
   const lvl = clamp(1, 99, Math.round(level || 1));
   const types = [];
-  for (let digits = 1; digits <= F10_MAX_DIGITS; digits += 1) {
-    for (let power = 1; power <= F10_MAX_POWER; power += 1) {
+  for (let digits = 1; digits <= maxDigits; digits += 1) {
+    for (let power = 1; power <= maxPower; power += 1) {
       if (digits + power - 1 > lvl) continue;
       for (const dir of ["mul", "div"]) {
         types.push({ digits, power, dir, statsKey: `${dir},${digits},${power}` });
@@ -225,12 +223,12 @@ function makeF10ProblemFromKey(statsKey, rng = Math.random) {
   return makeFactorsOfTenProblem(f10TypeFromKey(statsKey), rng);
 }
 
-function getF10Universe(level) {
-  return f10TypesForLevel(level).map((type) => ({ statsKey: type.statsKey, text: f10TypeLabel(type) }));
+function getF10Universe(level, track = TRACKS.standard) {
+  return f10TypesForLevel(level, track).map((type) => ({ statsKey: type.statsKey, text: f10TypeLabel(type) }));
 }
 
-function generateFactorsOfTenProblem(difficulty = 1, rng = Math.random) {
-  const types = f10TypesForLevel(difficulty);
+function generateFactorsOfTenProblem(difficulty = 1, rng = Math.random, track = TRACKS.standard) {
+  const types = f10TypesForLevel(difficulty, track);
   return makeFactorsOfTenProblem(types[randInt(0, types.length - 1, rng)], rng);
 }
 
@@ -1144,7 +1142,7 @@ function generateProblem(opKey, opConfig, rng = Math.random, track = TRACKS.stan
   if (opKey === "round") return P(generateRoundProblem(config.difficulty, rng));
   if (opKey === "reduce") return P(generateReduceProblem(config.difficulty, rng));
   if (opKey === "si") return P(generateSIProblem(config.difficulty, rng));
-  if (opKey === "f10") return P(generateFactorsOfTenProblem(config.difficulty, rng));
+  if (opKey === "f10") return P(generateFactorsOfTenProblem(config.difficulty, rng, track));
 
   const op = operators[opKey];
   const arithDesc = track?.[opKey];
@@ -1300,7 +1298,7 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
   }
 
   if (opKey === "f10") {
-    const items = getF10Universe(config.difficulty).map((type) => ({
+    const items = getF10Universe(config.difficulty, track).map((type) => ({
       value: makeF10ProblemFromKey(type.statsKey, rng),
       weight: getSelectionWeight(getMastery(problemStats, "f10", type.statsKey, masteryLookup)),
     }));

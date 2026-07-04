@@ -422,7 +422,7 @@ function getSkillUniverseSize(opKey, level, track = TRACKS.standard) {
   }
 
   if (opKey === "f10") {
-    return getF10Universe(level).length;
+    return getF10Universe(level, track).length;
   }
 
   if (opKey === "round") {
@@ -474,7 +474,7 @@ function getSkillUniverseProblems(opKey, level, track = TRACKS.standard) {
   }
 
   if (opKey === "f10") {
-    return getF10Universe(level);
+    return getF10Universe(level, track);
   }
 
   if (opKey === "round") {
