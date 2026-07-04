@@ -84,13 +84,41 @@ Resolved for the MVP; see deferred follow-ups.
   generation is N×b → master records the 12 facts → level cap 12 → restore Standard.
 - 99 unit + 61 chromium e2e green at landing.
 
-## Outcome
-Landed the prepared seam (Standard as data) + the playable Times Tables track with a
-Login selector. Deliberate follow-ups:
-- **Per-track progress** — MVP shares `skills.mul.currentLevel` across tracks and
-  clamps on switch; true per-track level+stats scoping is future work.
-- **Finish the Standard refactor** — move the remaining non-arithmetic ops
-  (f10 → factor → si → reduce → round → pow → shapes gate) into `TRACKS.standard` as
-  data, one op per commit, snapshot+suite green each.
-- **More real tracks** (Saxon, Math-U-See) — now mostly data additions.
-- Per-op mastery/readiness thresholds stay global (seam: `TRACKS[id].progression`).
+## Outcome (step-5 MVP)
+Landed the prepared seam (arithmetic Standard as data) + the playable Times Tables
+track with a Login selector. Shipped as v0.3.146 (commit c3a4edc).
+
+## v2 — shared facts / per-track coverage (in progress)
+Review of the MVP surfaced two real gaps + a structural critique (all agreed with
+the user):
+- **Progress bled across tracks.** The MVP kept one shared per-op record holding
+  level, per-fact stats, *and* boss/mastery flags. So clearing Standard mul level 2
+  marked Times-Tables level 2 "mastered" even at ~50% coverage of the 2-times-table,
+  and reports couldn't say which track. Incoherent.
+- **Only ~40% data.** Only the arithmetic ranges were data; the other 7 ops still ran
+  on hardcoded game-core logic (deferred "step 6"). So Standard was *not* a full
+  representation.
+- **File layout** didn't scale (one short `curriculum.js`).
+
+**Key design distinction (user):** *per-problem fact stats are universal* (knowing
+`7×8` is knowing it, any track) and stay **shared**; *what a track covers* — level
+structure, which facts are in level N, boss/level clears, current level, "mastered
+level N" — is **per-track**.
+
+Agreed direction:
+- **A. File reorg** — `src/tracks/<track>.js` data modules + `src/curriculum.js` as
+  the thin registry (`TRACKS` + `getActiveTrack`). Behavior-preserving.
+- **B. Shared facts / per-track coverage** — split the op record: `problems`
+  (per-fact stats), `totals`, `recent`, `pressureTiers` stay **shared**;
+  `currentLevel` + `bossAttempts` + `levelAdvances` + `placementCredits` +
+  blitz/challenge bests move to `tracks[trackId]`. Readiness recomputes from the
+  shared facts against the **active track's** universe; the level-clear/"mastered"
+  gate reads the per-track records; reports label the track. Profile migration
+  (existing progress → `tracks.standard`) + `PROFILE_VERSION` bump.
+- **C. Data-fy all 11 ops** into `standard.js` — each op gets a declarative `kind`;
+  algorithmic pieces (shapes render, SI, factorization) stay as named generator
+  **strategies** the data selects (level DEFINITIONS become fully declarative; the
+  rendering code stays code). One op per commit, snapshot green each.
+
+Still deferred: more real tracks (Saxon, Math-U-See — data additions once B+C land);
+per-op mastery thresholds stay global (seam: `TRACKS[id].progression`).
