@@ -442,6 +442,8 @@ describe("difficulty ranges", () => {
     assert.equal(getCourseProgressPercent(10), 100);
     assert.equal(getCourseProgressPercent(0), 10); // clamps level to 1..10
     assert.equal(getCourseProgressPercent(99), 100);
+    assert.equal(getCourseProgressPercent(13, 13), 100);
+    assert.equal(getCourseProgressPercent(7, 13), 54);
 
     assert.equal(formatSIStatsKey("k,m"), "kilo → milli");
     assert.equal(formatSIStatsKey("base,M"), "(base) → mega");

@@ -193,16 +193,17 @@ test.describe("curriculum tracks", () => {
       Array.from({ length: 12 }, (_, i) => `3,${i + 1}`)
     );
 
-    // The track widens the level cap to 12 (Standard mul stops at 10).
-    const atL12 = await invoke(page, "setOpDifficulty", "mul", 12, { force: true });
-    expect(atL12.opConfig.mul.difficulty).toBe(12);
+    // The track widens the level cap to 13: L13 is mixed 1×1 through 12×12.
+    const atL13 = await invoke(page, "setOpDifficulty", "mul", 13, { force: true });
+    expect(atL13.opConfig.mul.difficulty).toBe(13);
+    expect(atL13.progressSummary.skills.mul.universeCount).toBe(144);
   });
 
   test("switching back to Standard restores every op and the 10-level cap", async ({ page }) => {
     await openApp(page);
 
     await invoke(page, "setTrack", "timesTables");
-    await invoke(page, "setOpDifficulty", "mul", 12, { force: true });
+    await invoke(page, "setOpDifficulty", "mul", 13, { force: true });
     await expect(page.locator(".op-chit:visible")).toHaveCount(1);
 
     // Back to Standard: all 11 chits return and the mul level clamps to 10.
@@ -259,7 +260,11 @@ test.describe("curriculum tracks", () => {
 
       await invoke(page, "setOpDifficulty", "mul", 12, { force: true });
       await expect(page.locator('.diff-card[data-op="mul"] .diff-value')).toHaveText("12");
-      await expect(page.locator('.diff-card[data-op="mul"]')).toHaveAttribute("aria-valuemax", "12");
+      await expect(page.locator('.diff-card[data-op="mul"]')).toHaveAttribute("aria-valuemax", "13");
+
+      await invoke(page, "setOpDifficulty", "mul", 13, { force: true });
+      await expect(page.locator('.diff-card[data-op="mul"] .diff-value')).toHaveText("13");
+      await expect(page.locator('.diff-card[data-op="mul"] .diff-range')).toHaveText("1–12");
     });
   });
 });

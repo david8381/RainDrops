@@ -37,7 +37,7 @@ describe("track swap changes the curriculum (Times Tables)", () => {
     assert.equal(getActiveTrack(undefined), TRACKS.standard);
   });
 
-  it("mul level N is the N times table (N×1..12), and differs from Standard", () => {
+  it("mul levels are explicit table levels plus a final mixed review, and differ from Standard", () => {
     // Level 3 = the 3 times table.
     assert.deepEqual(getDifficultyRange("mul", 3, tt), { min: 1, max: 12 });
     assert.equal(getSkillUniverseSize("mul", 3, tt), 12);
@@ -45,10 +45,13 @@ describe("track swap changes the curriculum (Times Tables)", () => {
       getSkillUniverseProblems("mul", 3, tt),
       Array.from({ length: 12 }, (_, i) => ({ statsKey: `3,${i + 1}`, text: `3 × ${i + 1}` }))
     );
-    // Level 7 = the 7 times table; caps at 12 levels.
+    // Level 7 = the 7 times table.
     assert.deepEqual(getSkillUniverseProblems("mul", 7, tt)[6], { statsKey: "7,7", text: "7 × 7" });
-    assert.equal(getSkillUniverseSize("mul", 12, tt), 12);
-    assert.equal(getSkillUniverseSize("mul", 99, tt), 12); // clamps
+    // Final level is mixed review: every fact from 1×1 through 12×12.
+    assert.equal(getSkillUniverseSize("mul", 13, tt), 144);
+    assert.equal(getSkillUniverseSize("mul", 99, tt), 144); // clamps
+    assert.deepEqual(getSkillUniverseProblems("mul", 13, tt)[0], { statsKey: "1,1", text: "1 × 1" });
+    assert.deepEqual(getSkillUniverseProblems("mul", 13, tt).at(-1), { statsKey: "12,12", text: "12 × 12" });
 
     // Genuinely different from the Standard grid at the same level.
     assert.notDeepEqual(getSkillUniverseProblems("mul", 3, tt), getSkillUniverseProblems("mul", 3));

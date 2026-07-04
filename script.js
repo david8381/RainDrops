@@ -70,6 +70,7 @@ const {
   shouldPromptBossAttempt,
   getMasteryGateReason,
   getReplayLockReason,
+  getTrackOpMaxLevel,
   formatDropSeconds,
   formatBlitzResult,
   formatWaveResult,
@@ -963,7 +964,7 @@ function recordMasteryAdvance(opKey, level = opConfig[opKey]?.difficulty) {
 function advanceMasteredLevel(opKey) {
   if (!opConfig[opKey] || isControlLocked()) return false;
   const currentLevel = opConfig[opKey].difficulty;
-  if (currentLevel >= 10) return false;
+  if (currentLevel >= getOpMaxLevel(opKey)) return false;
   const skill = getProgressSkill(opKey);
   if (!skill?.bossReady && !skill?.levelAdvancedForLevel && !skill?.bossAttemptedForLevel) {
     showLevelGateFeedback(opKey);
@@ -1001,12 +1002,10 @@ function getCurriculumTrack() {
   return getActiveTrack(state.progressProfile?.activeTrack);
 }
 
-// Highest selectable level for an op under the active track. Tracks that redefine
-// an op with an explicit `maxLevel` (e.g. Times Tables mul = 12) widen the range;
-// everything else keeps the classic 10-level cap.
+// Highest selectable level for an op under the active track. Standard keeps the
+// classic 10-level cap; explicit level-list tracks can define their own length.
 function getOpMaxLevel(opKey) {
-  const desc = getCurriculumTrack()[opKey];
-  return typeof desc?.maxLevel === "number" ? desc.maxLevel : 10;
+  return getTrackOpMaxLevel(opKey, getCurriculumTrack());
 }
 
 function getProfileMasteryForGeneration(opKey, statsKey) {
@@ -2131,13 +2130,14 @@ function completeBossVictory() {
     result: "cleared",
   });
   if (mode === "full") {
+    const maxLevel = getOpMaxLevel(opKey);
     state.progressProfile = recordBossAttempt(state.progressProfile, opKey, {
       pressureTier: pressure.key,
       speedPercent: pressure.speed,
       spawnRate: pressure.rate,
     });
     saveProfile(state.progressProfile);
-    if (level < 10) {
+    if (level < maxLevel) {
       setDifficulty(opKey, level + 1, { force: true });
     } else {
       syncProgressSettings();
@@ -2146,10 +2146,11 @@ function completeBossVictory() {
     saveProfile(state.progressProfile);
   }
   if (mode === "full") {
+    const maxLevel = getOpMaxLevel(opKey);
     state.lastBossVictory = {
       opKey,
       level,
-      advanced: level < 10,
+      advanced: level < maxLevel,
       wave1: state.bossMode.fullRunScores?.blitz ?? null,
       wave2: state.bossMode.fullRunScores?.wave ?? null,
       bossTimeMs: durationMs,
@@ -2157,7 +2158,7 @@ function completeBossVictory() {
   }
   state.bossMode.phase = "victory";
   state.bossMode.message = mode === "full"
-    ? level < 10 ? `Boss cleared: Level ${level + 1} unlocked` : "Boss cleared"
+    ? level < getOpMaxLevel(opKey) ? `Boss cleared: Level ${level + 1} unlocked` : "Boss cleared"
     : `Worksheet time: ${formatDuration(durationMs)}`;
   state.bossMode.victoryMs = BOSS_VICTORY_MS;
   updateBossHud();
@@ -3786,7 +3787,7 @@ function showBossOffer(opKey) {
   closeBossOffer();
   const skill = getProgressSkill(opKey);
   const level = opConfig[opKey]?.difficulty;
-  const canAdvance = level < 10;
+  const canAdvance = level < getOpMaxLevel(opKey);
   const ready = Boolean(skill?.bossReady);
   const overlay = document.createElement("div");
   overlay.className = "overlay boss-offer-overlay";
@@ -3889,7 +3890,7 @@ function getShareBadgeData(opKey, level) {
   // Resolve the active track's coverage so currentLevel / boss clears are this
   // track's, not a stale flat field.
   const skill = viewSkillForTrack(rawSkill, getCurriculumTrack().id);
-  const numericLevel = clamp(1, 10, Math.round(Number(level) || skill.currentLevel || 1));
+  const numericLevel = clamp(1, getOpMaxLevel(opKey), Math.round(Number(level) || skill.currentLevel || 1));
   const playerName = state.progressProfile.user?.name && state.progressProfile.user.name !== "Local Player"
     ? state.progressProfile.user.name
     : "A Rain Math player";
@@ -3908,7 +3909,7 @@ function getShareBadgeData(opKey, level) {
 
 function getRecapDisplayData(data) {
   const opKey = data?.opKey || "";
-  const level = clamp(1, 10, Math.round(Number(data?.level) || 1));
+  const level = clamp(1, 99, Math.round(Number(data?.level) || 1));
   const playerName = data?.playerName || data?.name || "A Rain Math player";
   const blitz = data?.blitz || null;
   const wave = data?.wave || null;
@@ -4222,13 +4223,14 @@ function formatBadgeText(opKey, skill) {
 
 function formatOpChitTip(opKey, baseTip) {
   const level = opConfig[opKey]?.difficulty || 1;
-  const progress = getCourseProgressPercent(level);
+  const maxLevel = getOpMaxLevel(opKey);
+  const progress = getCourseProgressPercent(level, maxLevel);
   const fallbackTitle = opDisplayNames[opKey] || opKey;
   const lines = String(baseTip || fallbackTitle).split("\n");
   const title = lines.shift() || fallbackTitle;
   return [
     title,
-    `Level ${level} of 10 · Course ${progress}%`,
+    `Level ${level} of ${maxLevel} · Course ${progress}%`,
     ...lines,
   ].join("\n");
 }
@@ -4240,7 +4242,7 @@ function updateOpChitProgress() {
     const baseTip = btn.dataset.baseTip || btn.dataset.tip || "";
     if (!btn.dataset.baseTip) btn.dataset.baseTip = baseTip;
     const level = opConfig[opKey].difficulty;
-    const progress = getCourseProgressPercent(level);
+    const progress = getCourseProgressPercent(level, getOpMaxLevel(opKey));
     const tip = formatOpChitTip(opKey, baseTip);
     btn.dataset.tip = tip;
     btn.dataset.level = String(level);
@@ -5133,7 +5135,7 @@ function recapDataFromPayload(payload) {
   return {
     opKey,
     opName: opDisplayNames[opKey] || opKey || "Math",
-    level: clamp(1, 10, Math.round(Number(payload.level) || 1)),
+    level: clamp(1, 99, Math.round(Number(payload.level) || 1)),
     playerName: typeof payload.name === "string" && payload.name.trim()
       ? payload.name.trim()
       : "A Rain Math player",
@@ -5797,7 +5799,8 @@ function makePlacementDrop(entry) {
 
 function preparePlacementLevel(level) {
   if (!state.placementState?.active) return;
-  const nextLevel = clamp(1, 10, Math.round(level || 1));
+  const maxLevel = getOpMaxLevel(state.placementState.opKey);
+  const nextLevel = clamp(1, maxLevel, Math.round(level || 1));
   const queue = shuffleArray(getPlacementFrontierProblems(state.placementState.opKey, nextLevel));
   state.placementState.level = nextLevel;
   state.placementState.stage = "running";
@@ -5829,7 +5832,7 @@ function startPlacementRun(opKey, level = 1) {
     stage: "running",
     runId: `placement-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     opKey,
-    level: clamp(1, 10, Math.round(level || 1)),
+    level: clamp(1, getOpMaxLevel(opKey), Math.round(level || 1)),
     passedLevel: 0,
     totalAsked: 0,
     totalCorrect: 0,
@@ -5902,8 +5905,9 @@ function climbPlacementLevel() {
   if (!state.placementState?.active) return;
   recordPlacementLevelSummary();
   state.placementState.passedLevel = Math.max(state.placementState.passedLevel, state.placementState.level);
-  if (state.placementState.level >= 10) {
-    finishPlacementRun({ recommendedLevel: 10, reason: "cleared every level" });
+  const maxLevel = getOpMaxLevel(state.placementState.opKey);
+  if (state.placementState.level >= maxLevel) {
+    finishPlacementRun({ recommendedLevel: maxLevel, reason: "cleared every level" });
   } else {
     preparePlacementLevel(state.placementState.level + 1);
   }
@@ -5990,7 +5994,11 @@ function finishPlacementRun({ recommendedLevel, reason = "" } = {}) {
   state.placementState.active = false;
   state.placementState.stage = "result";
   state.placementState.reason = reason;
-  state.placementState.recommendedLevel = clamp(1, 10, Math.round(recommendedLevel || state.placementState.level || 1));
+  state.placementState.recommendedLevel = clamp(
+    1,
+    getOpMaxLevel(state.placementState.opKey),
+    Math.round(recommendedLevel || state.placementState.level || 1)
+  );
   state.drops = state.drops.filter((drop) => drop.placementRunId !== runId);
   if (state.factorTargetId !== null && !state.drops.some((drop) => drop.id === state.factorTargetId)) {
     state.factorTargetId = null;
@@ -6007,7 +6015,7 @@ function acceptPlacementLevel(level = state.placementState?.recommendedLevel || 
   if (!state.placementState?.opKey) return;
   const opKey = state.placementState.opKey;
   const runId = state.placementState.runId;
-  const nextLevel = clamp(1, 10, Math.round(level || 1));
+  const nextLevel = clamp(1, getOpMaxLevel(opKey), Math.round(level || 1));
   const set = getOpSet(opKey);
   for (const key of Object.keys(opConfig)) {
     if (key === opKey) {
@@ -6104,7 +6112,7 @@ function renderPlacementResult(card) {
   use.textContent = `Use Level ${level}`;
   use.addEventListener("click", () => acceptPlacementLevel(level));
   actions.append(close, use);
-  if (level < 10) {
+  if (level < getOpMaxLevel(state.placementState.opKey)) {
     const tryNext = document.createElement("button");
     tryNext.type = "button";
     tryNext.textContent = `Try Level ${level + 1}`;
@@ -6363,7 +6371,7 @@ function formatProfileUpdatedAt(value) {
 
 // Switch the active player's curriculum track (see src/curriculum.js), then
 // fully reconfigure the game for it: clamp each op's level into the new track's
-// range (so a Times-Tables level 12 doesn't strand when switching back to
+// range (so a Times-Tables level 13 doesn't strand when switching back to
 // Standard's 10), persist, and re-apply the profile (op gating + chits + cards).
 function setActiveTrackForProfile(trackId) {
   const track = getActiveTrack(trackId);
@@ -7679,7 +7687,7 @@ function installTestHooks() {
       const data = getShareBadgeData(opKey, level || opConfig[opKey]?.difficulty || 1);
       if (!data) return "";
       const payload = buildRecapPayload(data);
-      payload.level = Math.min(10, (payload.level || 1) + 1);
+      payload.level = (payload.level || 1) + 1;
       return encodeSharePayload(payload);
     },
     getBackupCode() {

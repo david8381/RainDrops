@@ -1,5 +1,6 @@
 import {
   expDiffToConversion,
+  getArithmeticLevelPairs,
   getDifficultyRange,
   getF10Universe,
   getFactorUniverse,
@@ -10,6 +11,7 @@ import {
   getSIPrefixesForDifficulty,
   operationDefaults,
   clamp,
+  getTrackOpMaxLevel,
 } from "./game-core.js";
 import { TRACKS, getActiveTrack } from "./curriculum.js";
 
@@ -25,6 +27,7 @@ const BOSS_READY_SCORE = 100;
 const FINISH_LEVEL_FOCUS_SCORE = 80;
 const DEFAULT_START_LEVEL = 1;
 const LEGACY_START_LEVEL = 3;
+const MAX_STORED_LEVEL = 99;
 const MIGRATED_USER_ID = "david";
 const MIGRATED_USER_NAME = "david";
 const TEXT_SIZE_OPTIONS = ["normal", "large", "huge"];
@@ -200,7 +203,7 @@ function normalizeSessionResponseMs(value) {
 
 function createSessionLevelSnapshot(raw = {}, fallbackLevel = raw.level) {
   return {
-    level: clamp(1, 10, Math.round(Number.isFinite(raw.level) ? raw.level : fallbackLevel || 1)),
+    level: clamp(1, MAX_STORED_LEVEL, Math.round(Number.isFinite(raw.level) ? raw.level : fallbackLevel || 1)),
     readiness: clamp(0, 100, Math.round(Number.isFinite(raw.readiness) ? raw.readiness : 0)),
     masteredCount: Math.max(0, Math.round(Number.isFinite(raw.masteredCount) ? raw.masteredCount : 0)),
     universeCount: Math.max(0, Math.round(Number.isFinite(raw.universeCount) ? raw.universeCount : 0)),
@@ -215,7 +218,7 @@ function normalizeSessionLevelSnapshots(raw = {}) {
     Object.entries(raw)
       .filter(([, value]) => value && typeof value === "object")
       .map(([level, value]) => {
-        const normalizedLevel = clamp(1, 10, Math.round(Number(level) || value.level || 1));
+        const normalizedLevel = clamp(1, MAX_STORED_LEVEL, Math.round(Number(level) || value.level || 1));
         return [String(normalizedLevel), createSessionLevelSnapshot(value, normalizedLevel)];
       })
   );
@@ -392,7 +395,8 @@ function createEmptySkill(opKey, nowMs = Date.now()) {
 }
 
 function getSkillUniverseSize(opKey, level, track = TRACKS.standard) {
-  if (track?.[opKey]?.kind === "timesTable") return track[opKey].factors;
+  const levelPairs = getArithmeticLevelPairs(opKey, level, track);
+  if (levelPairs) return levelPairs.length;
   const range = getDifficultyRange(opKey, level, track);
   const count = Math.max(0, range.max - range.min + 1);
 
@@ -438,14 +442,12 @@ function getSkillUniverseSize(opKey, level, track = TRACKS.standard) {
 
 function getSkillUniverseProblems(opKey, level, track = TRACKS.standard) {
   const symbols = { add: "+", sub: "-", mul: "×", div: "÷" };
-  const desc = track?.[opKey];
-  if (desc?.kind === "timesTable") {
-    const n = clamp(1, desc.maxLevel, Math.round(level || 1));
-    const list = [];
-    for (let b = 1; b <= desc.factors; b += 1) {
-      list.push({ statsKey: `${n},${b}`, text: `${n} ${symbols[opKey]} ${b}` });
-    }
-    return list;
+  const levelPairs = getArithmeticLevelPairs(opKey, level, track);
+  if (levelPairs) {
+    return levelPairs.map(({ a, b, statsKey }) => {
+      if (opKey === "div") return { statsKey, text: `${a * b} ${symbols[opKey]} ${b}` };
+      return { statsKey, text: `${a} ${symbols[opKey]} ${b}` };
+    });
   }
   const range = getDifficultyRange(opKey, level, track);
   const problems = [];
@@ -604,7 +606,7 @@ function normalizeLevelAdvances(advances = []) {
     .filter((advance) => advance && typeof advance === "object")
     .map((advance) => ({
       ...advance,
-      level: clamp(1, 10, Math.round(Number.isFinite(advance.level) ? advance.level : 1)),
+      level: clamp(1, MAX_STORED_LEVEL, Math.round(Number.isFinite(advance.level) ? advance.level : 1)),
       readiness: clamp(0, 100, Math.round(Number.isFinite(advance.readiness) ? advance.readiness : 0)),
       result: advance.result || "mastered",
       inferred: Boolean(advance.inferred),
@@ -625,7 +627,7 @@ function normalizeBlitzAttempts(attempts = []) {
     const scoreFallback = durationMs !== null ? Math.round(durationMs / 1000) : speedPercent;
     return {
       ...attempt,
-      level: clamp(1, 10, Math.round(Number.isFinite(attempt.level) ? attempt.level : 1)),
+      level: clamp(1, MAX_STORED_LEVEL, Math.round(Number.isFinite(attempt.level) ? attempt.level : 1)),
       score: clamp(0, 999999, Math.round(Number.isFinite(attempt.score) ? attempt.score : scoreFallback)),
       durationMs,
       speedPercent,
@@ -668,7 +670,7 @@ function normalizeChallengeAttempts(attempts = []) {
       return {
         ...attempt,
         type,
-        level: clamp(1, 10, Math.round(Number.isFinite(attempt.level) ? attempt.level : 1)),
+        level: clamp(1, MAX_STORED_LEVEL, Math.round(Number.isFinite(attempt.level) ? attempt.level : 1)),
         score,
         durationMs,
         fastestDropSeconds,
@@ -693,8 +695,8 @@ function normalizePlacementCredits(credits = []) {
     .filter((credit) => credit && typeof credit === "object")
     .map((credit) => ({
       ...credit,
-      level: clamp(1, 10, Math.round(Number.isFinite(credit.level) ? credit.level : 1)),
-      placedOutThrough: clamp(0, 10, Math.round(Number.isFinite(credit.placedOutThrough) ? credit.placedOutThrough : 0)),
+      level: clamp(1, MAX_STORED_LEVEL, Math.round(Number.isFinite(credit.level) ? credit.level : 1)),
+      placedOutThrough: clamp(0, MAX_STORED_LEVEL, Math.round(Number.isFinite(credit.placedOutThrough) ? credit.placedOutThrough : 0)),
       problemCount: Math.max(0, Math.round(Number.isFinite(credit.problemCount) ? credit.problemCount : 0)),
       result: credit.result || "placed-out",
     }));
@@ -1017,8 +1019,7 @@ function getSkillSessionLevelSnapshots(profile, opKey) {
   const skill = profile.skills?.[opKey];
   if (!skill) return {};
   const track = getActiveTrack(profile.activeTrack);
-  const desc = track[opKey];
-  const maxLevel = desc?.kind === "timesTable" ? desc.maxLevel : 10;
+  const maxLevel = getTrackOpMaxLevel(opKey, track);
   const highestLevel = clamp(1, maxLevel, Math.max(1, Math.round(readCoverage(skill, track.id).currentLevel || 1)));
   const levels = {};
   for (let level = 1; level <= highestLevel; level += 1) {
@@ -1264,7 +1265,7 @@ function recordBossAttempt(profile, opKey, optionsOrNowMs = Date.now()) {
   const track = getActiveTrack(profile.activeTrack);
   const coverage = ensureCoverage(skill, track.id);
   const { nowMs, pressure, speedPercent, spawnRate } = parseBossAttemptOptions(profile, optionsOrNowMs);
-  const level = coverage.currentLevel;
+  const level = clamp(1, getTrackOpMaxLevel(opKey, track), Math.round(coverage.currentLevel || 1));
   const at = nowIso(nowMs);
   const summary = computeSkillReadiness(skill, track);
   const view = viewSkillForTrack(skill, track.id);
@@ -1302,7 +1303,7 @@ function recordLevelAdvance(profile, opKey, options = {}) {
   const coverage = ensureCoverage(skill, track.id);
   const view = viewSkillForTrack(skill, track.id);
   const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
-  const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : coverage.currentLevel));
+  const level = clamp(1, getTrackOpMaxLevel(opKey, track), Math.round(Number.isFinite(options.level) ? options.level : coverage.currentLevel));
   const at = nowIso(nowMs);
   for (let clearedLevel = 1; clearedLevel <= level; clearedLevel += 1) {
     if (hasLevelAdvanceForLevel(view, clearedLevel)) continue;
@@ -1445,7 +1446,7 @@ function getChallengeBests(skill, level = getBlitzUnlockedLevel(skill)) {
 // Per-level challenge bests for levels 1..currentLevel. Each level shows its own
 // best (or a better equal-or-higher level's), and null when never played.
 function getChallengeBestsByLevel(skill) {
-  const maxLevel = clamp(1, 10, Math.max(
+  const maxLevel = clamp(1, MAX_STORED_LEVEL, Math.max(
     Math.round(skill?.currentLevel || 1),
     getUnlockedLevel(skill) + 1
   ));
@@ -1470,7 +1471,7 @@ function recordChallengeAttempt(profile, opKey, options = {}) {
   const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
   const at = nowIso(nowMs);
   const type = ["blitz", "wave", "boss"].includes(options.type) ? options.type : "blitz";
-  const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : getBlitzUnlockedLevel(view) || coverage.currentLevel));
+  const level = clamp(1, getTrackOpMaxLevel(opKey, track), Math.round(Number.isFinite(options.level) ? options.level : getBlitzUnlockedLevel(view) || coverage.currentLevel));
   const durationMs = Number.isFinite(options.durationMs) ? Math.max(0, Math.round(options.durationMs)) : null;
   const fastestDropSeconds = Number.isFinite(options.fastestDropSeconds)
     ? Math.max(0.1, Math.round(options.fastestDropSeconds * 10) / 10)
@@ -1518,7 +1519,7 @@ function recordBlitzAttempt(profile, opKey, options = {}) {
   const view = viewSkillForTrack(skill, track.id);
   const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
   const at = nowIso(nowMs);
-  const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : getBlitzUnlockedLevel(view) || coverage.currentLevel));
+  const level = clamp(1, getTrackOpMaxLevel(opKey, track), Math.round(Number.isFinite(options.level) ? options.level : getBlitzUnlockedLevel(view) || coverage.currentLevel));
   const speedPercent = normalizeSpeedPercent(options.speedPercent ?? options.maxSpeedPercent ?? profile.settings?.speed);
   const load = normalizeLoad(options.spawnRate ?? options.maxDropLimit ?? profile.settings?.rate);
   const durationMs = Number.isFinite(options.durationMs) ? Math.max(0, Math.round(options.durationMs)) : null;
@@ -1695,10 +1696,11 @@ function recordPlacementCredit(profile, opKey, options = {}, nowMs = Date.now())
   const skill = profile.skills[opKey];
   const track = getActiveTrack(profile.activeTrack);
   const coverage = ensureCoverage(skill, track.id);
-  const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : coverage.currentLevel || 1));
+  const maxLevel = getTrackOpMaxLevel(opKey, track);
+  const level = clamp(1, maxLevel, Math.round(Number.isFinite(options.level) ? options.level : coverage.currentLevel || 1));
   const placedOutThrough = clamp(
     0,
-    10,
+    maxLevel,
     Math.round(Number.isFinite(options.placedOutThrough) ? options.placedOutThrough : level - 1)
   );
   const source = options.source || "test-me";
@@ -2111,7 +2113,7 @@ function summarizeSessionOperationLevels(operation) {
   levels.add(String(operation.ended.level));
   return [...levels]
     .map((levelKey) => {
-      const level = clamp(1, 10, Math.round(Number(levelKey) || 1));
+      const level = clamp(1, MAX_STORED_LEVEL, Math.round(Number(levelKey) || 1));
       const started = createSessionLevelSnapshot(startLevels[levelKey] || (
         operation.started.level === level ? operation.started : { level }
       ), level);

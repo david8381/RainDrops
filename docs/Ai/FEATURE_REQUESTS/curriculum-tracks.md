@@ -1,9 +1,9 @@
 # Feature: Curriculum Tracks (data-driven levels)
 
-Status: landed (step 5 — playable Times Tables demo)
-Owner: Claude
-Last Updated: 2026-07-04
-Related Commits: 5962132, bd3731e (steps 1–4); + this step's commit (step 5)
+Status: landed (v2 phase D — human-readable arithmetic level lists)
+Owner: Claude & Codex
+Last Updated: 2026-07-05
+Related Commits: 5962132, bd3731e (steps 1–4), c3a4edc (step 5), ef8870a (A), 4363fe3 (B), 1d41212…a2694c2 (C), + phase D (arithmeticLevels)
 
 ## User Request
 "A way to monetize this might be to offer tracks (e.g. Math-U-See, Saxon) — and
@@ -30,7 +30,8 @@ actually see this functionality in action."
   - `standard`: arithmetic ops are `{ kind: "range", min, maxLo, maxHi }` (the old
     `getDifficultyRange` lerp, now as data). Non-arithmetic ops are *not yet* on the
     track — they fall back to game-core's built-in behavior (deferred; see below).
-  - `timesTables`: `ops: ["mul"]`, `mul: { kind: "timesTable", maxLevel: 12, factors: 12 }`.
+  - `timesTables`: `ops: ["mul"]`, with `mul.kind = "arithmeticLevels"` and an explicit
+    `levels` list: 1s table, 2s table, ..., 12s table, then a mixed 1×1-12×12 review.
 - **The seam**: an optional trailing `track = TRACKS.standard` parameter on the
   functions that map level → universe/difficulty. game-core stays pure/DOM-free (no
   globals, no import cycle); existing callers omit the arg → Standard → the existing
@@ -41,9 +42,11 @@ actually see this functionality in action."
     readiness chain (`computeSkillReadiness`, `…ForLevel`, `updateSkillReadiness`,
     practice/finish-level helpers). `summarizeProfile` resolves the profile's track
     once and threads it down, so every readiness consumer becomes track-aware.
-- **New `timesTable` kind**: level N → `{ N×b : b in 1..factors }`, statsKey `"N,b"`,
-  text `"N × b"`. StatsKeys are the *same shape* as Standard mul, so per-fact mastery
-  stats carry over across tracks (switching doesn't corrupt stats).
+- **New `arithmeticLevels` kind**: each level describes operand ranges or exact
+  pairs (`a`, `b`, `pairs`), and game-core expands that one shape into generation,
+  weighted practice, answer universes, mastery universes, and boss worksheets.
+  StatsKeys are still `"a,b"`, so per-fact mastery stats carry over across tracks
+  (switching doesn't corrupt stats).
 - **Activation**: profile field `activeTrack` (additive; defaulted in
   `createDefaultProfile`, back-filled via the `ensureProfileShape` spread; **no
   `PROFILE_VERSION` bump**). script.js resolves `getActiveTrack(profile.activeTrack)`
@@ -51,9 +54,9 @@ actually see this functionality in action."
 - **Op gating**: when a track sets `ops`, script.js hides the other op chits, forces
   only those ops enabled (`applyTrackOpGating`), guards `toggleOp`, and `getEnabledOps`
   filters to the allowed set. Standard (`ops: null`) is unchanged.
-- **Level cap**: `getOpMaxLevel(opKey)` = the track's `maxLevel` for that op (12 for
-  Times Tables mul, else 10). Used by `setDifficulty`, the diff-card `aria-valuemax`,
-  placement, and the resume clamp.
+- **Level cap**: `getOpMaxLevel(opKey)` = `getTrackOpMaxLevel(opKey, track)` (level-list
+  length, explicit `maxLevel`, else the Standard 10). Used by `setDifficulty`, the
+  diff-card `aria-valuemax`, placement, boss advancement, and the resume clamp.
 - **Selector**: a "Curriculum" `<select>` in the Login player manager
   (`src/popups/login-popup.js`, ctx-injected `setActiveTrack`). On change:
   `setActiveTrackForProfile` sets `activeTrack`, clamps each op's level into the new
@@ -72,16 +75,17 @@ Resolved for the MVP; see deferred follow-ups.
 
 ## Acceptance Criteria
 - Standard reproduces today's levels **byte-for-byte** (golden snapshot).
-- Selecting Times Tables → only `×` available; mul level N presents the N times
-  table (N×1…N×12); level cap is 12; grid/mastery reflect the 12 facts.
+- Selecting Times Tables → only `×` available; L1-L12 present the matching N times
+  table (N×1…N×12); L13 is a mixed 1×1-12×12 review; grid/mastery reflect the
+  active level's fact universe.
 - Switching back to Standard restores all 11 ops and the 10-level cap; mul level
   clamps to 10; fact stats persist.
 
 ## Testing
 - `tests/unit/curriculum.test.js`: golden snapshot (Standard) + swap-proof (Times
-  Tables mul level N == the N times table, ≠ Standard, generation shape).
+  Tables table levels, final 144-fact mixed level, ≠ Standard, generation shape).
 - e2e "curriculum tracks": switch → op-set collapse → range/universe → real
-  generation is N×b → master records the 12 facts → level cap 12 → restore Standard.
+  generation is N×b → master records the 12 facts → L13 has 144 facts → restore Standard.
 - 99 unit + 61 chromium e2e green at landing.
 
 ## Outcome (step-5 MVP)
@@ -126,6 +130,16 @@ Agreed direction:
   shapes (partial — the level gate `defs` + dimension bounds are data; per-shape
   enumeration + area/volume formulas stay in game-core as the generation strategy).
   One op per commit (1d41212…a2694c2), the byte-for-byte snapshot green at each.
+- **D. Human-readable arithmetic level lists** ✅ — alternate arithmetic tracks no
+  longer need one-off generator kinds. New `kind: "arithmeticLevels"` describes
+  each level as readable operand ranges or exact pairs:
+  `[{ label: "7s table", a: 7, b: { from: 1, to: 12 } }, ...]`. game-core expands
+  that one data shape into generation, weighted practice, answer universes,
+  mastery universes, and boss worksheets. Times Tables now uses this form with
+  13 levels: L1-L12 are the individual 1s-12s tables; L13 is mixed review over
+  all 144 facts from 1×1 through 12×12. Track max-level handling was widened
+  through boss, Test Me, session/challenge storage, and op-chit progress so tracks
+  are not forced into Standard's 10-level cap.
 
-Still deferred: more real tracks (Saxon, Math-U-See — data additions once B+C land);
+Still deferred: more real tracks (Saxon, Math-U-See — mostly data additions now);
 per-op mastery thresholds stay global (seam: `TRACKS[id].progression`).

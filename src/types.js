@@ -19,7 +19,7 @@
  * Per-operation config entry. Built from `operationDefaults` (game-core).
  * @typedef {Object} OpConfigEntry
  * @property {boolean} enabled   Whether this operation is selected for play.
- * @property {number}  difficulty Current level, 1–10.
+ * @property {number}  difficulty Current level under the active track.
  * @property {string}  symbol    Operator glyph (e.g. "+", "×").
  * @property {string}  label     Chit label.
  */
@@ -196,7 +196,7 @@
  * @property {number} [helped]
  * @property {"placed-out"|"superseded"} [placementStatus]  Test Me placement credit state (flat `placement*` fields, set by `recordPlacementCredit`).
  * @property {number} [placementLevel]            Recommended level at the time of placement.
- * @property {number} [placementPlacedOutThrough]  Highest level marked placed-out (0–10).
+ * @property {number} [placementPlacedOutThrough]  Highest level marked placed-out for the active track.
  * @property {string} [placementSource]           Origin of the credit (e.g. "test-me").
  * @property {string} [placementAt]               ISO timestamp when placement credit was recorded.
  * @property {string} [placementSupersededAt]     ISO timestamp when real attempts superseded the credit.

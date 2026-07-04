@@ -61,6 +61,127 @@ function lerp(a, b, t) {
   return a + (b - a) * t;
 }
 
+const DEFAULT_TRACK_MAX_LEVEL = 10;
+
+function rangeValues(spec) {
+  if (Number.isFinite(spec)) return [Math.round(spec)];
+  if (Array.isArray(spec)) {
+    return [...new Set(spec.filter(Number.isFinite).map((value) => Math.round(value)))];
+  }
+  if (spec && typeof spec === "object") {
+    if (Array.isArray(spec.values)) return rangeValues(spec.values);
+    if (Number.isFinite(spec.value)) return [Math.round(spec.value)];
+    if (Number.isFinite(spec.from) && Number.isFinite(spec.to)) {
+      const from = Math.round(spec.from);
+      const to = Math.round(spec.to);
+      const step = Math.max(1, Math.round(Number.isFinite(spec.step) ? Math.abs(spec.step) : 1));
+      const values = [];
+      if (from <= to) {
+        for (let value = from; value <= to; value += step) values.push(value);
+      } else {
+        for (let value = from; value >= to; value -= step) values.push(value);
+      }
+      return values;
+    }
+  }
+  return [];
+}
+
+function levelFromDescriptor(desc, level) {
+  if (!desc || !Array.isArray(desc.levels) || desc.levels.length === 0) return null;
+  const index = clamp(1, desc.levels.length, Math.round(level || 1)) - 1;
+  return desc.levels[index] || null;
+}
+
+function getTrackOpMaxLevel(opKey, track = TRACKS.standard) {
+  const desc = track?.[opKey];
+  if (Array.isArray(desc?.levels) && desc.levels.length > 0) return desc.levels.length;
+  if (typeof desc?.maxLevel === "number") return Math.max(1, Math.round(desc.maxLevel));
+  return DEFAULT_TRACK_MAX_LEVEL;
+}
+
+function arithmeticLevelPairsFromSpec(opKey, spec) {
+  if (!spec || !operators[opKey]) return [];
+  const rawPairs = [];
+  if (Array.isArray(spec.pairs)) {
+    for (const pair of spec.pairs) {
+      const a = Array.isArray(pair) ? pair[0] : pair?.a;
+      const b = Array.isArray(pair) ? pair[1] : pair?.b;
+      if (Number.isFinite(a) && Number.isFinite(b)) rawPairs.push({ a: Math.round(a), b: Math.round(b) });
+    }
+  } else {
+    const aValues = rangeValues(spec.a ?? spec.left ?? spec.multiplicand ?? spec.quotient);
+    const bValues = rangeValues(spec.b ?? spec.right ?? spec.multiplier ?? spec.divisor);
+    for (const a of aValues) {
+      for (const b of bValues) rawPairs.push({ a, b });
+    }
+  }
+
+  const seen = new Set();
+  const pairs = [];
+  for (const pair of rawPairs) {
+    let { a, b } = pair;
+    if (!Number.isInteger(a) || !Number.isInteger(b)) continue;
+    if (opKey === "sub" && b > a) continue;
+    if (opKey === "div" && b === 0) continue;
+    const statsKey = `${a},${b}`;
+    if (seen.has(statsKey)) continue;
+    seen.add(statsKey);
+    pairs.push({ a, b, statsKey });
+  }
+  return pairs;
+}
+
+function getArithmeticLevelSpec(opKey, level, track = TRACKS.standard) {
+  const desc = track?.[opKey];
+  if (desc?.kind === "arithmeticLevels") return levelFromDescriptor(desc, level);
+  if (desc?.kind === "timesTable") {
+    const n = clamp(1, desc.maxLevel, Math.round(level || 1));
+    return { a: n, b: { from: 1, to: desc.factors } };
+  }
+  return null;
+}
+
+function getArithmeticLevelPairs(opKey, level, track = TRACKS.standard) {
+  const spec = getArithmeticLevelSpec(opKey, level, track);
+  if (!spec) return null;
+  return arithmeticLevelPairsFromSpec(opKey, spec);
+}
+
+function getArithmeticPairRange(pairs) {
+  if (!pairs || pairs.length === 0) return { min: 1, max: 1 };
+  let min = Infinity;
+  let max = -Infinity;
+  for (const { a, b } of pairs) {
+    min = Math.min(min, a, b);
+    max = Math.max(max, a, b);
+  }
+  return { min, max };
+}
+
+function makeArithmeticProblemFromPair(opKey, pair) {
+  const op = operators[opKey];
+  let dispA = pair.a;
+  let dispB = pair.b;
+  let answer;
+
+  if (opKey === "div") {
+    dispA = pair.a * pair.b;
+    dispB = pair.b;
+    answer = pair.a;
+  } else {
+    answer = op.fn(pair.a, pair.b);
+  }
+
+  return {
+    text: `${dispA} ${op.symbol} ${dispB}`,
+    answer,
+    answerText: String(answer),
+    opKey,
+    statsKey: pair.statsKey || `${pair.a},${pair.b}`,
+  };
+}
+
 function normalizeTypedValue(inputValue, { allowIncomplete = true } = {}) {
   let value = String(inputValue || "").trim();
   if (!value) return "";
@@ -127,12 +248,14 @@ function shiftDecimal(value, fromScale, shiftPower) {
 }
 
 function getDifficultyRange(opKey, difficulty, track = TRACKS.standard) {
-  const d = clamp(1, 10, difficulty);
-  const t = (d - 1) / 9;
+  const maxLevel = getTrackOpMaxLevel(opKey, track);
+  const d = clamp(1, maxLevel, difficulty);
+  const t = maxLevel <= 1 ? 0 : (d - 1) / (maxLevel - 1);
   const desc = track?.[opKey];
 
   if (opKey === "add" || opKey === "sub" || opKey === "mul" || opKey === "div") {
-    if (desc?.kind === "timesTable") return { min: 1, max: desc.factors };
+    const pairs = getArithmeticLevelPairs(opKey, difficulty, track);
+    if (pairs) return getArithmeticPairRange(pairs);
     const r = desc?.kind === "range" ? desc : TRACKS.standard[opKey];
     return { min: r.min, max: Math.round(lerp(r.maxLo, r.maxHi, t)) };
   }
@@ -1085,20 +1208,20 @@ function generateProblem(opKey, opConfig, rng = Math.random, track = TRACKS.stan
   if (opKey === "si") return P(generateSIProblem(config.difficulty, rng, track));
   if (opKey === "f10") return P(generateFactorsOfTenProblem(config.difficulty, rng, track));
 
+  const levelPairs = getArithmeticLevelPairs(opKey, config.difficulty, track);
+  if (levelPairs) {
+    if (levelPairs.length === 0) return P(makeArithmeticProblemFromPair(opKey, { a: 1, b: 1, statsKey: "1,1" }));
+    const pair = levelPairs[randInt(0, levelPairs.length - 1, rng)];
+    return P(makeArithmeticProblemFromPair(opKey, pair));
+  }
+
   const op = operators[opKey];
-  const arithDesc = track?.[opKey];
   let a = 0;
   let b = 0;
   let answer = 0;
   let statsKey;
 
-  if (arithDesc?.kind === "timesTable") {
-    // Level N is the N times table: N × (1..factors).
-    a = clamp(1, arithDesc.maxLevel, Math.round(config.difficulty || 1));
-    b = randInt(1, arithDesc.factors, rng);
-    answer = op.fn(a, b);
-    statsKey = `${a},${b}`;
-  } else if (opKey === "div") {
+  if (opKey === "div") {
     const quotient = randInt(range.min, range.max, rng);
     b = randInt(range.min, range.max, rng);
     a = quotient * b;
@@ -1248,14 +1371,15 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
   }
 
   const op = operators[opKey];
-  const arithDesc = track?.[opKey];
   const pairs = [];
+  const levelPairs = getArithmeticLevelPairs(opKey, config.difficulty, track);
 
-  if (arithDesc?.kind === "timesTable") {
-    const n = clamp(1, arithDesc.maxLevel, Math.round(config.difficulty || 1));
-    for (let b = 1; b <= arithDesc.factors; b += 1) {
-      const statsKey = `${n},${b}`;
-      pairs.push({ a: n, b, statsKey, weight: getSelectionWeight(getMastery(problemStats, opKey, statsKey, masteryLookup)) });
+  if (levelPairs) {
+    for (const pair of levelPairs) {
+      pairs.push({
+        ...pair,
+        weight: getSelectionWeight(getMastery(problemStats, opKey, pair.statsKey, masteryLookup)),
+      });
     }
   } else {
     for (let a = range.min; a <= range.max; a += 1) {
@@ -1281,25 +1405,7 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
     pairs.map((p) => ({ value: p, weight: p.weight })),
     rng
   );
-  let dispA = pick.a;
-  let dispB = pick.b;
-  let answer;
-
-  if (opKey === "div") {
-    dispA = pick.a * pick.b;
-    dispB = pick.b;
-    answer = pick.a;
-  } else {
-    answer = op.fn(pick.a, pick.b);
-  }
-
-  return {
-    text: `${dispA} ${op.symbol} ${dispB}`,
-    answer,
-    answerText: String(answer),
-    opKey,
-    statsKey: pick.statsKey,
-  };
+  return makeArithmeticProblemFromPair(opKey, pick);
 }
 
 function parseFactorizationInput(value) {
@@ -1720,9 +1826,11 @@ function formatBossReplayBestText(level, best) {
   return `Worksheet L${level} ${formatDuration(best.durationMs)}`;
 }
 
-// Course progress (0-100%) for an op chit, from its current level out of 10.
-function getCourseProgressPercent(level) {
-  return clamp(0, 100, Math.round((clamp(1, 10, level) / 10) * 100));
+// Course progress (0-100%) for an op chit, from its current level out of the
+// active track's max level for that operation.
+function getCourseProgressPercent(level, maxLevel = DEFAULT_TRACK_MAX_LEVEL) {
+  const max = Math.max(1, Math.round(Number.isFinite(maxLevel) ? maxLevel : DEFAULT_TRACK_MAX_LEVEL));
+  return clamp(0, 100, Math.round((clamp(1, max, level) / max) * 100));
 }
 
 // Turns an SI stats key like "k,m" into a readable "kilo → milli" label.
@@ -2006,11 +2114,12 @@ function randomFallTimeSec(maxFallTimeSec, rng = Math.random) {
  */
 function getAnswerUniverse(opKey, level, track = TRACKS.standard) {
   const set = new Set();
-  const arithDesc = track?.[opKey];
   if (opKey === "add" || opKey === "sub" || opKey === "mul" || opKey === "div") {
-    if (arithDesc?.kind === "timesTable") {
-      const n = clamp(1, arithDesc.maxLevel, Math.round(level || 1));
-      for (let b = 1; b <= arithDesc.factors; b += 1) set.add(String(operators[opKey].fn(n, b)));
+    const levelPairs = getArithmeticLevelPairs(opKey, level, track);
+    if (levelPairs) {
+      for (const pair of levelPairs) {
+        set.add(makeArithmeticProblemFromPair(opKey, pair).answerText);
+      }
       return set;
     }
     const { min, max } = getDifficultyRange(opKey, level, track);
@@ -2236,6 +2345,7 @@ export {
   generateRoundProblem,
   generateSIProblem,
   generateWeightedProblem,
+  getArithmeticLevelPairs,
   getDifficultyRange,
   getF10Universe,
   makeF10ProblemFromKey,
@@ -2259,6 +2369,7 @@ export {
   getMastery,
   getSIPrefixesForDifficulty,
   getSelectionWeight,
+  getTrackOpMaxLevel,
   getSmallestPrimeFactor,
   isComposite,
   isPrime,
