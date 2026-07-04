@@ -158,7 +158,7 @@ function getDifficultyRange(opKey, difficulty, track = TRACKS.standard) {
   }
 
   if (opKey === "pow") {
-    return { min: 1, max: POW_MAX_LEVEL };
+    return { min: 1, max: (desc ?? TRACKS.standard.pow).maxLevel };
   }
 
   if (opKey === "factor") {
@@ -665,7 +665,8 @@ function generateShapesProblem(difficulty = 1, rng = Math.random) {
 // roots; the level ladder is ordered easy→hard and tops out at level 10 (the
 // hardest, negative powers of 10). All answers are whole numbers or clean
 // terminating decimals, so they clear immediately like ordinary arithmetic.
-const POW_MAX_LEVEL = 10;
+// The level ladder lives in TRACKS.standard.pow; makePowProblem (below) is the
+// shared rendering strategy.
 
 // Builds a power/root problem. Roots always use perfect powers so answers stay
 // whole. Kinds: sq (x²), cube (x³), sqrt (√x²→x), cbrt (∛x³→x), pow (base^exp),
@@ -701,24 +702,26 @@ function makePowProblemFromKey(statsKey) {
   return makePowProblem(kind, nums[0], nums[1]);
 }
 
-function getPowUniverse(level) {
-  const lvl = clamp(1, POW_MAX_LEVEL, Math.round(level || 1));
+function getPowUniverse(level, track = TRACKS.standard) {
+  const { maxLevel, ladder } = track.pow ?? TRACKS.standard.pow;
+  const lvl = clamp(1, maxLevel, Math.round(level || 1));
   const problems = [];
-  if (lvl >= 1) for (let x = 2; x <= 7; x += 1) problems.push(makePowProblem("sq", x)); // squares (small)
-  if (lvl >= 2) for (let x = 8; x <= 12; x += 1) problems.push(makePowProblem("sq", x)); // squares (full)
-  if (lvl >= 3) for (let x = 2; x <= 12; x += 1) problems.push(makePowProblem("sqrt", x)); // square roots
-  if (lvl >= 4) for (let e = 1; e <= 6; e += 1) problems.push(makePowProblem("pow", 10, e)); // powers of 10
-  if (lvl >= 5) for (const [deg, k] of [[2, 1], [2, 2], [2, 3], [3, 1], [3, 2]]) problems.push(makePowProblem("root10", deg, k)); // roots of 10
-  if (lvl >= 6) for (let e = 1; e <= 10; e += 1) problems.push(makePowProblem("pow", 2, e)); // powers of 2
-  if (lvl >= 7) for (let x = 2; x <= 10; x += 1) problems.push(makePowProblem("cube", x)); // cubes
-  if (lvl >= 8) for (let x = 2; x <= 10; x += 1) problems.push(makePowProblem("cbrt", x)); // cube roots
-  if (lvl >= 9) for (let e = 1; e <= 6; e += 1) problems.push(makePowProblem("pow", 3, e)); // powers of 3
-  if (lvl >= 10) for (let e = 1; e <= 6; e += 1) problems.push(makePowProblem("neg10", e)); // negative powers of 10
+  // Cumulative: level N exposes rungs 1..N (rung index i needs level >= i+1).
+  for (let i = 0; i < ladder.length && lvl >= i + 1; i += 1) {
+    const rung = ladder[i];
+    if (rung.pairs) {
+      for (const [a, b] of rung.pairs) problems.push(makePowProblem(rung.kind, a, b));
+    } else if (rung.a !== undefined) {
+      for (let b = rung.bFrom; b <= rung.bTo; b += 1) problems.push(makePowProblem(rung.kind, rung.a, b));
+    } else {
+      for (let a = rung.aFrom; a <= rung.aTo; a += 1) problems.push(makePowProblem(rung.kind, a));
+    }
+  }
   return problems;
 }
 
-function generatePowProblem(difficulty = 1, rng = Math.random) {
-  const universe = getPowUniverse(difficulty);
+function generatePowProblem(difficulty = 1, rng = Math.random, track = TRACKS.standard) {
+  const universe = getPowUniverse(difficulty, track);
   return universe[randInt(0, universe.length - 1, rng)];
 }
 
@@ -1103,7 +1106,7 @@ function generateProblem(opKey, opConfig, rng = Math.random, track = TRACKS.stan
   const P = (p) => /** @type {import('./types.js').Problem} */ (p);
   if (opKey === "factor") return P(generateFactorProblem(config.difficulty, rng, track));
   if (opKey === "shapes") return P(generateShapesProblem(config.difficulty, rng));
-  if (opKey === "pow") return P(generatePowProblem(config.difficulty, rng));
+  if (opKey === "pow") return P(generatePowProblem(config.difficulty, rng, track));
   if (opKey === "round") return P(generateRoundProblem(config.difficulty, rng, track));
   if (opKey === "reduce") return P(generateReduceProblem(config.difficulty, rng, track));
   if (opKey === "si") return P(generateSIProblem(config.difficulty, rng));
@@ -1203,7 +1206,7 @@ function generateWeightedProblem(opKey, opConfig, problemStats, rng = Math.rando
   }
 
   if (opKey === "pow") {
-    const items = getPowUniverse(config.difficulty).map((problem) => ({
+    const items = getPowUniverse(config.difficulty, track).map((problem) => ({
       value: problem,
       weight: getSelectionWeight(getMastery(problemStats, "pow", problem.statsKey, masteryLookup)),
     }));
@@ -2062,7 +2065,7 @@ function getAnswerUniverse(opKey, level, track = TRACKS.standard) {
   // yield an empty set here, which falseFireCost treats as a large space (cost 1).
   const universe =
     opKey === "shapes" ? getShapesUniverse(level)
-    : opKey === "pow" ? getPowUniverse(level)
+    : opKey === "pow" ? getPowUniverse(level, track)
     : [];
   for (const p of universe) {
     const ans = p.answer ?? p.answerText;
@@ -2279,7 +2282,6 @@ export {
   getPowUniverse,
   makePowProblem,
   makePowProblemFromKey,
-  POW_MAX_LEVEL,
   getFactorRemainingText,
   getFullFactorization,
   getMastery,

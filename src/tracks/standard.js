@@ -73,4 +73,27 @@ export const standard = {
       [["huge", "cancel", 7], ["huge", "cancel", 12], ["huge", "whole", 8], ["huge", "cancel", 1]],
     ],
   },
+
+  // Powers & roots: a cumulative ladder — level N exposes ladder rungs 1..N (in
+  // order). Each rung enumerates makePowProblem(kind, a[, b]) calls:
+  //   {kind, aFrom, aTo}      → for a in [aFrom..aTo]: (kind, a)
+  //   {kind, a, bFrom, bTo}   → for b in [bFrom..bTo]: (kind, a, b)   (fixed base a)
+  //   {kind, pairs:[[a,b]…]}  → (kind, a, b) for each pair
+  // The makePowProblem rendering (superscripts, radicals) stays in game-core.
+  pow: {
+    kind: "pow",
+    maxLevel: 10,
+    ladder: [
+      { kind: "sq", aFrom: 2, aTo: 7 },
+      { kind: "sq", aFrom: 8, aTo: 12 },
+      { kind: "sqrt", aFrom: 2, aTo: 12 },
+      { kind: "pow", a: 10, bFrom: 1, bTo: 6 },
+      { kind: "root10", pairs: [[2, 1], [2, 2], [2, 3], [3, 1], [3, 2]] },
+      { kind: "pow", a: 2, bFrom: 1, bTo: 10 },
+      { kind: "cube", aFrom: 2, aTo: 10 },
+      { kind: "cbrt", aFrom: 2, aTo: 10 },
+      { kind: "pow", a: 3, bFrom: 1, bTo: 6 },
+      { kind: "neg10", aFrom: 1, aTo: 6 },
+    ],
+  },
 };

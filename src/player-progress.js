@@ -409,7 +409,7 @@ function getSkillUniverseSize(opKey, level, track = TRACKS.standard) {
   }
 
   if (opKey === "pow") {
-    return getPowUniverse(level).length;
+    return getPowUniverse(level, track).length;
   }
 
   if (opKey === "si") {
@@ -470,7 +470,7 @@ function getSkillUniverseProblems(opKey, level, track = TRACKS.standard) {
   }
 
   if (opKey === "pow") {
-    return getPowUniverse(level).map((problem) => ({ statsKey: problem.statsKey, text: problem.text }));
+    return getPowUniverse(level, track).map((problem) => ({ statsKey: problem.statsKey, text: problem.text }));
   }
 
   if (opKey === "f10") {
