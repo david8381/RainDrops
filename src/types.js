@@ -125,6 +125,7 @@
  * A persisted player. `createDefaultProfile()` / `createProfileForUser()`.
  * @typedef {Object} StoredProfile
  * @property {number} version
+ * @property {string} [activeTrack]  Curriculum track id (see src/curriculum.js); defaults to "standard".
  * @property {{id:string,name:string,createdAt:string,updatedAt:string}} user
  * @property {ProfileSettings} settings
  * @property {Record<OpKey, StoredSkill>} skills

@@ -11,7 +11,7 @@ import {
   operationDefaults,
   clamp,
 } from "./game-core.js";
-import { TRACKS } from "./curriculum.js";
+import { TRACKS, getActiveTrack } from "./curriculum.js";
 
 const STORAGE_KEY = "rainMath.profile.v1";
 const PROFILE_STORE_KEY = "rainMath.profiles.v1";
@@ -468,6 +468,7 @@ function createDefaultProfile(nowMs = Date.now()) {
   }
   return {
     version: PROFILE_VERSION,
+    activeTrack: "standard",
     user: {
       id: "local-default",
       name: "Local Player",
@@ -908,7 +909,7 @@ function findSession(profile, sessionId) {
 function getSkillSessionSnapshot(profile, opKey) {
   const skill = profile.skills?.[opKey];
   if (!skill) return createSessionMasterySnapshot();
-  const summary = computeSkillReadiness(skill);
+  const summary = computeSkillReadiness(skill, getActiveTrack(profile.activeTrack));
   return createSessionMasterySnapshot({
     level: skill.currentLevel,
     readiness: summary.readiness,
@@ -920,22 +921,25 @@ function getSkillSessionSnapshot(profile, opKey) {
   });
 }
 
-function computeSkillReadinessForLevel(skill, level) {
-  if (!skill) return computeSkillReadiness(skill);
-  if (skill.currentLevel === level) return computeSkillReadiness(skill);
+function computeSkillReadinessForLevel(skill, level, track = TRACKS.standard) {
+  if (!skill) return computeSkillReadiness(skill, track);
+  if (skill.currentLevel === level) return computeSkillReadiness(skill, track);
   return computeSkillReadiness({
     ...skill,
     currentLevel: level,
-  });
+  }, track);
 }
 
 function getSkillSessionLevelSnapshots(profile, opKey) {
   const skill = profile.skills?.[opKey];
   if (!skill) return {};
-  const highestLevel = clamp(1, 10, Math.max(1, Math.round(skill.currentLevel || 1)));
+  const track = getActiveTrack(profile.activeTrack);
+  const desc = track[opKey];
+  const maxLevel = desc?.kind === "timesTable" ? desc.maxLevel : 10;
+  const highestLevel = clamp(1, maxLevel, Math.max(1, Math.round(skill.currentLevel || 1)));
   const levels = {};
   for (let level = 1; level <= highestLevel; level += 1) {
-    const summary = computeSkillReadinessForLevel(skill, level);
+    const summary = computeSkillReadinessForLevel(skill, level, track);
     levels[String(level)] = createSessionLevelSnapshot({
       level,
       readiness: summary.readiness,
@@ -1178,7 +1182,7 @@ function recordBossAttempt(profile, opKey, optionsOrNowMs = Date.now()) {
   const { nowMs, pressure, speedPercent, spawnRate } = parseBossAttemptOptions(profile, optionsOrNowMs);
   const level = skill.currentLevel;
   const at = nowIso(nowMs);
-  const summary = computeSkillReadiness(skill);
+  const summary = computeSkillReadiness(skill, getActiveTrack(profile.activeTrack));
   const pressureIndex = getPressureTierIndex(pressure.key);
   for (let clearedLevel = 1; clearedLevel <= level; clearedLevel += 1) {
     for (let i = 0; i <= pressureIndex; i += 1) {
@@ -1213,9 +1217,10 @@ function recordLevelAdvance(profile, opKey, options = {}) {
   const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
   const level = clamp(1, 10, Math.round(Number.isFinite(options.level) ? options.level : skill.currentLevel));
   const at = nowIso(nowMs);
+  const track = getActiveTrack(profile.activeTrack);
   for (let clearedLevel = 1; clearedLevel <= level; clearedLevel += 1) {
     if (hasLevelAdvanceForLevel(skill, clearedLevel)) continue;
-    const summary = computeSkillReadinessForLevel(skill, clearedLevel);
+    const summary = computeSkillReadinessForLevel(skill, clearedLevel, track);
     skill.levelAdvances.push({
       level: clearedLevel,
       readiness: summary.readiness,
@@ -1591,7 +1596,7 @@ function recordProgressEvent(profile, event, nowMs = Date.now()) {
 
   recordRecent(skill, recentEntry);
   recordRecent(problem, { outcome, at, responseMs, speedPercent, spawnRate, pressureTier: pressure.key });
-  updateSkillReadiness(skill);
+  updateSkillReadiness(skill, getActiveTrack(profile.activeTrack));
   return profile;
 }
 
@@ -1606,7 +1611,9 @@ function recordPlacementCredit(profile, opKey, options = {}, nowMs = Date.now())
   );
   const source = options.source || "test-me";
   const at = nowIso(nowMs);
-  const entries = placedOutThrough > 0 ? getSkillUniverseProblems(opKey, placedOutThrough) : [];
+  const entries = placedOutThrough > 0
+    ? getSkillUniverseProblems(opKey, placedOutThrough, getActiveTrack(profile.activeTrack))
+    : [];
 
   for (const entry of entries) {
     const problem = getProblemEntry(skill, entry.statsKey, entry.text);
@@ -1644,7 +1651,7 @@ function recordPlacementCredit(profile, opKey, options = {}, nowMs = Date.now())
   skill.totals.distinct = Object.keys(skill.problems).length;
   skill.updatedAt = at;
   profile.user.updatedAt = at;
-  updateSkillReadiness(skill);
+  updateSkillReadiness(skill, getActiveTrack(profile.activeTrack));
   return profile;
 }
 
@@ -1770,12 +1777,12 @@ function summarizePressureTierStats(pressureTiers = {}) {
 
 const summarizeSpeedTierStats = summarizePressureTierStats;
 
-function computeSkillReadiness(skill) {
+function computeSkillReadiness(skill, track = TRACKS.standard) {
   const problems = Object.values(skill.problems);
   const attempts = skill.totals.attempts;
-  const universeCount = getSkillUniverseSize(skill.opKey, skill.currentLevel);
+  const universeCount = getSkillUniverseSize(skill.opKey, skill.currentLevel, track);
   const requiredAttempts = getRequiredAttemptsForReady(universeCount);
-  const universeProblems = getSkillUniverseProblems(skill.opKey, skill.currentLevel);
+  const universeProblems = getSkillUniverseProblems(skill.opKey, skill.currentLevel, track);
   const hasEnumerableUniverse = universeProblems.length > 0;
   const readinessDenominator = hasEnumerableUniverse
     ? universeProblems.length
@@ -1851,7 +1858,7 @@ function computeSkillReadiness(skill) {
     averageMastery,
     fluencyScore,
     weakProblems: getWeakProblems(skill, 4),
-    practiceSuggestions: getPracticeSuggestions(skill, 4),
+    practiceSuggestions: getPracticeSuggestions(skill, 4, track),
     bossAttemptedForLevel: hasBossAttemptForLevel(skill, skill.currentLevel),
     levelAdvancedForLevel: hasLevelAdvanceForLevel(skill, skill.currentLevel),
     bossPressureTiers: getBossPressureTierClears(skill, skill.currentLevel),
@@ -1865,8 +1872,8 @@ function computeSkillReadiness(skill) {
   };
 }
 
-function updateSkillReadiness(skill) {
-  const summary = computeSkillReadiness(skill);
+function updateSkillReadiness(skill, track = TRACKS.standard) {
+  const summary = computeSkillReadiness(skill, track);
   skill.readiness = summary.readiness;
   skill.bossReady = summary.bossReady;
   skill.bossThreshold = summary.bossThreshold;
@@ -1888,9 +1895,9 @@ function getWeakProblems(skill, limit = 4) {
 }
 
 /** @returns {import('./types.js').PracticeSuggestion[]} */
-function getUnseenProblems(skill, limit = 4) {
+function getUnseenProblems(skill, limit = 4, track = TRACKS.standard) {
   const seen = new Set(Object.keys(skill.problems));
-  return getSkillUniverseProblems(skill.opKey, skill.currentLevel)
+  return getSkillUniverseProblems(skill.opKey, skill.currentLevel, track)
     .filter((problem) => !seen.has(problem.statsKey))
     .slice(0, limit)
     .map((problem) => ({
@@ -1900,7 +1907,7 @@ function getUnseenProblems(skill, limit = 4) {
     }));
 }
 
-function getPracticeSuggestions(skill, limit = 4) {
+function getPracticeSuggestions(skill, limit = 4, track = TRACKS.standard) {
   const reviewQuota = Math.max(1, Math.round(limit * 0.6));
   const review = getWeakProblems(skill, limit)
     .filter((problem) => problem.mastery < PROBLEM_MASTERY_THRESHOLD)
@@ -1910,7 +1917,7 @@ function getPracticeSuggestions(skill, limit = 4) {
   const suggestions = /** @type {import('./types.js').PracticeSuggestion[]} */ ([...review]);
   const used = new Set(suggestions.map((problem) => problem.statsKey));
   const unseenNeeded = limit - suggestions.length;
-  for (const problem of getUnseenProblems(skill, unseenNeeded + reviewQuota)) {
+  for (const problem of getUnseenProblems(skill, unseenNeeded + reviewQuota, track)) {
     if (suggestions.length >= limit) break;
     if (used.has(problem.statsKey)) continue;
     suggestions.push(problem);
@@ -1929,13 +1936,13 @@ function getPracticeSuggestions(skill, limit = 4) {
   return suggestions;
 }
 
-function getFinishLevelPracticeProblems(skill) {
+function getFinishLevelPracticeProblems(skill, track = TRACKS.standard) {
   if (!skill) return [];
-  const summary = computeSkillReadiness(skill);
+  const summary = computeSkillReadiness(skill, track);
   if (summary.readiness < FINISH_LEVEL_FOCUS_SCORE || summary.readiness >= BOSS_READY_SCORE) {
     return [];
   }
-  return getSkillUniverseProblems(skill.opKey, skill.currentLevel)
+  return getSkillUniverseProblems(skill.opKey, skill.currentLevel, track)
     .map((problem) => {
       const stored = skill.problems[problem.statsKey];
       return {
@@ -2079,8 +2086,9 @@ function summarizeProfile(profile) {
   const currentSpeedPercent = normalizeSpeedPercent(profile.settings?.speed);
   const currentSpawnRate = normalizeLoad(profile.settings?.rate);
   const currentPressureTier = getPressureTier(currentSpeedPercent);
+  const track = getActiveTrack(profile.activeTrack);
   for (const [opKey, skill] of Object.entries(profile.skills)) {
-    const readiness = computeSkillReadiness(skill);
+    const readiness = computeSkillReadiness(skill, track);
     skills[opKey] = {
       ...readiness,
       opKey,

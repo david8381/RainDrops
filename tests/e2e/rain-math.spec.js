@@ -150,6 +150,91 @@ test("a shared report link opens read-only on this device", async ({ page }) => 
   await parent.close();
 });
 
+// Curriculum tracks (src/curriculum.js): switching to a data-driven track must
+// reconfigure the whole game — collapse the op set, redefine the level universe,
+// and widen the level cap — then fully restore Standard on switch-back. Runs on
+// every engine because the track seam lives in shared pure modules.
+test.describe("curriculum tracks", () => {
+  // Engine-level (runs on every project incl. mobile/iPad): the track seam lives
+  // in shared pure modules, so switching must reconfigure the op set, level
+  // universe, generator, and level cap on every browser.
+  test("Times Tables track collapses to × only and redefines levels", async ({ page }) => {
+    await openApp(page);
+
+    // Switch this player to the multiply-only Times Tables track.
+    const switched = await invoke(page, "setTrack", "timesTables");
+    expect(switched.progressProfile.activeTrack).toBe("timesTables");
+
+    // Op set collapses to × alone: every other chit is hidden.
+    await expect(page.locator(".op-chit:visible")).toHaveCount(1);
+    await expect(page.locator('.op-chit[data-op="mul"]')).toBeVisible();
+    await expect(page.locator('.op-chit[data-op="mul"]')).toHaveClass(/active/);
+    await expect(page.locator('.op-chit[data-op="add"]')).toBeHidden();
+
+    // Level 3 = the 3 times table: universe of 12 facts.
+    await invoke(page, "setOpDifficulty", "mul", 3, { force: true });
+    const atL3 = await invoke(page, "getState");
+    expect(atL3.opConfig.mul.difficulty).toBe(3);
+    expect(atL3.progressSummary.skills.mul.universeCount).toBe(12);
+
+    // The real generator produces N×b problems for the selected N.
+    for (let i = 0; i < 6; i += 1) {
+      await invoke(page, "clearDrops");
+      const drop = await invoke(page, "spawnGeneratedDrop");
+      expect(drop.text).toMatch(/^3 × \d+$/);
+      expect(drop.statsKey).toMatch(/^3,\d+$/);
+    }
+
+    // Mastering the level records exactly the 12 times-table facts (3,1…3,12).
+    await invoke(page, "masterCurrentLevel", "mul");
+    const mastered = await invoke(page, "getState");
+    const keys = Object.keys(mastered.progressProfile.skills.mul.problems).filter((k) => k.startsWith("3,"));
+    expect(keys.sort((a, b) => Number(a.split(",")[1]) - Number(b.split(",")[1]))).toEqual(
+      Array.from({ length: 12 }, (_, i) => `3,${i + 1}`)
+    );
+
+    // The track widens the level cap to 12 (Standard mul stops at 10).
+    const atL12 = await invoke(page, "setOpDifficulty", "mul", 12, { force: true });
+    expect(atL12.opConfig.mul.difficulty).toBe(12);
+  });
+
+  test("switching back to Standard restores every op and the 10-level cap", async ({ page }) => {
+    await openApp(page);
+
+    await invoke(page, "setTrack", "timesTables");
+    await invoke(page, "setOpDifficulty", "mul", 12, { force: true });
+    await expect(page.locator(".op-chit:visible")).toHaveCount(1);
+
+    // Back to Standard: all 11 chits return and the mul level clamps to 10.
+    const back = await invoke(page, "setTrack", "standard");
+    expect(back.progressProfile.activeTrack).toBe("standard");
+    expect(back.progressProfile.skills.mul.currentLevel).toBeLessThanOrEqual(10);
+    await expect(page.locator(".op-chit:visible")).toHaveCount(11);
+    await expect(page.locator('.op-chit[data-op="add"]')).toBeVisible();
+  });
+
+  // Desktop-only: the diff-card is desktop chrome (mobile uses the keypad strip).
+  test.describe("desktop diff card", () => {
+    test.skip(({ isMobile }) => isMobile, "desktop-only diff cards");
+
+    test("shows the times-table range and the widened level cap", async ({ page }) => {
+      await openApp(page);
+      await invoke(page, "setTrack", "timesTables");
+
+      await expect(page.locator(".diff-card")).toHaveCount(1);
+      await expect(page.locator('.diff-card[data-op="mul"]')).toBeVisible();
+
+      await invoke(page, "setOpDifficulty", "mul", 3, { force: true });
+      await expect(page.locator('.diff-card[data-op="mul"] .diff-value')).toHaveText("3");
+      await expect(page.locator('.diff-card[data-op="mul"] .diff-range')).toHaveText("1–12");
+
+      await invoke(page, "setOpDifficulty", "mul", 12, { force: true });
+      await expect(page.locator('.diff-card[data-op="mul"] .diff-value')).toHaveText("12");
+      await expect(page.locator('.diff-card[data-op="mul"]')).toHaveAttribute("aria-valuemax", "12");
+    });
+  });
+});
+
 test.describe("desktop gameplay", () => {
   test.skip(({ isMobile }) => isMobile, "desktop-only input bar flows");
 

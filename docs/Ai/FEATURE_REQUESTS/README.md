@@ -36,6 +36,7 @@ Kebab-case slug describing the feature: `answer-space-aware-overload.md`,
 
 ## Index
 Keep this list current (newest meaningful first):
+- `curriculum-tracks.md` — Status: landed — data-driven level "tracks" (Standard = today's levels as data) + a playable multiply-only Times Tables track with a Login selector.
 - `simplify-fractions.md` — Status: landed — ½ Simplify Fractions op: cancel common factors (visualized), case-based grid; the reusable atom for fraction math.
 - `recap-share-link.md` — Status: landed — recap becomes a reconstructable, checksummed `#recap=` achievement-card link.
 - `delete-player.md` — Status: landed — per-row delete-player in the Login manager (safe active/last-player handling).

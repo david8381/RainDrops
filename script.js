@@ -33,6 +33,7 @@ import {
   buildLoginPopup as buildLoginPopupView,
   closeLoginPopup,
 } from "./src/popups/login-popup.js";
+import { TRACKS, getActiveTrack } from "./src/curriculum.js";
 
 const {
   advanceFactorDrop: advanceFactorDropCore,
@@ -386,11 +387,12 @@ function applyProfileSettingsToControls() {
     // strand the player below their actual progress on reload.
     const clearedNext = (summary.skills[opKey]?.unlockedLevel || 0) + 1;
     const resume = Math.max(Number.isFinite(savedLevel) ? savedLevel : 1, clearedNext);
-    opConfig[opKey].difficulty = clamp(1, 10, Math.round(resume));
+    opConfig[opKey].difficulty = clamp(1, getOpMaxLevel(opKey), Math.round(resume));
   }
   state.gameSpeed = clamp(0, 100, Math.round(Number.isFinite(settings.speed) ? settings.speed : 30));
   state.dropLimit = clamp(0, 10, Math.round(Number.isFinite(settings.rate) ? settings.rate : 3));
   state.textSize = normalizeTextSizeSetting(settings.textSize);
+  applyTrackOpGating();
 }
 
 applyProfileSettingsToControls();
@@ -694,7 +696,7 @@ function getActiveAnswerSpace() {
   }
   const universe = new Set();
   for (const [op, level] of pairs) {
-    for (const ans of getAnswerUniverse(op, level)) universe.add(ans);
+    for (const ans of getAnswerUniverse(op, level, getCurriculumTrack())) universe.add(ans);
   }
   const visible = new Set(
     state.drops.filter((drop) => !drop.revealed).map((drop) => String(drop.answer))
@@ -819,8 +821,35 @@ function getMaxDrops() {
 // 5. Operation Toggle Functions
 // ============================================================
 
+// The ops the active curriculum track exposes, or null when the track allows
+// every op (Standard). Alternate tracks (e.g. Times Tables → ["mul"]) collapse
+// the playable op set.
+function getTrackOps() {
+  const ops = getCurriculumTrack().ops;
+  return Array.isArray(ops) ? ops : null;
+}
+
+function isOpAllowedByTrack(opKey) {
+  const ops = getTrackOps();
+  return !ops || ops.includes(opKey);
+}
+
+// Force the enabled op set to match the active track: disable ops the track
+// hides, and make sure its default op is on so there is always something to play.
+// A no-op for Standard (ops === null).
+function applyTrackOpGating() {
+  const ops = getTrackOps();
+  if (!ops) return;
+  for (const key of Object.keys(opConfig)) {
+    if (!ops.includes(key)) opConfig[key].enabled = false;
+  }
+  if (!ops.some((key) => opConfig[key]?.enabled) && opConfig[ops[0]]) {
+    opConfig[ops[0]].enabled = true;
+  }
+}
+
 function getEnabledOps() {
-  return Object.keys(opConfig).filter((key) => opConfig[key].enabled);
+  return Object.keys(opConfig).filter((key) => opConfig[key].enabled && isOpAllowedByTrack(key));
 }
 
 // Operations are grouped into compatible "sets". Ops in the same set can be
@@ -847,6 +876,7 @@ function getOpSet(opKey) {
 function toggleOp(opKey) {
   if (isControlLocked()) return;
   if (!opConfig[opKey]) return;
+  if (!isOpAllowedByTrack(opKey)) return;
   const turningOn = !opConfig[opKey].enabled;
   opConfig[opKey].enabled = turningOn;
   if (turningOn) {
@@ -944,7 +974,7 @@ function advanceMasteredLevel(opKey) {
 function setDifficulty(opKey, level, { force = false } = {}) {
   if (!opConfig[opKey]) return;
   if (isControlLocked() && !force) return;
-  const nextLevel = clamp(1, 10, level);
+  const nextLevel = clamp(1, getOpMaxLevel(opKey), level);
   if (!force && !canAdvanceDifficulty(opKey, nextLevel)) {
     showLevelGateFeedback(opKey);
     return;
@@ -963,6 +993,20 @@ function setDifficulty(opKey, level, { force = false } = {}) {
 // 6. Problem Generation
 // ============================================================
 
+// The player's active curriculum track (data-driven level definitions; see
+// src/curriculum.js). Defaults to Standard for unknown/missing ids.
+function getCurriculumTrack() {
+  return getActiveTrack(state.progressProfile?.activeTrack);
+}
+
+// Highest selectable level for an op under the active track. Tracks that redefine
+// an op with an explicit `maxLevel` (e.g. Times Tables mul = 12) widen the range;
+// everything else keeps the classic 10-level cap.
+function getOpMaxLevel(opKey) {
+  const desc = getCurriculumTrack()[opKey];
+  return typeof desc?.maxLevel === "number" ? desc.maxLevel : 10;
+}
+
 function getProfileMasteryForGeneration(opKey, statsKey) {
   const problem = state.progressProfile.skills?.[opKey]?.problems?.[statsKey];
   return problem ? getProgressProblemMastery(problem) / 100 : null;
@@ -970,7 +1014,7 @@ function getProfileMasteryForGeneration(opKey, statsKey) {
 
 function generateFinishLevelProblem(opKey) {
   const skill = state.progressProfile.skills?.[opKey];
-  const candidates = getFinishLevelPracticeProblems(skill);
+  const candidates = getFinishLevelPracticeProblems(skill, getCurriculumTrack());
   if (candidates.length === 0 || Math.random() > FINISH_LEVEL_FOCUS_CHANCE) return null;
   const picked = weightedPick(
     candidates.map((problem) => ({
@@ -985,7 +1029,7 @@ function generateFinishLevelProblem(opKey) {
 function generateWeightedProblem(opKey) {
   const finishProblem = generateFinishLevelProblem(opKey);
   if (finishProblem) return finishProblem;
-  return generateCoreWeightedProblem(opKey, opConfig, problemStats, Math.random, getProfileMasteryForGeneration);
+  return generateCoreWeightedProblem(opKey, opConfig, problemStats, Math.random, getProfileMasteryForGeneration, getCurriculumTrack());
 }
 
 function pickRandomEnabledOp() {
@@ -1173,7 +1217,7 @@ function makeProblemFromUniverseEntry(opKey, entry, level = opConfig[opKey]?.dif
 }
 
 function getRankedLevelProblems(opKey, level) {
-  return getSkillUniverseProblems(opKey, level)
+  return getSkillUniverseProblems(opKey, level, getCurriculumTrack())
     .map((entry) => {
       const problem = getProgressProblem(opKey, entry.statsKey);
       const mastery = problem ? getProgressProblemMastery(problem) : 0;
@@ -1272,7 +1316,7 @@ function splitIntoGroups(items, groupCount) {
 // ambiguous wall of answers. Operations without an enumerable universe fall
 // back to generated per-part problems.
 function buildBossParts(opKey, level = opConfig[opKey]?.difficulty) {
-  const universe = getSkillUniverseProblems(opKey, level);
+  const universe = getSkillUniverseProblems(opKey, level, getCurriculumTrack());
   let groups = null;
   if (universe.length > 0) {
     const selected = shuffleArray(universe);
@@ -4206,7 +4250,11 @@ function updateOpChits() {
   document.querySelectorAll(".op-chit").forEach((btn) => {
     const opKey = btn.dataset.op;
     if (!opKey || !opConfig[opKey]) return;
-    btn.classList.toggle("active", opConfig[opKey].enabled);
+    // Curriculum tracks can collapse the op set (e.g. Times Tables → × only):
+    // hide the chits the active track does not expose.
+    const allowed = isOpAllowedByTrack(opKey);
+    btn.hidden = !allowed;
+    btn.classList.toggle("active", allowed && opConfig[opKey].enabled);
     btn.disabled = isControlLocked();
   });
   updateOpChitProgress();
@@ -4271,7 +4319,7 @@ function buildDiffCards() {
   const progressSummary = summarizeProfile(state.progressProfile);
   enabled.forEach((opKey) => {
     const config = opConfig[opKey];
-    const range = getDifficultyRange(opKey, config.difficulty);
+    const range = getDifficultyRange(opKey, config.difficulty, getCurriculumTrack());
     const skill = progressSummary.skills[opKey];
     const replayLockReason = getChallengeLockReason(opKey, skill);
 
@@ -4284,7 +4332,7 @@ function buildDiffCards() {
     card.setAttribute("aria-label", `${opDisplayNames[opKey]} difficulty, level ${config.difficulty}, ${formatReadyText(skill)}. Click or press Enter for problem accuracy grid.`);
     card.setAttribute("aria-valuenow", config.difficulty);
     card.setAttribute("aria-valuemin", 1);
-    card.setAttribute("aria-valuemax", 10);
+    card.setAttribute("aria-valuemax", getOpMaxLevel(opKey));
 
     const header = document.createElement("div");
     header.className = "diff-card-head";
@@ -5681,8 +5729,8 @@ function closePlacementOverlay({ focus = true } = {}) {
 
 function makePlacementProblem(opKey, level) {
   const config = createDefaultOpConfig();
-  if (config[opKey]) config[opKey].difficulty = clamp(1, 10, Math.round(level || 1));
-  const problem = generateProblem(opKey, config);
+  if (config[opKey]) config[opKey].difficulty = clamp(1, getOpMaxLevel(opKey), Math.round(level || 1));
+  const problem = generateProblem(opKey, config, Math.random, getCurriculumTrack());
   if (problem.opKey === "factor") {
     problem.answerText = getFullFactorization(problem.factorOriginal);
   }
@@ -5707,9 +5755,10 @@ function isPlacementAnswerCorrect(problem, value) {
 }
 
 function getPlacementFrontierProblems(opKey, level) {
-  const current = getSkillUniverseProblems(opKey, level);
+  const track = getCurriculumTrack();
+  const current = getSkillUniverseProblems(opKey, level, track);
   if (level <= 1) return current;
-  const prior = new Set(getSkillUniverseProblems(opKey, level - 1).map((problem) => problem.statsKey));
+  const prior = new Set(getSkillUniverseProblems(opKey, level - 1, track).map((problem) => problem.statsKey));
   const frontier = current.filter((problem) => !prior.has(problem.statsKey));
   return frontier.length > 0 ? frontier : current;
 }
@@ -6307,6 +6356,22 @@ function formatProfileUpdatedAt(value) {
   return `Updated ${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
 }
 
+// Switch the active player's curriculum track (see src/curriculum.js), then
+// fully reconfigure the game for it: clamp each op's level into the new track's
+// range (so a Times-Tables level 12 doesn't strand when switching back to
+// Standard's 10), persist, and re-apply the profile (op gating + chits + cards).
+function setActiveTrackForProfile(trackId) {
+  const track = getActiveTrack(trackId);
+  if (state.progressProfile.activeTrack === track.id) return;
+  state.progressProfile.activeTrack = track.id;
+  for (const opKey of Object.keys(opConfig)) {
+    const skill = state.progressProfile.skills?.[opKey];
+    if (skill) skill.currentLevel = clamp(1, getOpMaxLevel(opKey), Math.round(skill.currentLevel || 1));
+  }
+  saveProfile(state.progressProfile);
+  activateProfile(state.progressProfile);
+}
+
 // Login popup lives in src/popups/login-popup.js. openLoginPopup() builds the
 // engine context it needs.
 function openLoginPopup({ keepWelcome = false } = {}) {
@@ -6324,6 +6389,7 @@ function openLoginPopup({ keepWelcome = false } = {}) {
     heartbeatActiveSession,
     deleteProfile: deleteStoredProfile,
     activateProfile,
+    setActiveTrack: setActiveTrackForProfile,
     onProfileChanged: rebuildWelcomeMenu,
     closeOtherPopups: () => {
       if (!keepWelcome) closeWelcomeMenu({ focus: false });
@@ -6338,7 +6404,7 @@ function openLoginPopup({ keepWelcome = false } = {}) {
 function buildGridStats(opKey, stats) {
   // Always show the full range for this op type
   const gridMax = (opKey === "mul" || opKey === "div") ? 12 : 20;
-  const currentRange = getDifficultyRange(opKey, opConfig[opKey].difficulty);
+  const currentRange = getDifficultyRange(opKey, opConfig[opKey].difficulty, getCurriculumTrack());
 
   const table = document.createElement("table");
   table.className = "stats-grid";
@@ -7639,6 +7705,10 @@ function installTestHooks() {
       updateOpChits();
       return getTestState();
     },
+    setTrack(trackId) {
+      setActiveTrackForProfile(trackId);
+      return getTestState();
+    },
     setOpDifficulty(opKey, level, options = {}) {
       setDifficulty(opKey, level, options);
       return getTestState();
@@ -7650,7 +7720,7 @@ function installTestHooks() {
     masterCurrentLevel(opKey, { attempts = 3, responseMs = 900 } = {}) {
       const skill = state.progressProfile.skills?.[opKey];
       if (!skill) return getTestState();
-      const problems = getSkillUniverseProblems(opKey, opConfig[opKey].difficulty);
+      const problems = getSkillUniverseProblems(opKey, opConfig[opKey].difficulty, getCurriculumTrack());
       for (const problem of problems) {
         for (let i = 0; i < attempts; i += 1) {
           state.progressProfile = recordProgressEvent(state.progressProfile, {
@@ -7749,6 +7819,14 @@ function installTestHooks() {
       state.drops.push(drop);
       drawDrops();
       return cloneForTest(drop);
+    },
+    // Spawn one drop through the real weighted generator (respects the active
+    // curriculum track), returning it so tests can inspect the generated problem.
+    spawnGeneratedDrop() {
+      createDrop();
+      drawDrops();
+      const drop = state.drops[state.drops.length - 1] || null;
+      return drop ? cloneForTest(drop) : null;
     },
     clearDrops() {
       state.drops = [];

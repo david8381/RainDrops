@@ -11,6 +11,7 @@ import {
   createStoredProfile,
   resetStoredProfile,
 } from "../player-progress.js";
+import { TRACKS } from "../curriculum.js";
 
 export function closeLoginPopup() {
   const existing = document.getElementById("loginOverlay");
@@ -31,7 +32,7 @@ function downloadTextFile(filename, text) {
 // ctx: { getProgressProfile, getActiveProfileName, formatProfileUpdatedAt,
 //        createBackupCode, getBackupFileName, restoreBackupCode,
 //        copyTextToClipboard, heartbeatActiveSession, activateProfile,
-//        deleteProfile, onProfileChanged, closeOtherPopups }
+//        deleteProfile, setActiveTrack, onProfileChanged, closeOtherPopups }
 export function buildLoginPopup(ctx) {
   const {
     getProgressProfile,
@@ -44,6 +45,7 @@ export function buildLoginPopup(ctx) {
     heartbeatActiveSession,
     activateProfile,
     deleteProfile,
+    setActiveTrack,
     onProfileChanged,
     closeOtherPopups,
   } = ctx;
@@ -173,6 +175,39 @@ export function buildLoginPopup(ctx) {
   form.appendChild(row);
   form.appendChild(error);
   card.appendChild(form);
+
+  // Curriculum track picker — swaps the level progression this player follows
+  // (e.g. Standard vs. a multiply-only Times Tables path). See src/curriculum.js.
+  const curriculum = document.createElement("section");
+  curriculum.className = "login-curriculum";
+  const curriculumTitle = document.createElement("h3");
+  curriculumTitle.textContent = "Curriculum";
+  const curriculumHelp = document.createElement("p");
+  curriculumHelp.textContent = "Choose the level progression this player follows.";
+  const trackLabel = document.createElement("label");
+  trackLabel.setAttribute("for", "curriculumTrackSelect");
+  trackLabel.textContent = "Track";
+  const trackSelect = document.createElement("select");
+  trackSelect.id = "curriculumTrackSelect";
+  trackSelect.className = "login-track-select";
+  const activeTrackId = getProgressProfile().activeTrack || "standard";
+  for (const track of Object.values(TRACKS)) {
+    const option = document.createElement("option");
+    option.value = track.id;
+    option.textContent = track.label;
+    if (track.id === activeTrackId) option.selected = true;
+    trackSelect.appendChild(option);
+  }
+  trackSelect.addEventListener("change", () => {
+    setActiveTrack?.(trackSelect.value);
+    closeLoginPopup();
+    onProfileChanged?.();
+  });
+  const trackRow = document.createElement("div");
+  trackRow.className = "login-track-row";
+  trackRow.append(trackLabel, trackSelect);
+  curriculum.append(curriculumTitle, curriculumHelp, trackRow);
+  card.appendChild(curriculum);
 
   const backup = document.createElement("section");
   backup.className = "login-backup";
