@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { createProblemStats } from "../../src/game-core.js";
+import { TRACKS } from "../../src/curriculum.js";
 
 import {
   BOSS_READY_SCORE,
@@ -166,6 +167,49 @@ describe("player progress profile", () => {
     assert.equal(session.operations[0].levels[0].level, 1);
     assert.equal(session.operations[0].levels[0].started.readiness, 0);
     assert.equal(session.operations[0].levels[0].ended.readiness, 11);
+  });
+
+  it("keeps track levels above 10 and fills missing starting denominators in session summaries", () => {
+    const profile = createDefaultProfile(Date.UTC(2026, 0, 1));
+    profile.sessionLog = [
+      {
+        id: "times-placement",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        lastSeenAt: "2026-01-01T00:03:00.000Z",
+        endedAt: "2026-01-01T00:03:00.000Z",
+        operations: {
+          mul: {
+            opKey: "mul",
+            started: {
+              level: 1,
+              readiness: 0,
+              masteredCount: 0,
+              universeCount: 12,
+              levels: {
+                1: { level: 1, readiness: 0, masteredCount: 0, universeCount: 12 },
+              },
+            },
+            ended: {
+              level: 13,
+              readiness: 27,
+              masteredCount: 39,
+              universeCount: 144,
+              levels: {
+                1: { level: 1, readiness: 100, masteredCount: 12, universeCount: 12 },
+                11: { level: 11, readiness: 100, masteredCount: 12, universeCount: 12 },
+                13: { level: 13, readiness: 27, masteredCount: 39, universeCount: 144 },
+              },
+            },
+          },
+        },
+      },
+    ];
+
+    const [session] = summarizeSessionLog(profile);
+    const levels = session.operations[0].levels;
+    assert.deepEqual(levels.map((level) => level.level), [1, 11, 13]);
+    assert.equal(levels.find((level) => level.level === 11).started.universeCount, 12);
+    assert.equal(levels.find((level) => level.level === 13).started.universeCount, 144);
   });
 
   it("decides whether a recent session should resume", () => {
@@ -794,6 +838,27 @@ describe("player progress profile", () => {
     assert.equal(isBossMasteredProblem(updated), false);
     assert.equal(updatedSummary.masteredCount, universe.length - 1);
     assert.ok(updatedSummary.readiness < 100);
+  });
+
+  it("marks every lower Times Tables row as placed out when Test Me lands on mixed review", () => {
+    const profile = createDefaultProfile(Date.UTC(2026, 0, 1));
+    profile.activeTrack = "timesTables";
+
+    recordPlacementCredit(profile, "mul", { level: 13, source: "test-me" }, Date.UTC(2026, 0, 1, 0, 1));
+
+    const skill = profile.skills.mul;
+    const mixedReview = getSkillUniverseProblems("mul", 13, TRACKS.timesTables);
+    const placedOutKeys = mixedReview
+      .filter((problem) => isPlacementPlacedOut(skill.problems[problem.statsKey]))
+      .map((problem) => problem.statsKey);
+
+    assert.equal(mixedReview.length, 144);
+    assert.equal(placedOutKeys.length, 144);
+    assert.equal(skill.tracks.timesTables.placementCredits.at(-1).problemCount, 144);
+    assert.deepEqual(
+      skill.tracks.timesTables.levelAdvances.map((advance) => advance.level),
+      Array.from({ length: 12 }, (_, i) => i + 1)
+    );
   });
 
   it("does not activate placed-out display for facts that already have enough attempts", () => {

@@ -1576,9 +1576,11 @@ function formatSessionChallengeBreakdown(challenges = {}) {
   ].filter(Boolean).join(" · ") + activity;
 }
 
+const REPORT_MAX_LEVEL = 99;
+
 function createReportLevelSnapshot(snapshot = {}, fallbackLevel = 1) {
   return {
-    level: clamp(1, 10, Math.round(Number.isFinite(snapshot.level) ? snapshot.level : fallbackLevel)),
+    level: clamp(1, REPORT_MAX_LEVEL, Math.round(Number.isFinite(snapshot.level) ? snapshot.level : fallbackLevel)),
     readiness: clamp(0, 100, Math.round(Number.isFinite(snapshot.readiness) ? snapshot.readiness : 0)),
     masteredCount: Math.max(0, Math.round(Number.isFinite(snapshot.masteredCount) ? snapshot.masteredCount : 0)),
     universeCount: Math.max(0, Math.round(Number.isFinite(snapshot.universeCount) ? snapshot.universeCount : 0)),
@@ -1586,7 +1588,7 @@ function createReportLevelSnapshot(snapshot = {}, fallbackLevel = 1) {
 }
 
 function createReportLevel(level = {}) {
-  const levelNumber = clamp(1, 10, Math.round(Number.isFinite(level.level) ? level.level : 1));
+  const levelNumber = clamp(1, REPORT_MAX_LEVEL, Math.round(Number.isFinite(level.level) ? level.level : 1));
   const started = createReportLevelSnapshot(level.started, levelNumber);
   const ended = createReportLevelSnapshot(level.ended, levelNumber);
   return {

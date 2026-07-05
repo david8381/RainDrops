@@ -683,6 +683,40 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#statsHoverTooltip")).toContainText("Boss mastered: yes (placement credit)");
   });
 
+  test("Times Tables placement at mixed review credits every row and reports L13", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "setTrack", "timesTables");
+
+    let state = await invoke(page, "startPlacement", "mul", 13);
+    expect(state.placementState.level).toBe(13);
+    state = await invoke(page, "acceptPlacement", 13);
+
+    const placedOutCount = Object.values(state.progressProfile.skills.mul.problems)
+      .filter((problem) => problem.placementStatus === "placed-out").length;
+    expect(placedOutCount).toBe(144);
+    expect(state.progressProfile.skills.mul.tracks.timesTables.placementCredits.at(-1).problemCount).toBe(144);
+
+    await page.locator('.diff-card[data-op="mul"] .diff-grid-hint').click();
+    await expect(page.locator("#statsOverlay .stats-cell-placed-out")).toHaveCount(144);
+
+    await invoke(page, "addDrop", {
+      opKey: "mul",
+      text: "1 × 1",
+      answer: 1,
+      answerText: "1",
+      statsKey: "1,1",
+      y: 120,
+    });
+    await invoke(page, "submit", "1");
+    await invoke(page, "finishSession");
+    await expect(page.locator("#sessionReportOverlay")).toBeVisible();
+    const reportLines = await page.locator("#sessionReportOverlay .session-report-level-line").allTextContents();
+    expect(reportLines.some((line) => line.startsWith("L11 "))).toBe(true);
+    expect(reportLines.some((line) => line.startsWith("L12 "))).toBe(true);
+    expect(reportLines.some((line) => line.startsWith("L13 "))).toBe(true);
+    expect(reportLines.filter((line) => line.startsWith("L10 "))).toHaveLength(1);
+  });
+
   test("Test Me pause, restart, and finish leave clean controls", async ({ page }) => {
     await openApp(page);
     await invoke(page, "stageReadyRun");

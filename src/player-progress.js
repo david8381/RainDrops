@@ -510,6 +510,19 @@ function getSkillUniverseProblems(opKey, level, track = TRACKS.standard) {
   return [];
 }
 
+function getSkillUniverseProblemsThroughLevel(opKey, level, track = TRACKS.standard) {
+  const maxLevel = getTrackOpMaxLevel(opKey, track);
+  const throughLevel = clamp(0, maxLevel, Math.round(Number.isFinite(level) ? level : 0));
+  const byKey = new Map();
+  for (let currentLevel = 1; currentLevel <= throughLevel; currentLevel += 1) {
+    for (const problem of getSkillUniverseProblems(opKey, currentLevel, track)) {
+      if (!problem?.statsKey || byKey.has(problem.statsKey)) continue;
+      byKey.set(problem.statsKey, problem);
+    }
+  }
+  return [...byKey.values()];
+}
+
 function getRequiredAttemptsForReady(universeCount) {
   return Math.max(MIN_ATTEMPTS_FOR_READY, Math.ceil(universeCount * 1.25));
 }
@@ -1736,7 +1749,7 @@ function recordPlacementCredit(profile, opKey, options = {}, nowMs = Date.now())
   const source = options.source || "test-me";
   const at = nowIso(nowMs);
   const entries = placedOutThrough > 0
-    ? getSkillUniverseProblems(opKey, placedOutThrough, track)
+    ? getSkillUniverseProblemsThroughLevel(opKey, placedOutThrough, track)
     : [];
 
   for (const entry of entries) {
@@ -2144,12 +2157,16 @@ function summarizeSessionOperationLevels(operation) {
   return [...levels]
     .map((levelKey) => {
       const level = clamp(1, MAX_STORED_LEVEL, Math.round(Number(levelKey) || 1));
-      const started = createSessionLevelSnapshot(startLevels[levelKey] || (
-        operation.started.level === level ? operation.started : { level }
-      ), level);
-      const ended = createSessionLevelSnapshot(endLevels[levelKey] || (
-        operation.ended.level === level ? operation.ended : { level }
-      ), level);
+      const startLevel = startLevels[levelKey];
+      const endLevel = endLevels[levelKey];
+      const startedFallback = operation.started.level === level
+        ? operation.started
+        : { level, universeCount: endLevel?.universeCount || 0 };
+      const endedFallback = operation.ended.level === level
+        ? operation.ended
+        : { level, universeCount: startLevel?.universeCount || 0 };
+      const started = createSessionLevelSnapshot(startLevel || startedFallback, level);
+      const ended = createSessionLevelSnapshot(endLevel || endedFallback, level);
       return {
         level,
         started,

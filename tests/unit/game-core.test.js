@@ -571,12 +571,19 @@ describe("difficulty ranges", () => {
               ended: { level: 1, readiness: 100, masteredCount: 9, universeCount: 9 },
               masteryDelta: 56,
             },
+            {
+              level: 13,
+              started: { level: 13, readiness: 0, masteredCount: 0, universeCount: 144 },
+              ended: { level: 13, readiness: 27, masteredCount: 39, universeCount: 144 },
+              masteryDelta: 27,
+            },
           ],
         },
       ],
     });
 
     assert.deepEqual(expandCompactSessionReportViewModel(compactSessionReportViewModel(report)), report);
+    assert.equal(formatSessionLevelProgress(report.operations[0].levels[1]), "L13 0% -> 27% (+27%; 0/144 -> 39/144 mastered)");
   });
 
   it("formats the session-report summary line", () => {
