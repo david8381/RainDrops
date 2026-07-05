@@ -29,7 +29,7 @@ See `docs/Ai/TESTING.md` for details.
 
 ## Deployment
 
-GitHub Pages deploys via `.github/workflows/pages.yml` on pushes to `main`. Test CI runs separately via `.github/workflows/tests.yml`.
+GitHub Pages deploys via `.github/workflows/pages.yml` on pushes to `main`. Test CI lives in `.github/workflows/tests.yml` but is manual-only (`workflow_dispatch`) to avoid push-email noise; run the local test commands before pushing.
 
 Versioning is stamped automatically: `core.hooksPath` is `.githooks`, and `.githooks/pre-commit` runs `scripts/stamp-version.sh` and stages `index.html` + `package.json`, so every commit bumps the patch and refreshes the `?v=` cache-busters. To set an explicit version, run `npm run stamp 0.4.0` (or `npm run stamp` to bump the patch manually). Do not hand-edit the version strings — let the hook own them.
 

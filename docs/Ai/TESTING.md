@@ -61,13 +61,15 @@ The shared-report link path (compress/decompress + checksum + read-only view) is
 also covered by one top-level spec that runs on **all** projects, since a parent
 often opens a shared link on a phone or iPad.
 
-## CI
-`.github/workflows/tests.yml` runs on pushes to `main`, pull requests, and manual dispatch:
+## GitHub Workflows
+`.github/workflows/pages.yml` deploys GitHub Pages on pushes to `main`, so successful pushes update `rainmath.com`.
+
+`.github/workflows/tests.yml` is manual-only (`workflow_dispatch`) to avoid push-email noise. When run manually, it executes:
 1. `npm ci`
 2. `npx playwright install --with-deps chromium firefox webkit`
 3. `npm run test:ci` (runs the full six-project matrix)
 
-The existing GitHub Pages deploy workflow remains separate.
+Because GitHub tests do not run automatically, run `npm run typecheck`, `npm run test:unit`, and the relevant Playwright coverage locally before pushing substantive changes.
 
 ## Local Troubleshooting
 - If Playwright cannot find a browser, run `npx playwright install chromium`.

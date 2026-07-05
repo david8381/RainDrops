@@ -20,7 +20,7 @@ Vanilla browser game (falling math drops). **Native ES modules, no bundler, no r
 - `npm start` — serve at http://127.0.0.1:4173 to play locally (matches production).
 - `npm run dev` — same with live-reload (edit → tab refreshes).
 - `npm run test:unit` · `npm run test:e2e` · `npm test` — Node unit tests + Playwright (six browser/device projects).
-- `npm run typecheck` — `tsc --checkJs` over the typed core (`src/game-core.js`, `src/player-progress.js`, `src/types.js`); **must stay at 0 errors** (part of `test:ci`, enforced in CI).
+- `npm run typecheck` — `tsc --checkJs` over the typed core (`src/game-core.js`, `src/player-progress.js`, `src/types.js`); **must stay at 0 errors** (part of `test:ci`; GitHub test CI is manual-only, so run this locally before pushing).
 - `npm run coverage` — c8 (unit) + monocart (e2e) coverage.
 
 ## Where code goes (see ARCHITECTURE for detail)
