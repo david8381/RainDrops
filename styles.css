@@ -371,6 +371,34 @@ body {
   opacity: 0.55;
 }
 
+.adaptive-control-row {
+  min-height: 24px;
+}
+
+.adaptive-control-row label {
+  width: 66px;
+}
+
+.adaptive-control-row.is-active label,
+.adaptive-control-row.is-active .adaptive-value {
+  color: var(--accent);
+}
+
+.control-check {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.control-check:disabled {
+  opacity: 0.55;
+}
+
+.adaptive-value {
+  min-width: 34px;
+}
+
 .control-select {
   flex: 1;
   min-width: 0;
@@ -2959,6 +2987,18 @@ button.primary:hover {
   place-items: center;
   padding: 0;
   touch-action: manipulation;
+}
+
+.kp-auto-btn {
+  width: auto;
+  min-width: 34px;
+  border-radius: 999px;
+  padding: 0 8px;
+}
+
+.kp-adaptive.is-active span,
+.kp-adaptive.is-active .kp-auto-btn {
+  color: var(--accent);
 }
 
 .kp-sbtn:active:not(:disabled) {

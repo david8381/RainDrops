@@ -83,6 +83,7 @@ const {
   formatPlacementResult,
   resolvePlacementOutcome,
   deriveRunControlState,
+  deriveAdaptivePressureAdjustment,
   smoothProgress,
   blitzDropSeconds,
   blitzSpeedPercent,
@@ -143,6 +144,7 @@ const {
   problemCurrentAccuracy,
   problemMastery: getProgressProblemMastery,
   readProfile,
+  recordAdaptivePressureEstimate,
   recordBlitzAttempt,
   recordBossAttempt,
   recordChallengeAttempt,
@@ -189,6 +191,9 @@ const speedSlider = document.getElementById("speedSlider");
 const speedValueEl = document.getElementById("speedValue");
 const dropLimitSlider = document.getElementById("dropLimitSlider");
 const dropLimitValueEl = document.getElementById("dropLimitValue");
+const adaptivePressureToggle = document.getElementById("adaptivePressureToggle");
+const adaptivePressureLabel = document.getElementById("adaptivePressureLabel");
+const adaptivePressureValueEl = document.getElementById("adaptivePressureValue");
 const textSizeSelect = document.getElementById("textSizeSelect");
 const textSizeValueEl = document.getElementById("textSizeValue");
 const bossHudEl = document.getElementById("bossHud");
@@ -267,6 +272,11 @@ const PLACEMENT_SHIELD_MAX = 6;
 const PLACEMENT_SHIELD_GAIN = 1;
 const PLACEMENT_SHIELD_LOSS = 2;
 const PLACEMENT_LEVEL_ATTEMPT_CAP = 10;
+const ADAPTIVE_WINDOW_LIMIT = 24;
+const ADAPTIVE_EVALUATE_MS = 5000;
+const ADAPTIVE_LOAD_SAMPLE_MS = 1000;
+const ADAPTIVE_MIN_DROPS = 1;
+const ADAPTIVE_MIN_SPEED = 5;
 
 function placementDropSeconds(opKey) {
   return PLACEMENT_DROP_SECONDS_BY_OP[opKey] || PLACEMENT_DROP_SECONDS;
@@ -407,6 +417,8 @@ function applyProfileSettingsToControls() {
   }
   state.gameSpeed = clamp(0, 100, Math.round(Number.isFinite(settings.speed) ? settings.speed : 30));
   state.dropLimit = clamp(0, 10, Math.round(Number.isFinite(settings.rate) ? settings.rate : 3));
+  state.adaptivePressureEnabled = Boolean(settings.adaptivePressureEnabled);
+  resetAdaptivePressureRuntime();
   state.textSize = normalizeTextSizeSetting(settings.textSize);
   applyTrackOpGating();
 }
@@ -504,6 +516,9 @@ function recordLearningResult(drop, outcome) {
   });
   recordActiveSessionOutcome(drop, outcome);
   saveProfile(state.progressProfile);
+  if (["correct", "wrong", "missed"].includes(outcome)) {
+    recordAdaptivePressureEvent(drop, outcome);
+  }
   updateReadinessDisplays();
   maybeOfferBoss(drop.opKey);
 }
@@ -558,6 +573,7 @@ function syncProgressSettings({ persist = true } = {}) {
     pressureTier: getPressureTier(state.gameSpeed).key,
     speed: state.gameSpeed,
     rate: state.dropLimit,
+    adaptivePressureEnabled: state.adaptivePressureEnabled,
     textSize: state.textSize,
     difficulties,
   });
@@ -741,6 +757,7 @@ function registerWrongSubmission(nowMs = performance.now()) {
   const heat = state.wrongSubmissionTimes.reduce((sum, entry) => sum + entry.cost, 0);
   if (heat >= CANNON_OVERLOAD_THRESHOLD) {
     triggerCannonOverload(nowMs);
+    recordAdaptiveOverloadForVisibleOps();
   }
 }
 
@@ -789,6 +806,204 @@ function getCurrentPressure() {
 
 function getActivePressure() {
   return state.bossMode?.pressure || getCurrentPressure();
+}
+
+function resetAdaptivePressureRuntime() {
+  state.adaptivePressureTargets = {};
+  state.adaptivePressureWindows = {};
+  state.adaptivePressureNextIncrease = {};
+  state.adaptivePressureLastEvaluationAt = {};
+  state.adaptivePressureLastLoadSampleAtMs = 0;
+}
+
+function isAdaptivePracticeActive() {
+  return Boolean(
+    state.adaptivePressureEnabled
+    && state.hasStarted
+    && !state.isPaused
+    && !isBossActive()
+    && !isPlacementActive()
+    && !state.isBreatherMode
+  );
+}
+
+function getAdaptivePressureMemory(opKey) {
+  const memory = state.progressProfile?.skills?.[opKey]?.adaptivePressure;
+  return {
+    speed: clamp(0, 100, Math.round(Number.isFinite(memory?.speed) ? memory.speed : state.gameSpeed)),
+    rate: clamp(1, 10, Math.round(Number.isFinite(memory?.rate) ? memory.rate : Math.max(ADAPTIVE_MIN_DROPS, state.dropLimit))),
+    confidence: Number.isFinite(memory?.confidence) ? memory.confidence : 0,
+    samples: Math.max(0, Math.round(Number.isFinite(memory?.samples) ? memory.samples : 0)),
+  };
+}
+
+function seedAdaptivePressureTarget(opKey) {
+  if (!opConfig[opKey]) return null;
+  if (!state.adaptivePressureTargets[opKey]) {
+    state.adaptivePressureTargets[opKey] = {
+      speed: clamp(0, 100, Math.round(state.gameSpeed)),
+      rate: clamp(ADAPTIVE_MIN_DROPS, 10, Math.max(ADAPTIVE_MIN_DROPS, Math.round(state.dropLimit))),
+    };
+  }
+  if (!state.adaptivePressureNextIncrease[opKey]) {
+    state.adaptivePressureNextIncrease[opKey] = "speed";
+  }
+  if (!Array.isArray(state.adaptivePressureWindows[opKey])) {
+    state.adaptivePressureWindows[opKey] = [];
+  }
+  return state.adaptivePressureTargets[opKey];
+}
+
+function ensureAdaptiveTargetsForEnabledOps() {
+  if (!state.adaptivePressureEnabled) return;
+  for (const opKey of getEnabledOps()) seedAdaptivePressureTarget(opKey);
+}
+
+function getAdaptivePressureScore(target) {
+  return (Number(target?.speed) || 0) + (Number(target?.rate) || 0) * 10;
+}
+
+function getConservativeAdaptiveTarget() {
+  const targets = getEnabledOps()
+    .map((opKey) => seedAdaptivePressureTarget(opKey))
+    .filter(Boolean);
+  if (targets.length === 0) return null;
+  return targets.reduce((lowest, target) => {
+    const delta = getAdaptivePressureScore(target) - getAdaptivePressureScore(lowest);
+    if (delta < 0) return target;
+    if (delta === 0 && target.speed < lowest.speed) return target;
+    return lowest;
+  }, targets[0]);
+}
+
+function applyAdaptivePressureTarget({ persist = true } = {}) {
+  if (!state.adaptivePressureEnabled) return;
+  const target = getConservativeAdaptiveTarget();
+  if (!target) return;
+  if (target.speed === state.gameSpeed && target.rate === state.dropLimit) {
+    if (persist) syncProgressSettings();
+    updateControlDisplay();
+    return;
+  }
+  setPracticeControls({ speed: target.speed, drops: target.rate }, { persist });
+}
+
+function setAdaptivePressureEnabled(enabled) {
+  const next = Boolean(enabled);
+  if (state.adaptivePressureEnabled === next) {
+    updateControlDisplay();
+    return;
+  }
+  state.adaptivePressureEnabled = next;
+  resetAdaptivePressureRuntime();
+  if (next && state.dropLimit === 0) {
+    setPracticeControls({ drops: ADAPTIVE_MIN_DROPS });
+  } else {
+    syncProgressSettings();
+  }
+  ensureAdaptiveTargetsForEnabledOps();
+  updateControlDisplay();
+  updateInputHint();
+}
+
+function getAdaptiveLoadRatio() {
+  if (state.dropLimit <= 0) return 0;
+  const ordinaryDrops = state.drops.filter((drop) => (
+    !drop.revealed && !drop.bossKind && !drop.targetType && !isPlacementDrop(drop)
+  ));
+  return ordinaryDrops.length / Math.max(1, state.dropLimit);
+}
+
+function getDropResponseRatio(drop) {
+  const responseMs = getDropResponseMs(drop);
+  const speedMult = state.gameSpeed / 100;
+  const pxPerSec = Number(drop?.baseSpeed) * speedMult;
+  if (!Number.isFinite(responseMs) || !(pxPerSec > 0) || !(state.canvasH > 0)) return null;
+  const totalDistance = state.canvasH + 54;
+  const budgetMs = (totalDistance / pxPerSec) * 1000;
+  return budgetMs > 0 ? responseMs / budgetMs : null;
+}
+
+function rememberAdaptivePressure(opKey, target, result) {
+  const memory = getAdaptivePressureMemory(opKey);
+  state.progressProfile = recordAdaptivePressureEstimate(state.progressProfile, opKey, {
+    speed: target.speed,
+    rate: target.rate,
+    confidence: clamp(0, 1, result.sampleCount / ADAPTIVE_WINDOW_LIMIT),
+    samples: memory.samples + result.sampleCount,
+  });
+}
+
+function maybeEvaluateAdaptivePressure(opKey) {
+  if (!state.adaptivePressureEnabled || !opConfig[opKey]) return;
+  const nowMs = performance.now();
+  const lastMs = state.adaptivePressureLastEvaluationAt[opKey] || 0;
+  const events = state.adaptivePressureWindows[opKey] || [];
+  if (events.length < 8 || nowMs - lastMs < ADAPTIVE_EVALUATE_MS) return;
+  const target = seedAdaptivePressureTarget(opKey);
+  const result = deriveAdaptivePressureAdjustment(events, {
+    ...target,
+    nextIncrease: state.adaptivePressureNextIncrease[opKey],
+  }, {
+    minSpeed: ADAPTIVE_MIN_SPEED,
+    minRate: ADAPTIVE_MIN_DROPS,
+  });
+  state.adaptivePressureLastEvaluationAt[opKey] = nowMs;
+  if (result.action === "hold") return;
+  target.speed = result.speed;
+  target.rate = result.rate;
+  state.adaptivePressureNextIncrease[opKey] = result.nextIncrease;
+  state.adaptivePressureWindows[opKey] = [];
+  rememberAdaptivePressure(opKey, target, result);
+  applyAdaptivePressureTarget();
+}
+
+function recordAdaptivePressureEvent(drop, outcome, { overloaded = false, loadOnly = false } = {}) {
+  if (!state.adaptivePressureEnabled) return;
+  const opKey = drop?.opKey;
+  if (!opConfig[opKey]) return;
+  if (!loadOnly && (!isAdaptivePracticeActive() || isAssessmentTarget(drop) || isPlacementDrop(drop))) return;
+  seedAdaptivePressureTarget(opKey);
+  const event = {
+    outcome,
+    responseRatio: loadOnly ? null : getDropResponseRatio(drop),
+    loadRatio: getAdaptiveLoadRatio(),
+    overloaded,
+  };
+  const events = state.adaptivePressureWindows[opKey];
+  events.push(event);
+  if (events.length > ADAPTIVE_WINDOW_LIMIT) {
+    events.splice(0, events.length - ADAPTIVE_WINDOW_LIMIT);
+  }
+  maybeEvaluateAdaptivePressure(opKey);
+}
+
+function recordAdaptiveOverloadForVisibleOps() {
+  if (!isAdaptivePracticeActive()) return;
+  const opKeys = new Set(
+    state.drops
+      .filter((drop) => !drop.revealed && !drop.bossKind && !drop.targetType && opConfig[drop.opKey])
+      .map((drop) => drop.opKey)
+  );
+  for (const opKey of opKeys) {
+    recordAdaptivePressureEvent({ opKey }, "overload", { overloaded: true, loadOnly: true });
+  }
+}
+
+function maybeSampleAdaptiveLoad(timestamp) {
+  if (!isAdaptivePracticeActive() || state.dropLimit <= 0) return;
+  if (timestamp - state.adaptivePressureLastLoadSampleAtMs < ADAPTIVE_LOAD_SAMPLE_MS) return;
+  const loadRatio = getAdaptiveLoadRatio();
+  if (loadRatio < 1) return;
+  state.adaptivePressureLastLoadSampleAtMs = timestamp;
+  const visibleOps = new Set(
+    state.drops
+      .filter((drop) => !drop.revealed && !drop.bossKind && !drop.targetType && opConfig[drop.opKey])
+      .map((drop) => drop.opKey)
+  );
+  for (const opKey of visibleOps) {
+    recordAdaptivePressureEvent({ opKey }, "load", { loadOnly: true });
+  }
 }
 
 function setPracticeControls({ speed = state.gameSpeed, drops = state.dropLimit } = {}, { persist = true } = {}) {
@@ -925,6 +1140,10 @@ function toggleOp(opKey) {
     }
   }
   updateOpChits();
+  if (state.adaptivePressureEnabled) {
+    ensureAdaptiveTargetsForEnabledOps();
+    applyAdaptivePressureTarget();
+  }
   returnToReadyGateIfIdleWithoutOps();
 }
 
@@ -3723,6 +3942,8 @@ function tick(timestamp) {
         state.spawnTimer = 0;
       }
     }
+
+    maybeSampleAdaptiveLoad(timestamp);
 
     if (!isBossStunned() && !state.isBreatherMode) {
       updateDrops(dt);
@@ -6648,23 +6869,36 @@ function updateDifficultyDisplays() {
 }
 
 function updateControlDisplay() {
+  const controlsLocked = isControlLocked();
+  const pressureControlsLocked = controlsLocked || state.adaptivePressureEnabled;
   if (speedSlider) {
     speedSlider.value = String(state.gameSpeed);
-    speedSlider.disabled = isControlLocked();
+    speedSlider.disabled = pressureControlsLocked;
   }
   if (speedValueEl) {
     speedValueEl.textContent = `${state.gameSpeed}%`;
   }
   if (dropLimitSlider) {
     dropLimitSlider.value = String(state.dropLimit);
-    dropLimitSlider.disabled = isControlLocked();
+    dropLimitSlider.disabled = pressureControlsLocked;
   }
   if (dropLimitValueEl) {
     dropLimitValueEl.textContent = String(state.dropLimit);
   }
+  if (adaptivePressureToggle) {
+    adaptivePressureToggle.checked = Boolean(state.adaptivePressureEnabled);
+    adaptivePressureToggle.disabled = controlsLocked;
+    adaptivePressureToggle.setAttribute("aria-label", `Adaptive Speed and Drops ${state.adaptivePressureEnabled ? "on" : "off"}`);
+  }
+  if (adaptivePressureLabel) {
+    adaptivePressureLabel.closest(".adaptive-control-row")?.classList.toggle("is-active", state.adaptivePressureEnabled);
+  }
+  if (adaptivePressureValueEl) {
+    adaptivePressureValueEl.textContent = state.adaptivePressureEnabled ? "On" : "Off";
+  }
   if (textSizeSelect) {
     textSizeSelect.value = normalizeTextSizeSetting(state.textSize);
-    textSizeSelect.disabled = isControlLocked();
+    textSizeSelect.disabled = controlsLocked;
   }
   if (textSizeValueEl) {
     textSizeValueEl.textContent = getTextSizeLabel();
@@ -6675,11 +6909,19 @@ function updateControlDisplay() {
   if (kpDropsVal) kpDropsVal.textContent = String(state.dropLimit);
   const kpTextSizeBtn = document.getElementById("kpTextSizeBtn");
   if (kpTextSizeBtn) kpTextSizeBtn.textContent = getTextSizeLabel();
+  const kpAdaptiveBtn = document.getElementById("kpAdaptiveBtn");
+  if (kpAdaptiveBtn) {
+    kpAdaptiveBtn.textContent = state.adaptivePressureEnabled ? "On" : "Off";
+    kpAdaptiveBtn.disabled = controlsLocked;
+    kpAdaptiveBtn.setAttribute("aria-pressed", String(Boolean(state.adaptivePressureEnabled)));
+    kpAdaptiveBtn.closest(".kp-adaptive")?.classList.toggle("is-active", state.adaptivePressureEnabled);
+  }
   document.querySelectorAll(".kp-sbtn").forEach((btn) => {
-    btn.disabled = isControlLocked();
+    const locksUnderAdaptive = ["kpSpeedDn", "kpSpeedUp", "kpDropsDn", "kpDropsUp"].includes(btn.id);
+    btn.disabled = controlsLocked || (state.adaptivePressureEnabled && locksUnderAdaptive);
   });
   document.querySelectorAll(".op-chit").forEach((btn) => {
-    btn.disabled = isControlLocked();
+    btn.disabled = controlsLocked;
   });
   updatePauseControlLabels();
 }
@@ -7119,7 +7361,7 @@ if (challengeExitBtn) {
 // Practice controls
 if (speedSlider) {
   speedSlider.addEventListener("input", () => {
-    if (isControlLocked()) return;
+    if (isControlLocked() || state.adaptivePressureEnabled) return;
     initAudio();
     setPracticeControls({ speed: Number(speedSlider.value) });
   });
@@ -7127,9 +7369,20 @@ if (speedSlider) {
 
 if (dropLimitSlider) {
   dropLimitSlider.addEventListener("input", () => {
-    if (isControlLocked()) return;
+    if (isControlLocked() || state.adaptivePressureEnabled) return;
     initAudio();
     setPracticeControls({ drops: Number(dropLimitSlider.value) });
+  });
+}
+
+if (adaptivePressureToggle) {
+  adaptivePressureToggle.addEventListener("change", () => {
+    if (isControlLocked()) {
+      updateControlDisplay();
+      return;
+    }
+    initAudio();
+    setAdaptivePressureEnabled(adaptivePressureToggle.checked);
   });
 }
 
@@ -7355,16 +7608,19 @@ function setupTouchKeypad() {
   });
 
   wireKpButton(document.getElementById("kpSpeedDn"), () => {
-    if (!isControlLocked()) setPracticeControls({ speed: state.gameSpeed - 10 });
+    if (!isControlLocked() && !state.adaptivePressureEnabled) setPracticeControls({ speed: state.gameSpeed - 10 });
   });
   wireKpButton(document.getElementById("kpSpeedUp"), () => {
-    if (!isControlLocked()) setPracticeControls({ speed: state.gameSpeed + 10 });
+    if (!isControlLocked() && !state.adaptivePressureEnabled) setPracticeControls({ speed: state.gameSpeed + 10 });
   });
   wireKpButton(document.getElementById("kpDropsDn"), () => {
-    if (!isControlLocked()) setPracticeControls({ drops: state.dropLimit - 1 });
+    if (!isControlLocked() && !state.adaptivePressureEnabled) setPracticeControls({ drops: state.dropLimit - 1 });
   });
   wireKpButton(document.getElementById("kpDropsUp"), () => {
-    if (!isControlLocked()) setPracticeControls({ drops: state.dropLimit + 1 });
+    if (!isControlLocked() && !state.adaptivePressureEnabled) setPracticeControls({ drops: state.dropLimit + 1 });
+  });
+  wireKpButton(document.getElementById("kpAdaptiveBtn"), () => {
+    if (!isControlLocked()) setAdaptivePressureEnabled(!state.adaptivePressureEnabled);
   });
   wireKpButton(document.getElementById("kpTextSizeBtn"), () => {
     if (!isControlLocked()) cycleTextSize();
@@ -7604,6 +7860,9 @@ function getTestState() {
     currentPressure: cloneForTest(getCurrentPressure()),
     gameSpeed: state.gameSpeed,
     dropLimit: state.dropLimit,
+    adaptivePressureEnabled: state.adaptivePressureEnabled,
+    adaptivePressureTargets: cloneForTest(state.adaptivePressureTargets),
+    adaptivePressureWindows: cloneForTest(state.adaptivePressureWindows),
     textSize: state.textSize,
     isPaused: state.isPaused,
     hasStarted: state.hasStarted,
@@ -7710,6 +7969,8 @@ function installTestHooks() {
       state.groundFlash = 0;
       state.currentInput = "";
       resetCannonOverload({ clearCooldown: true });
+      state.adaptivePressureEnabled = false;
+      resetAdaptivePressureRuntime();
       state.factorTargetId = null;
       state.reportViewProfile = null;
       state.reportViewReports = null;
@@ -7860,6 +8121,10 @@ function installTestHooks() {
         opConfig[key].enabled = opKeys.includes(key);
       });
       updateOpChits();
+      if (state.adaptivePressureEnabled) {
+        ensureAdaptiveTargetsForEnabledOps();
+        applyAdaptivePressureTarget();
+      }
       return getTestState();
     },
     setTrack(trackId) {
@@ -7968,6 +8233,21 @@ function installTestHooks() {
         setPracticeControls({ speed, drops });
       }
       if (nextTextSize !== undefined) setTextSize(nextTextSize);
+      updateControlDisplay();
+      return getTestState();
+    },
+    setAdaptivePressure(enabled) {
+      setAdaptivePressureEnabled(enabled);
+      return getTestState();
+    },
+    applyAdaptiveEvidence(opKey, events = []) {
+      if (!opConfig[opKey]) return getTestState();
+      seedAdaptivePressureTarget(opKey);
+      state.adaptivePressureWindows[opKey] = Array.isArray(events)
+        ? events.map((event) => ({ ...event }))
+        : [];
+      state.adaptivePressureLastEvaluationAt[opKey] = performance.now() - ADAPTIVE_EVALUATE_MS - 1;
+      maybeEvaluateAdaptivePressure(opKey);
       updateControlDisplay();
       return getTestState();
     },

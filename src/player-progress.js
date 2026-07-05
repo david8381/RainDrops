@@ -126,6 +126,28 @@ function normalizeTextSize(value) {
   return TEXT_SIZE_OPTIONS.includes(value) ? value : "normal";
 }
 
+/**
+ * @param {Partial<import('./types.js').AdaptivePressureMemory>} [value]
+ * @param {Partial<import('./types.js').AdaptivePressureMemory>} [fallback]
+ * @param {number} [nowMs]
+ * @returns {import('./types.js').AdaptivePressureMemory}
+ */
+function normalizeAdaptivePressure(value = {}, fallback = {}, nowMs = Date.now()) {
+  const base = /** @type {Partial<import('./types.js').AdaptivePressureMemory>} */ (
+    value && typeof value === "object" ? value : {}
+  );
+  const fallbackObj = /** @type {Partial<import('./types.js').AdaptivePressureMemory>} */ (
+    fallback && typeof fallback === "object" ? fallback : {}
+  );
+  return {
+    speed: normalizeSpeedPercent(base.speed ?? fallbackObj.speed),
+    rate: normalizeLoad(base.rate ?? fallbackObj.rate),
+    confidence: clamp(0, 1, Number.isFinite(base.confidence) ? base.confidence : 0),
+    samples: Math.max(0, Math.round(Number.isFinite(base.samples) ? base.samples : 0)),
+    updatedAt: base.updatedAt || fallbackObj.updatedAt || nowIso(nowMs),
+  };
+}
+
 function getPressureTierForSpeed(speedPercent = 30) {
   const speed = normalizeSpeedPercent(speedPercent);
   return PRESSURE_TIERS.find((tier) => speed >= tier.min && speed <= tier.max) || PRESSURE_TIERS[1];
@@ -388,6 +410,7 @@ function createEmptySkill(opKey, nowMs = Date.now()) {
     recent: [],
     problems: {},
     pressureTiers: createPressureTierStatsMap(),
+    adaptivePressure: normalizeAdaptivePressure({}, { speed: 30, rate: 3 }, nowMs),
     tracks: { standard: createDefaultCoverage(nowMs) },
     createdAt: nowIso(nowMs),
     updatedAt: nowIso(nowMs),
@@ -549,6 +572,7 @@ function createDefaultProfile(nowMs = Date.now()) {
       speed: 30,
       rate: 3,
       pressureTier: getPressureTierForSpeed(30).key,
+      adaptivePressureEnabled: false,
       textSize: "normal",
       difficulties: /** @type {Record<import('./types.js').OpKey, number>} */ (
         Object.fromEntries(
@@ -723,6 +747,7 @@ function ensureProfileShape(profile, nowMs = Date.now()) {
   const load = normalizeLoad(rawSettings.rate ?? rawSettings.maxActiveDrops ?? rawSettings.dropLimit);
   const textSize = normalizeTextSize(rawSettings.textSize);
   const pressure = getPressureTier(speed);
+  const adaptivePressureEnabled = Boolean(rawSettings.adaptivePressureEnabled);
   const sourceVersion = Number(profile.version || 0);
   const next = {
     ...defaultProfile,
@@ -734,6 +759,7 @@ function ensureProfileShape(profile, nowMs = Date.now()) {
       pressureTier: pressure.key,
       speed,
       rate: load,
+      adaptivePressureEnabled,
       textSize,
     },
     sessionLog: normalizeSessionLog(profile.sessionLog, nowMs),
@@ -783,6 +809,11 @@ function ensureProfileShape(profile, nowMs = Date.now()) {
       problems: { ...(rawSkill.problems || {}) },
       recent: Array.isArray(rawSkill.recent) ? rawSkill.recent : [],
       pressureTiers: createPressureTierStatsMap(rawSkill.pressureTiers || rawSkill.speedTiers),
+      adaptivePressure: normalizeAdaptivePressure(
+        rawSkill.adaptivePressure,
+        { speed, rate: load },
+        nowMs
+      ),
       tracks,
     };
     // Drop any legacy flat coverage fields now carried under `tracks`.
@@ -1734,6 +1765,19 @@ function recordProgressEvent(profile, event, nowMs = Date.now()) {
   return profile;
 }
 
+function recordAdaptivePressureEstimate(profile, opKey, estimate = {}, nowMs = Date.now()) {
+  const skill = profile.skills?.[opKey];
+  if (!skill) return profile;
+  skill.adaptivePressure = normalizeAdaptivePressure(
+    estimate,
+    skill.adaptivePressure || { speed: profile.settings?.speed, rate: profile.settings?.rate },
+    nowMs
+  );
+  skill.updatedAt = skill.adaptivePressure.updatedAt;
+  profile.user.updatedAt = skill.adaptivePressure.updatedAt;
+  return profile;
+}
+
 function recordPlacementCredit(profile, opKey, options = {}, nowMs = Date.now()) {
   if (!profile?.skills?.[opKey]) return profile;
   const skill = profile.skills[opKey];
@@ -2271,6 +2315,7 @@ function syncSettings(profile, settings = {}, nowMs = Date.now()) {
     pressureTier: pressure.key,
     speed,
     rate: load,
+    adaptivePressureEnabled: Boolean(settings.adaptivePressureEnabled ?? profile.settings?.adaptivePressureEnabled),
     textSize,
     difficulties: {
       ...(profile.settings?.difficulties || {}),
@@ -2364,6 +2409,7 @@ export {
   importStoredProfile,
   readProfile,
   readProfileStore,
+  recordAdaptivePressureEstimate,
   recordBossAttempt,
   recordLevelAdvance,
   recordBlitzAttempt,

@@ -28,6 +28,7 @@ import {
   recordLevelAdvance,
   recordBlitzAttempt,
   recordChallengeAttempt,
+  recordAdaptivePressureEstimate,
   getChallengeBest,
   getChallengeBests,
   viewSkillForTrack,
@@ -88,6 +89,45 @@ describe("player progress profile", () => {
     assert.equal(profile.skills.add.tracks.standard.currentLevel, 1);
     assert.equal(profile.skills.add.readiness, 0);
     assert.equal(profile.settings.textSize, "normal");
+    assert.equal(profile.settings.adaptivePressureEnabled, false);
+    assert.deepEqual(
+      {
+        speed: profile.skills.add.adaptivePressure.speed,
+        rate: profile.skills.add.adaptivePressure.rate,
+        confidence: profile.skills.add.adaptivePressure.confidence,
+        samples: profile.skills.add.adaptivePressure.samples,
+      },
+      { speed: 30, rate: 3, confidence: 0, samples: 0 }
+    );
+  });
+
+  it("persists adaptive pressure settings and per-operation estimates", () => {
+    const profile = createDefaultProfile(Date.UTC(2026, 0, 1));
+
+    syncSettings(profile, {
+      speed: 45,
+      rate: 4,
+      adaptivePressureEnabled: true,
+    }, Date.UTC(2026, 0, 1, 0, 1, 0));
+    recordAdaptivePressureEstimate(profile, "add", {
+      speed: 55,
+      rate: 5,
+      confidence: 0.75,
+      samples: 24,
+    }, Date.UTC(2026, 0, 1, 0, 2, 0));
+
+    assert.equal(profile.settings.speed, 45);
+    assert.equal(profile.settings.rate, 4);
+    assert.equal(profile.settings.adaptivePressureEnabled, true);
+    assert.deepEqual(
+      {
+        speed: profile.skills.add.adaptivePressure.speed,
+        rate: profile.skills.add.adaptivePressure.rate,
+        confidence: profile.skills.add.adaptivePressure.confidence,
+        samples: profile.skills.add.adaptivePressure.samples,
+      },
+      { speed: 55, rate: 5, confidence: 0.75, samples: 24 }
+    );
   });
 
   it("records and summarizes local session logs", () => {

@@ -138,6 +138,7 @@
  * @property {number} speed                 0–100 (fall speed + spawn interval).
  * @property {number} rate                  0–10 (active-drop cap).
  * @property {string} pressureTier          Derived tier key for `speed`.
+ * @property {boolean} [adaptivePressureEnabled]  Whether ordinary practice auto-tunes Speed/Drops.
  * @property {"normal"|"large"|"huge"} textSize
  * @property {Record<OpKey, number>} difficulties  Saved current level per op.
  */
@@ -169,7 +170,18 @@
  * @property {Array}  recent                Bounded recent-outcome ring (for recency weighting).
  * @property {Object<string, ProblemStat>} problems  statsKey → per-problem record.
  * @property {Object} pressureTiers         Per-pressure-tier compatibility stats.
+ * @property {AdaptivePressureMemory} [adaptivePressure]  Per-op adaptive Speed/Drops target.
  * @property {Object<string, SkillCoverage>} tracks   trackId → per-track coverage.
+ */
+
+/**
+ * Per-operation adaptive practice pressure memory.
+ * @typedef {Object} AdaptivePressureMemory
+ * @property {number} speed
+ * @property {number} rate
+ * @property {number} confidence
+ * @property {number} samples
+ * @property {string} updatedAt
  */
 
 /**

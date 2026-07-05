@@ -634,6 +634,50 @@ test.describe("desktop gameplay", () => {
     expect(state.progressProfile.settings.textSize).toBe("huge");
   });
 
+  test("adaptive Speed/Drops locks manual pressure controls and moves the displayed values", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await invoke(page, "setControls", { speed: 40, drops: 2 });
+
+    await expect(page.locator("#adaptivePressureValue")).toHaveText("Off");
+    await page.locator("#adaptivePressureToggle").check();
+
+    await expect(page.locator("#adaptivePressureToggle")).toBeChecked();
+    await expect(page.locator("#adaptivePressureValue")).toHaveText("On");
+    await expect(page.locator("#speedSlider")).toBeDisabled();
+    await expect(page.locator("#dropLimitSlider")).toBeDisabled();
+    await expect(page.locator("#textSizeSelect")).toBeEnabled();
+    await expect(page.locator("#speedValue")).toHaveText("40%");
+    await expect(page.locator("#dropLimitValue")).toHaveText("2");
+
+    let state = await invoke(page, "getState");
+    expect(state.adaptivePressureEnabled).toBe(true);
+    expect(state.progressProfile.settings.adaptivePressureEnabled).toBe(true);
+
+    state = await invoke(page, "applyAdaptiveEvidence", "add", Array.from({ length: 12 }, () => ({
+      outcome: "correct",
+      responseRatio: 0.2,
+      loadRatio: 0.3,
+    })));
+
+    expect(state.gameSpeed).toBe(45);
+    expect(state.dropLimit).toBe(2);
+    expect(state.progressProfile.skills.add.adaptivePressure.samples).toBe(12);
+    await expect(page.locator("#speedValue")).toHaveText("45%");
+    await expect(page.locator("#dropLimitValue")).toHaveText("2");
+    await expect(page.locator("#speedSlider")).toBeDisabled();
+
+    await page.locator("#adaptivePressureToggle").uncheck();
+    await expect(page.locator("#adaptivePressureValue")).toHaveText("Off");
+    await expect(page.locator("#speedSlider")).toBeEnabled();
+    await expect(page.locator("#dropLimitSlider")).toBeEnabled();
+    await expect(page.locator("#speedValue")).toHaveText("45%");
+
+    state = await invoke(page, "getState");
+    expect(state.adaptivePressureEnabled).toBe(false);
+    expect(state.progressProfile.settings.adaptivePressureEnabled).toBe(false);
+  });
+
   test("test me runs as falling drops and applies placed-out credit", async ({ page }) => {
     await openApp(page);
 
@@ -2403,6 +2447,16 @@ test.describe("mobile gameplay", () => {
     await expect(page.locator("#kpDropsVal")).toHaveText("4");
     await expect(page.locator(".kp-grid-hint").first()).toHaveText("Grid");
     await expect(page.locator('.kp-diff-lock[data-op="add"]')).toContainText("Master this level");
+
+    await page.locator("#kpAdaptiveBtn").click();
+    await expect(page.locator("#kpAdaptiveBtn")).toHaveText("On");
+    await expect(page.locator("#kpSpeedUp")).toBeDisabled();
+    await expect(page.locator("#kpDropsUp")).toBeDisabled();
+    await expect(page.locator("#kpTextSizeBtn")).toBeEnabled();
+    await expect(page.locator("#kpSpeedVal")).toHaveText("40%");
+    await page.locator("#kpAdaptiveBtn").click();
+    await expect(page.locator("#kpAdaptiveBtn")).toHaveText("Off");
+    await expect(page.locator("#kpSpeedUp")).toBeEnabled();
 
     await page.locator('.kp-diff-ready[data-op="add"]').click();
     await expect(page.locator('.kp-diff-ready[data-op="add"]')).toContainText("Master 100% of L1");

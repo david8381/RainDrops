@@ -2161,6 +2161,157 @@ function deriveRunControlState(state = {}) {
   };
 }
 
+function numericPercentile(values = [], percentile = 0.9) {
+  const nums = values
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value))
+    .sort((a, b) => a - b);
+  if (nums.length === 0) return 0;
+  const index = Math.min(nums.length - 1, Math.max(0, Math.ceil(nums.length * percentile) - 1));
+  return nums[index];
+}
+
+/**
+ * Conservative adaptive pressure decision for ordinary practice.
+ *
+ * The helper intentionally uses windowed rules instead of pretending to know a
+ * precise ability curve: quick reductions on stress, slow increases only after
+ * clean evidence.
+ *
+ * @param {Array<{
+ *   outcome?: "correct"|"wrong"|"missed"|"load"|"overload",
+ *   responseRatio?: number,
+ *   loadRatio?: number,
+ *   overloaded?: boolean,
+ * }>} events
+ * @param {{speed?:number, rate?:number, nextIncrease?: "speed"|"drops"}} pressure
+ * @param {{
+ *   minEvents?: number,
+ *   cleanEvents?: number,
+ *   minSpeed?: number,
+ *   maxSpeed?: number,
+ *   minRate?: number,
+ *   maxRate?: number,
+ *   slowResponseRatio?: number,
+ *   cleanResponseRatio?: number,
+ *   cleanLoadRatio?: number,
+ *   capLoadRatio?: number,
+ *   capSamples?: number,
+ * }} options
+ * @returns {{
+ *   action: "hold"|"increase"|"decrease",
+ *   reason: string,
+ *   speed: number,
+ *   rate: number,
+ *   nextIncrease: "speed"|"drops",
+ *   sampleCount: number,
+ *   p90ResponseRatio: number,
+ *   p90LoadRatio: number,
+ * }}
+ */
+function deriveAdaptivePressureAdjustment(events = [], pressure = {}, options = {}) {
+  const minEvents = Math.max(1, Math.round(options.minEvents ?? 8));
+  const cleanEvents = Math.max(minEvents, Math.round(options.cleanEvents ?? 12));
+  const minSpeed = Math.max(0, Math.round(options.minSpeed ?? 5));
+  const maxSpeed = Math.max(minSpeed, Math.round(options.maxSpeed ?? 100));
+  const minRate = Math.max(1, Math.round(options.minRate ?? 1));
+  const maxRate = Math.max(minRate, Math.round(options.maxRate ?? 10));
+  const slowResponseRatio = Number.isFinite(options.slowResponseRatio) ? options.slowResponseRatio : 0.8;
+  const cleanResponseRatio = Number.isFinite(options.cleanResponseRatio) ? options.cleanResponseRatio : 0.45;
+  const cleanLoadRatio = Number.isFinite(options.cleanLoadRatio) ? options.cleanLoadRatio : 0.6;
+  const capLoadRatio = Number.isFinite(options.capLoadRatio) ? options.capLoadRatio : 0.98;
+  const capSamples = Math.max(1, Math.round(options.capSamples ?? 3));
+  const speed = clamp(minSpeed, maxSpeed, Math.round(Number.isFinite(pressure.speed) ? pressure.speed : 30));
+  const rate = clamp(minRate, maxRate, Math.round(Number.isFinite(pressure.rate) ? pressure.rate : 3));
+  const nextIncrease = pressure.nextIncrease === "drops" ? "drops" : "speed";
+  const normalized = Array.isArray(events) ? events.filter((event) => event && typeof event === "object") : [];
+  const sampleCount = normalized.length;
+  const p90ResponseRatio = numericPercentile(normalized.map((event) => event.responseRatio), 0.9);
+  const p90LoadRatio = numericPercentile(normalized.map((event) => event.loadRatio), 0.9);
+  const bad = normalized.some((event) => ["wrong", "missed", "overload"].includes(event.outcome) || event.overloaded);
+  const missed = normalized.some((event) => event.outcome === "missed");
+  const overloaded = normalized.some((event) => event.outcome === "overload" || event.overloaded);
+  const capCount = normalized.filter((event) => Number(event.loadRatio) >= capLoadRatio || event.outcome === "load").length;
+
+  if (sampleCount < minEvents) {
+    return {
+      action: "hold",
+      reason: "collecting evidence",
+      speed,
+      rate,
+      nextIncrease,
+      sampleCount,
+      p90ResponseRatio,
+      p90LoadRatio,
+    };
+  }
+
+  if (bad || p90ResponseRatio > slowResponseRatio || capCount >= capSamples) {
+    let nextSpeed = speed;
+    let nextRate = rate;
+    const reasons = [];
+    if (bad || overloaded || p90ResponseRatio > slowResponseRatio) {
+      nextSpeed = Math.max(minSpeed, speed - 10);
+      reasons.push(overloaded ? "overload" : bad ? "miss/wrong" : "slow responses");
+    }
+    if (missed || capCount >= capSamples) {
+      nextRate = Math.max(minRate, rate - 1);
+      reasons.push(missed ? "missed drops" : "board full");
+    }
+    return {
+      action: nextSpeed === speed && nextRate === rate ? "hold" : "decrease",
+      reason: reasons.join(" + ") || "stress",
+      speed: nextSpeed,
+      rate: nextRate,
+      nextIncrease,
+      sampleCount,
+      p90ResponseRatio,
+      p90LoadRatio,
+    };
+  }
+
+  const allClean = sampleCount >= cleanEvents
+    && normalized.every((event) => event.outcome === "correct")
+    && p90ResponseRatio <= cleanResponseRatio
+    && p90LoadRatio <= cleanLoadRatio;
+  if (allClean) {
+    const canRaiseSpeed = speed < maxSpeed;
+    const canRaiseDrops = rate < maxRate;
+    let nextSpeed = speed;
+    let nextRate = rate;
+    /** @type {"speed"|"drops"} */
+    let following = nextIncrease;
+    if ((nextIncrease === "speed" && canRaiseSpeed) || !canRaiseDrops) {
+      nextSpeed = Math.min(maxSpeed, speed + 5);
+      following = "drops";
+    } else if (canRaiseDrops) {
+      nextRate = Math.min(maxRate, rate + 1);
+      following = "speed";
+    }
+    return {
+      action: nextSpeed === speed && nextRate === rate ? "hold" : "increase",
+      reason: "clean window",
+      speed: nextSpeed,
+      rate: nextRate,
+      nextIncrease: following,
+      sampleCount,
+      p90ResponseRatio,
+      p90LoadRatio,
+    };
+  }
+
+  return {
+    action: "hold",
+    reason: "steady",
+    speed,
+    rate,
+    nextIncrease,
+    sampleCount,
+    p90ResponseRatio,
+    p90LoadRatio,
+  };
+}
+
 /**
  * A random fall time (seconds) for a new drop: uniform between 3s and the
  * configured max (which is clamped up to 3). Smaller = faster.
@@ -2387,6 +2538,7 @@ export {
   formatPlacementResult,
   resolvePlacementOutcome,
   deriveRunControlState,
+  deriveAdaptivePressureAdjustment,
   smoothProgress,
   blitzDropSeconds,
   blitzSpeedPercent,

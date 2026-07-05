@@ -84,6 +84,7 @@ import {
   formatPlacementResult,
   resolvePlacementOutcome,
   deriveRunControlState,
+  deriveAdaptivePressureAdjustment,
   smoothProgress,
   blitzDropSeconds,
   blitzSpeedPercent,
@@ -708,6 +709,47 @@ describe("difficulty ranges", () => {
     const challengeOnly = deriveRunControlState({ bossActive: true, hasReportableActivity: true });
     assert.equal(challengeOnly.restartDisabled, false);
     assert.equal(challengeOnly.finishDisabled, false);
+  });
+
+  it("adapts practice pressure conservatively from recent evidence", () => {
+    const collecting = deriveAdaptivePressureAdjustment(
+      Array.from({ length: 4 }, () => ({ outcome: "correct", responseRatio: 0.2, loadRatio: 0.2 })),
+      { speed: 30, rate: 3 }
+    );
+    assert.equal(collecting.action, "hold");
+    assert.equal(collecting.reason, "collecting evidence");
+
+    const clean = deriveAdaptivePressureAdjustment(
+      Array.from({ length: 12 }, () => ({ outcome: "correct", responseRatio: 0.2, loadRatio: 0.3 })),
+      { speed: 30, rate: 3, nextIncrease: "speed" }
+    );
+    assert.equal(clean.action, "increase");
+    assert.equal(clean.speed, 35);
+    assert.equal(clean.rate, 3);
+    assert.equal(clean.nextIncrease, "drops");
+
+    const stressed = deriveAdaptivePressureAdjustment(
+      [
+        ...Array.from({ length: 7 }, () => ({ outcome: "correct", responseRatio: 0.2, loadRatio: 0.4 })),
+        { outcome: "missed", responseRatio: 1.1, loadRatio: 1 },
+      ],
+      { speed: 30, rate: 3 }
+    );
+    assert.equal(stressed.action, "decrease");
+    assert.equal(stressed.speed, 20);
+    assert.equal(stressed.rate, 2);
+
+    const boardFull = deriveAdaptivePressureAdjustment(
+      Array.from({ length: 8 }, (_, index) => ({
+        outcome: index < 3 ? "load" : "correct",
+        responseRatio: 0.2,
+        loadRatio: index < 3 ? 1 : 0.4,
+      })),
+      { speed: 30, rate: 3 }
+    );
+    assert.equal(boardFull.action, "decrease");
+    assert.equal(boardFull.speed, 30);
+    assert.equal(boardFull.rate, 2);
   });
 
   it("ramps Blitz drop-time and speed along the survival curve", () => {
