@@ -564,6 +564,15 @@ body {
   border-color: rgba(91, 217, 255, 0.7) !important;
 }
 
+.is-disabled {
+  cursor: default !important;
+  opacity: 0.48;
+}
+
+a.is-disabled {
+  pointer-events: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .suggest-start {
     animation: none;

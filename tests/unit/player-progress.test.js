@@ -40,6 +40,7 @@ import {
   recordSessionHeartbeat,
   recordSessionStart,
   saveProfile,
+  hasSessionReportableActivity,
   shouldResumeSession,
   summarizeProfile,
   summarizeSessionLog,
@@ -182,6 +183,29 @@ describe("player progress profile", () => {
     assert.equal(shouldResumeSession({ ...session, lastSeenAt: "not-a-date" }, now, 30 * 60 * 1000), false);
     assert.equal(shouldResumeSession(null, now, 30 * 60 * 1000), false);
     assert.equal(shouldResumeSession({ ...session, lastSeenAt: new Date(now + 1000).toISOString() }, now, 30 * 60 * 1000), false);
+  });
+
+  it("detects whether a session has reportable activity", () => {
+    assert.equal(hasSessionReportableActivity(null), false);
+    assert.equal(hasSessionReportableActivity({
+      practice: { attempts: 0 },
+      assessment: { attempts: 0 },
+      challenges: { started: 0 },
+      operations: {},
+    }), false);
+    assert.equal(hasSessionReportableActivity({ practice: { attempts: 1 } }), true);
+    assert.equal(hasSessionReportableActivity({ assessment: { missed: 1 } }), true);
+    assert.equal(hasSessionReportableActivity({ challenges: { started: 1 } }), true);
+    assert.equal(hasSessionReportableActivity({
+      operations: {
+        add: { practice: { correct: 1 } },
+      },
+    }), true);
+    assert.equal(hasSessionReportableActivity({
+      operations: [
+        { challenges: { completed: 1 } },
+      ],
+    }), true);
   });
 
   it("recordSessionStart resumes an existing session id instead of adding a row", () => {

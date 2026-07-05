@@ -2085,6 +2085,81 @@ function spawnIntervalMs(speedPercent, dropLimit) {
 }
 
 /**
+ * Derive the visible Start/Pause/Resume, Restart, and Finish control state from
+ * the runtime flags that own those meanings. DOM code should render this result
+ * rather than reimplementing each edge case.
+ *
+ * @param {{
+ *   hasStarted?: boolean,
+ *   isPaused?: boolean,
+ *   enabledOpsCount?: number,
+ *   dropLimit?: number,
+ *   bossActive?: boolean,
+ *   placementActive?: boolean,
+ *   breatherActive?: boolean,
+ *   activeDropCount?: number,
+ *   hasInput?: boolean,
+ *   score?: number,
+ *   hasReportableActivity?: boolean,
+ * }} state
+ * @returns {{
+ *   pauseLabel: "Start"|"Pause"|"Resume",
+ *   pauseDisabled: boolean,
+ *   pauseReason: string,
+ *   suggestStart: boolean,
+ *   restartDisabled: boolean,
+ *   restartReason: string,
+ *   finishDisabled: boolean,
+ *   finishReason: string,
+ * }}
+ */
+function deriveRunControlState(state = {}) {
+  const hasStarted = Boolean(state.hasStarted);
+  const isPaused = Boolean(state.isPaused);
+  const enabledOpsCount = Math.max(0, Math.round(Number(state.enabledOpsCount) || 0));
+  const dropLimit = Math.max(0, Math.round(Number(state.dropLimit) || 0));
+  const bossActive = Boolean(state.bossActive);
+  const placementActive = Boolean(state.placementActive);
+  const breatherActive = Boolean(state.breatherActive);
+  const activeDropCount = Math.max(0, Math.round(Number(state.activeDropCount) || 0));
+  const hasInput = Boolean(state.hasInput);
+  const score = Math.max(0, Math.round(Number(state.score) || 0));
+  const hasReportableActivity = Boolean(state.hasReportableActivity);
+
+  const pauseLabel = !hasStarted ? "Start" : isPaused ? "Resume" : "Pause";
+  let pauseDisabled = false;
+  let pauseReason = "";
+  if (!hasStarted && enabledOpsCount === 0) {
+    pauseDisabled = true;
+    pauseReason = "Select a problem type to start.";
+  } else if (!hasStarted && dropLimit === 0) {
+    pauseDisabled = true;
+    pauseReason = "Raise Drops above 0 to start.";
+  }
+
+  const hasTransientRunState = hasStarted
+    || bossActive
+    || placementActive
+    || breatherActive
+    || activeDropCount > 0
+    || hasInput
+    || score > 0;
+  const restartDisabled = !hasTransientRunState;
+  const finishDisabled = !hasReportableActivity;
+
+  return {
+    pauseLabel,
+    pauseDisabled,
+    pauseReason,
+    suggestStart: !hasStarted && !pauseDisabled && enabledOpsCount > 0,
+    restartDisabled,
+    restartReason: restartDisabled ? "Nothing to restart yet." : "",
+    finishDisabled,
+    finishReason: finishDisabled ? "No session activity to report yet." : "",
+  };
+}
+
+/**
  * A random fall time (seconds) for a new drop: uniform between 3s and the
  * configured max (which is clamped up to 3). Smaller = faster.
  * @param {number} maxFallTimeSec
@@ -2309,6 +2384,7 @@ export {
   formatPracticeNext,
   formatPlacementResult,
   resolvePlacementOutcome,
+  deriveRunControlState,
   smoothProgress,
   blitzDropSeconds,
   blitzSpeedPercent,

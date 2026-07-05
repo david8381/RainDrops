@@ -83,6 +83,7 @@ import {
   formatPracticeNext,
   formatPlacementResult,
   resolvePlacementOutcome,
+  deriveRunControlState,
   smoothProgress,
   blitzDropSeconds,
   blitzSpeedPercent,
@@ -650,6 +651,56 @@ describe("difficulty ranges", () => {
     assert.equal(randomFallTimeSec(10, () => 1), 10);
     assert.equal(randomFallTimeSec(10, () => 0.5), 6.5);
     assert.equal(randomFallTimeSec(2, () => 0.9), 3); // max clamped up to 3
+  });
+
+  it("derives run control state for empty, staged, and active runs", () => {
+    const empty = deriveRunControlState({
+      hasStarted: false,
+      enabledOpsCount: 0,
+      dropLimit: 3,
+      hasReportableActivity: false,
+    });
+    assert.equal(empty.pauseLabel, "Start");
+    assert.equal(empty.pauseDisabled, true);
+    assert.equal(empty.restartDisabled, true);
+    assert.equal(empty.finishDisabled, true);
+
+    const dropsOff = deriveRunControlState({
+      hasStarted: false,
+      enabledOpsCount: 1,
+      dropLimit: 0,
+    });
+    assert.equal(dropsOff.pauseLabel, "Start");
+    assert.equal(dropsOff.pauseDisabled, true);
+    assert.match(dropsOff.pauseReason, /Drops/);
+
+    const staged = deriveRunControlState({
+      hasStarted: false,
+      enabledOpsCount: 1,
+      dropLimit: 3,
+    });
+    assert.equal(staged.pauseDisabled, false);
+    assert.equal(staged.suggestStart, true);
+    assert.equal(staged.restartDisabled, true);
+
+    const live = deriveRunControlState({
+      hasStarted: true,
+      isPaused: false,
+      enabledOpsCount: 1,
+      dropLimit: 3,
+      activeDropCount: 1,
+      hasReportableActivity: true,
+    });
+    assert.equal(live.pauseLabel, "Pause");
+    assert.equal(live.restartDisabled, false);
+    assert.equal(live.finishDisabled, false);
+
+    const paused = deriveRunControlState({ hasStarted: true, isPaused: true });
+    assert.equal(paused.pauseLabel, "Resume");
+
+    const challengeOnly = deriveRunControlState({ bossActive: true, hasReportableActivity: true });
+    assert.equal(challengeOnly.restartDisabled, false);
+    assert.equal(challengeOnly.finishDisabled, false);
   });
 
   it("ramps Blitz drop-time and speed along the survival curve", () => {

@@ -36,6 +36,7 @@ Kebab-case slug describing the feature: `answer-space-aware-overload.md`,
 
 ## Index
 Keep this list current (newest meaningful first):
+- `run-control-workflows.md` — Status: landed — Start/Pause/Resume, Restart, and Finish semantics across empty ready state, practice, Test Me, and boss/challenge play.
 - `curriculum-tracks.md` — Status: landed — data-driven level "tracks" (Standard = today's levels as data) + a playable multiply-only Times Tables track with a Login selector.
 - `simplify-fractions.md` — Status: landed — ½ Simplify Fractions op: cancel common factors (visualized), case-based grid; the reusable atom for fraction math.
 - `recap-share-link.md` — Status: landed — recap becomes a reconstructable, checksummed `#recap=` achievement-card link.

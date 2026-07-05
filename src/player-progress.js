@@ -1099,6 +1099,36 @@ function shouldResumeSession(session, nowMs = Date.now(), graceMs = 30 * 60 * 10
   return elapsedMs >= 0 && elapsedMs <= graceMs;
 }
 
+function hasSessionStatsActivity(stats = {}) {
+  return ["attempts", "correct", "wrong", "missed", "helped"].some((key) => (
+    Math.max(0, Math.round(Number(stats?.[key]) || 0)) > 0
+  ));
+}
+
+function hasSessionChallengeActivity(challenges = {}) {
+  return ["started", "completed", "cleared", "blitz", "wave", "boss"].some((key) => (
+    Math.max(0, Math.round(Number(challenges?.[key]) || 0)) > 0
+  )) || Math.max(0, Math.round(Number(challenges?.bestScore) || 0)) > 0
+    || Number.isFinite(challenges?.bestBossTimeMs);
+}
+
+function getSessionOperationsList(operations = {}) {
+  if (Array.isArray(operations)) return operations;
+  if (!operations || typeof operations !== "object") return [];
+  return Object.values(operations);
+}
+
+function hasSessionReportableActivity(session) {
+  if (!session || typeof session !== "object") return false;
+  if (hasSessionStatsActivity(session.practice) || hasSessionStatsActivity(session.assessment)) return true;
+  if (hasSessionChallengeActivity(session.challenges)) return true;
+  return getSessionOperationsList(session.operations).some((operation) => (
+    hasSessionStatsActivity(operation?.practice)
+    || hasSessionStatsActivity(operation?.assessment)
+    || hasSessionChallengeActivity(operation?.challenges)
+  ));
+}
+
 function recordSessionStart(profile, options = {}, nowMs = Date.now()) {
   if (!profile || typeof profile !== "object") return profile;
   profile.sessionLog = normalizeSessionLog(profile.sessionLog, nowMs);
@@ -2329,6 +2359,7 @@ export {
   recordSessionStart,
   resetStoredProfile,
   saveProfile,
+  hasSessionReportableActivity,
   shouldResumeSession,
   switchStoredProfile,
   summarizeProfile,

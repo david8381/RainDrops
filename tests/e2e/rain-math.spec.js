@@ -62,9 +62,12 @@ test("boots over HTTP through the welcome flow and operation chits respond", asy
     await page.locator("#welcomePlay").click();
   }
   await expect(page.locator(".op-chit")).toHaveCount(11);
+  await expect(page.locator("#pauseBtn")).toHaveText("Start");
+  await expect(page.locator("#pauseBtn")).toBeDisabled();
 
   await page.locator('.op-chit[data-op="add"]').click();
   await expect(page.locator('.op-chit[data-op="add"]')).toHaveClass(/active/);
+  await expect(page.locator("#pauseBtn")).toBeEnabled();
 });
 
 test("operation chits show current level and course progress", async ({ page }) => {
@@ -552,6 +555,43 @@ test.describe("desktop gameplay", () => {
     expect(drop.bossKind).toBeFalsy();
   });
 
+  test("Restart during a challenge unlocks the controls (no stuck locked state)", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await invoke(page, "startBoss", "add");
+    // Controls are locked (disabled) while a challenge runs.
+    await expect(page.locator('.op-chit[data-op="add"]')).toBeDisabled();
+    await expect(page.locator('.diff-card[data-op="add"] .diff-btn').last()).toBeDisabled();
+
+    await page.locator("#restartBtn").click();
+    expect((await invoke(page, "getState")).bossMode).toBe(null);
+    await expect(page.locator("#challengeExitBtn")).toBeHidden();
+    // …and unlocked again after Restart, not stuck disabled.
+    await expect(page.locator('.op-chit[data-op="add"]')).not.toBeDisabled();
+    await expect(page.locator('.diff-card[data-op="add"] .diff-btn').last()).not.toBeDisabled();
+    await expect(page.locator("#pauseBtn")).toHaveText("Start");
+  });
+
+  test("Start is disabled until a playable type is staged", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "stageReadyRun");
+
+    await expect(page.locator("#pauseBtn")).toHaveText("Start");
+    await expect(page.locator("#pauseBtn")).toBeDisabled();
+    await expect(page.locator("#restartBtn")).toBeDisabled();
+    await expect(page.locator("#finishBtn")).toBeDisabled();
+    await expect(page.locator("#inputHint")).toContainText("Select a problem type");
+
+    await invoke(page, "enableOps", ["add"]);
+    await invoke(page, "setControls", { drops: 0 });
+    await expect(page.locator("#pauseBtn")).toBeDisabled();
+    await expect(page.locator("#inputHint")).toContainText("Raise Drops above 0");
+
+    await invoke(page, "setControls", { drops: 3 });
+    await expect(page.locator("#pauseBtn")).toBeEnabled();
+    await expect(page.locator("#pauseBtn")).toHaveClass(/suggest-start/);
+  });
+
   test("Start button pulses at the ready gate when a type is selected", async ({ page }) => {
     await openApp(page);
     await invoke(page, "enableOps", ["add"]);
@@ -562,6 +602,19 @@ test.describe("desktop gameplay", () => {
     // Pressing Start clears the nudge.
     await page.locator("#pauseBtn").click();
     await expect(page.locator("#pauseBtn")).not.toHaveClass(/suggest-start/);
+  });
+
+  test("boss launched from the ready gate starts immediately", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+    await invoke(page, "stageReadyRun");
+
+    const state = await invoke(page, "startBoss", "add");
+    expect(state.bossMode.active).toBe(true);
+    expect(state.hasStarted).toBe(true);
+    expect(state.isPaused).toBe(false);
+    await expect(page.locator("#pauseBtn")).toHaveText("Pause");
+    await expect(page.locator("#challengeExitBtn")).toBeVisible();
   });
 
   test("updates speed, drops, and text size controls", async ({ page }) => {
@@ -628,6 +681,41 @@ test.describe("desktop gameplay", () => {
     await expect(page.locator("#statsHoverTooltip")).toContainText("Placed out by Test Me");
     await expect(page.locator("#statsHoverTooltip")).toContainText("No attempts yet");
     await expect(page.locator("#statsHoverTooltip")).toContainText("Boss mastered: yes (placement credit)");
+  });
+
+  test("Test Me pause, restart, and finish leave clean controls", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "stageReadyRun");
+    await invoke(page, "startPlacement", "add", 1);
+
+    await expect(page.locator("#pauseBtn")).toHaveText("Pause");
+    await expect(page.locator('.op-chit[data-op="add"]')).toBeDisabled();
+    await page.locator("#pauseBtn").click();
+    await expect(page.locator("#pauseBtn")).toHaveText("Resume");
+    await page.locator("#pauseBtn").click();
+    await expect(page.locator("#pauseBtn")).toHaveText("Pause");
+
+    await page.locator("#restartBtn").click();
+    let state = await invoke(page, "getState");
+    expect(state.placementState).toBe(null);
+    expect(state.hasStarted).toBe(false);
+    expect(state.isPaused).toBe(true);
+    await expect(page.locator("#pauseBtn")).toHaveText("Start");
+    await expect(page.locator('.op-chit[data-op="add"]')).not.toBeDisabled();
+
+    await invoke(page, "startPlacement", "add", 1);
+    state = await invoke(page, "advanceDrops", 250);
+    const drop = state.drops.find((candidate) => candidate.placementRunId);
+    expect(drop).toBeTruthy();
+    await invoke(page, "submit", drop.answerText);
+    await page.locator("#finishBtn").click();
+
+    await expect(page.locator("#sessionReportOverlay")).toBeVisible();
+    state = await invoke(page, "getState");
+    expect(state.placementState).toBe(null);
+    expect(state.hasStarted).toBe(false);
+    expect(state.isPaused).toBe(true);
+    expect(Object.values(state.opConfig).every((cfg) => !cfg.enabled)).toBe(true);
   });
 
   test("test me climbs a level when the shield fills from correct answers", async ({ page }) => {
@@ -1146,9 +1234,15 @@ test.describe("desktop gameplay", () => {
     expect(state.drops).toHaveLength(0);
     expect(state.opConfig.add.enabled).toBe(false);
     expect(state.opConfig.sub.enabled).toBe(false);
+    expect(state.hasStarted).toBe(false);
+    expect(state.isPaused).toBe(true);
+    await expect(page.locator("#pauseBtn")).toHaveText("Start");
 
     await page.locator('#sessionReportOverlay button:has-text("Close")').click();
     await invoke(page, "enableOps", ["add"]);
+    await invoke(page, "setControls", { drops: 3 });
+    await expect(page.locator("#pauseBtn")).toHaveClass(/suggest-start/);
+    await page.locator("#pauseBtn").click();
     await invoke(page, "addDrop", { opKey: "add", text: "2 + 2", answer: 4, answerText: "4", statsKey: "2,2", y: 120 });
     state = await invoke(page, "submit", "4");
     expect(state.activeSessionId).toBe(beforeFinish.activeSessionId);
@@ -1435,7 +1529,9 @@ test.describe("desktop gameplay", () => {
     expect(adaSecondSession).not.toBe(benSession);
 
     await invoke(page, "enableOps", ["add"]);
-    await freezeAutoSpawns(page);
+    await invoke(page, "setControls", { speed: 0, drops: 1 });
+    await page.locator("#pauseBtn").click();
+    await invoke(page, "clearDrops");
     await invoke(page, "addDrop", {
       opKey: "add",
       text: "2 + 2",
@@ -1508,7 +1604,9 @@ test.describe("desktop gameplay", () => {
     await page.getByRole("button", { name: /^Create$/ }).click();
 
     await invoke(page, "enableOps", ["add"]);
-    await freezeAutoSpawns(page);
+    await invoke(page, "setControls", { speed: 0, drops: 1 });
+    await page.locator("#pauseBtn").click();
+    await invoke(page, "clearDrops");
     await invoke(page, "addDrop", {
       opKey: "add",
       text: "2 + 2",
@@ -2146,9 +2244,11 @@ test.describe("desktop gameplay", () => {
     await page.locator("#pauseBtn").click();
     await expect(page.locator("#pauseBtn")).toHaveText("Resume");
     await page.locator("#restartBtn").click();
-    await expect(page.locator("#pauseBtn")).toHaveText("Pause");
+    await expect(page.locator("#pauseBtn")).toHaveText("Start");
+    await expect(page.locator("#pauseBtn")).toHaveClass(/suggest-start/);
     state = await invoke(page, "getState");
-    expect(state.isPaused).toBe(false);
+    expect(state.hasStarted).toBe(false);
+    expect(state.isPaused).toBe(true);
   });
 
   test("pause, restart, feedback, and stats overlays work", async ({ page }) => {

@@ -82,6 +82,7 @@ const {
   formatPracticeNext,
   formatPlacementResult,
   resolvePlacementOutcome,
+  deriveRunControlState,
   smoothProgress,
   blitzDropSeconds,
   blitzSpeedPercent,
@@ -154,6 +155,7 @@ const {
   recordSessionStart,
   resetStoredProfile,
   saveProfile,
+  hasSessionReportableActivity,
   shouldResumeSession,
   summarizeProfile,
   summarizeSessionLog,
@@ -355,6 +357,11 @@ function startVisitSession({ persist = true, forceNew = false, nowMs = Date.now(
   if (persist) saveProfile(state.progressProfile);
 }
 
+function getActiveSession() {
+  if (!state.activeSessionId || !Array.isArray(state.progressProfile?.sessionLog)) return null;
+  return state.progressProfile.sessionLog.find((session) => session.id === state.activeSessionId) || null;
+}
+
 function recordActiveSessionOutcome(drop, outcome) {
   if (!state.activeSessionId || !drop?.opKey) return false;
   state.progressProfile = recordSessionEvent(state.progressProfile, state.activeSessionId, {
@@ -365,12 +372,14 @@ function recordActiveSessionOutcome(drop, outcome) {
     assessment: isBossActive() || isAssessmentTarget(drop),
     responseMs: getDropResponseMs(drop),
   });
+  updatePauseControlLabels();
   return true;
 }
 
 function recordActiveSessionChallenge(event = {}) {
   if (!state.activeSessionId) return false;
   state.progressProfile = recordSessionChallenge(state.progressProfile, state.activeSessionId, event);
+  updatePauseControlLabels();
   return true;
 }
 
@@ -408,11 +417,15 @@ mirrorLegacyProblemStats(state.progressProfile, problemStats);
 
 function resetRunState({ resume = true, focus = true } = {}) {
   clearAmbiguousTimer();
+  // Test Me (placement) also locks the controls; clear it so Restart doesn't
+  // leave placement running invisibly with the controls stuck disabled.
+  if (state.placementState) closePlacementOverlay({ focus: false });
   state.bossMode = null;
   state.isBreatherMode = false;
-  // Restart returns to the ready/Start gate for real users; tests auto-play.
-  state.hasStarted = IS_TEST_MODE;
-  state.isPaused = !state.hasStarted;
+  // Restart returns to the ready/Start gate; tests that need live play start it
+  // explicitly through their setup hooks.
+  state.hasStarted = false;
+  state.isPaused = true;
   state.factorTargetId = null;
   state.drops = [];
   resetSplashes();
@@ -430,7 +443,13 @@ function resetRunState({ resume = true, focus = true } = {}) {
   updateKpDisplay();
   updateBossHud();
   updateBreatherHud();
+  // Clearing bossMode/placement unlocks the controls — refresh the op chits,
+  // practice controls, and diff cards so they don't stay stuck in their locked
+  // (disabled) state, and repaint the now-cleared board.
+  updateOpChits();
+  updateControlDisplay();
   updatePauseControlLabels();
+  drawDrops();
   if (focus) answerInput.focus();
 }
 
@@ -778,6 +797,8 @@ function setPracticeControls({ speed = state.gameSpeed, drops = state.dropLimit 
   if (persist) syncProgressSettings();
   updateControlDisplay();
   updateReadinessDisplays();
+  updateInputHint();
+  updatePauseControlLabels();
 }
 
 function setTextSize(value, { persist = true } = {}) {
@@ -904,6 +925,21 @@ function toggleOp(opKey) {
     }
   }
   updateOpChits();
+  returnToReadyGateIfIdleWithoutOps();
+}
+
+function returnToReadyGateIfIdleWithoutOps() {
+  if (!state.hasStarted || isControlLocked() || state.isBreatherMode) return;
+  if (getEnabledOps().length > 0 || state.drops.length > 0) return;
+  state.hasStarted = false;
+  state.isPaused = true;
+  state.spawnTimer = 0;
+  state.lastTime = 0;
+  state.currentInput = "";
+  answerInput.value = "";
+  state.factorTargetId = null;
+  updateInputHint();
+  updatePauseControlLabels();
 }
 
 function getProgressSkill(opKey) {
@@ -1443,6 +1479,8 @@ function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficul
   state.gameTime = 0;
   state.groundFlash = 0;
   state.score = 0;
+  state.hasStarted = true;
+  state.isPaused = false;
   const startsWithChallenge = mode === "full" || mode === "blitz" || mode === "wave";
   state.bossMode = {
     active: true,
@@ -1505,6 +1543,7 @@ function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficul
   updateBossHud();
   updateControlDisplay();
   updateDifficultyDisplays();
+  updatePauseControlLabels();
   answerInput.focus();
   drawDrops();
   return true;
@@ -4300,6 +4339,12 @@ function updateInputHint() {
     if (kpHint) kpHint.textContent = text;
     return;
   }
+  if (!state.hasStarted && state.dropLimit === 0) {
+    const text = "Raise Drops above 0 to start.";
+    el.textContent = text;
+    if (kpHint) kpHint.textContent = text;
+    return;
+  }
   const hints = [];
   const hasBasic = enabled.some((op) => ["add", "sub", "mul", "div", "f10"].includes(op));
   const hasSI = enabled.includes("si");
@@ -6636,35 +6681,70 @@ function updateControlDisplay() {
   document.querySelectorAll(".op-chit").forEach((btn) => {
     btn.disabled = isControlLocked();
   });
+  updatePauseControlLabels();
 }
 
-// The single Start/Pause/Resume control label, derived from run state: a fresh
-// (not-yet-started) run shows "Start"; after that it's Pause/Resume.
-function pauseControlLabel() {
-  if (!state.hasStarted) return "Start";
-  return state.isPaused ? "Resume" : "Pause";
+function getRunControlState() {
+  return deriveRunControlState({
+    hasStarted: state.hasStarted,
+    isPaused: state.isPaused,
+    enabledOpsCount: getEnabledOps().length,
+    dropLimit: state.dropLimit,
+    bossActive: isBossActive(),
+    placementActive: isPlacementActive(),
+    breatherActive: state.isBreatherMode,
+    activeDropCount: state.drops.length,
+    hasInput: Boolean(state.currentInput || answerInput.value),
+    score: state.score,
+    hasReportableActivity: hasSessionReportableActivity(getActiveSession()),
+  });
+}
+
+function setControlDisabled(el, disabled, reason = "") {
+  if (!el) return;
+  if ("disabled" in el) el.disabled = disabled;
+  el.classList.toggle("is-disabled", disabled);
+  el.setAttribute("aria-disabled", String(disabled));
+  if (reason) {
+    el.title = reason;
+  } else {
+    el.removeAttribute("title");
+  }
 }
 
 function updatePauseControlLabels() {
-  const label = pauseControlLabel();
-  // Nudge the player toward the next step: when the run is staged at the
-  // ready/Start gate and there is a problem type to play, pulse the Start button.
-  const suggestStart = !state.hasStarted && !isControlLocked() && getEnabledOps().length > 0;
+  const controls = getRunControlState();
   for (const btn of [pauseBtn, kpPauseBtn]) {
     if (!btn) continue;
-    btn.textContent = label;
-    btn.classList.toggle("suggest-start", suggestStart);
+    btn.textContent = controls.pauseLabel;
+    btn.classList.toggle("suggest-start", controls.suggestStart && !isControlLocked());
+    setControlDisabled(btn, controls.pauseDisabled, controls.pauseReason);
   }
+  for (const btn of [restartBtn, kpRestartBtn]) {
+    setControlDisabled(btn, controls.restartDisabled, controls.restartReason);
+  }
+  setControlDisabled(finishBtn, controls.finishDisabled, controls.finishReason);
+  const touchFinishLink = document.getElementById("touchFinishLink");
+  if (touchFinishLink) setControlDisabled(touchFinishLink, controls.finishDisabled, controls.finishReason);
 }
 
 // Begin a ready run (the player pressed Start / Play). Toggling problem types
 // before this only stages them — nothing spawns until here.
 function startRun() {
+  const controls = getRunControlState();
+  if (controls.pauseLabel === "Start" && controls.pauseDisabled) {
+    updateInputHint();
+    updatePauseControlLabels();
+    answerInput.focus();
+    return false;
+  }
   state.hasStarted = true;
   state.isPaused = false;
   state.lastTime = 0;
+  updateInputHint();
   updatePauseControlLabels();
   answerInput.focus();
+  return true;
 }
 
 // The Start/Pause/Resume button: Start a ready run, otherwise toggle pause.
@@ -6687,10 +6767,20 @@ function togglePause() {
 }
 
 function restartGame() {
+  if (getRunControlState().restartDisabled) {
+    updatePauseControlLabels();
+    return false;
+  }
   resetRunState();
+  return true;
 }
 
 function finishCurrentSession() {
+  if (getRunControlState().finishDisabled) {
+    updatePauseControlLabels();
+    updateInputHint();
+    return false;
+  }
   initAudio();
   clearAmbiguousTimer();
   closeBossOffer();
@@ -6716,6 +6806,10 @@ function finishCurrentSession() {
   Object.keys(opConfig).forEach((opKey) => {
     opConfig[opKey].enabled = false;
   });
+  // Finishing ends the run: return to the ready/Start gate so the Pause/Resume
+  // control doesn't read as a stale "Pause" over an idle, all-ops-off board.
+  state.hasStarted = false;
+  state.isPaused = true;
   heartbeatActiveSession({ persist: true });
 
   updateOpChits();
@@ -6730,6 +6824,7 @@ function finishCurrentSession() {
   updatePauseControlLabels();
   drawDrops();
   buildSessionReportPopup(state.activeSessionId);
+  return true;
 }
 
 // Answer input handler — single path for all input processing
@@ -6949,7 +7044,7 @@ document.addEventListener("keydown", (event) => {
       event.preventDefault();
       return;
     }
-    togglePause();
+    togglePauseOrStart();
     event.preventDefault();
     return;
   }
