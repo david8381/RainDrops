@@ -16,7 +16,7 @@ Rain Math is a browser-based math game where falling raindrops are cleared by ty
 
 First-time setup:
 1. `npm install`
-2. `npx playwright install chromium`
+2. `npx playwright install chromium firefox webkit`
 
 Common commands:
 - `npm run test:unit`
@@ -44,12 +44,12 @@ Read these before making changes:
 
 ## Architecture
 
-- `index.html` — markup for header, controls, canvas, input bar, touch keypad, login/results/feedback links, feedback form, and overlays.
-- `styles.css` — desktop/mobile layout, dark theme, touch UI, boss/breather HUDs, and login/stats/results popup styling.
-- `src/game-core.js` — DOM-free game rules exposed as `globalThis.RainMathCore`: operation defaults, problem generation, difficulty ranges, input normalization, SI helpers, factorization, and weighting.
-- `src/player-progress.js` — local player profiles exposed as `globalThis.RainMathProgress`: multi-profile localStorage persistence, legacy single-profile migration, per-problem outcomes, saved Speed/Drops settings, pressure-tier compatibility stats, saved current levels, boss-completion records, Blitz attempts/bests, level-universe sizing, readiness scoring, practice suggestions, and boss-readiness recommendations. The profile's `activeTrack` selects a curriculum track.
+- `index.html` — markup for header, operation chits, practice controls (Speed/Drops/Adaptive/Text), canvas, input bar, touch keypad, login/log/feedback links, feedback form, and overlays.
+- `styles.css` — desktop/mobile layout, dark theme, adaptive-control states, touch UI, boss/breather HUDs, and login/stats/session-report popup styling.
+- `src/game-core.js` — DOM-free game rules imported as an ES module: operation defaults, problem generation, difficulty ranges, input normalization, SI helpers, factorization, weighting, run-control derivation, and adaptive Speed/Drops pressure adjustment.
+- `src/player-progress.js` — local player profiles imported as an ES module: multi-profile localStorage persistence, legacy single-profile migration, per-problem outcomes, saved Speed/Drops/Adaptive/Text settings, per-operation adaptive pressure estimates, pressure-tier compatibility stats, saved current levels, boss-completion records, Blitz attempts/bests, level-universe sizing, readiness scoring, practice suggestions, and boss-readiness recommendations. The profile's `activeTrack` selects a curriculum track.
 - `src/curriculum.js` — data-only curriculum "tracks" (`TRACKS` + `getActiveTrack`): per-op level descriptors read by game-core/player-progress via an optional trailing `track = TRACKS.standard` param. `standard` reproduces today's levels; `timesTables` is a multiply-only path (level N = the N times table).
-- `script.js` — browser state, animation loop, canvas drawing, Speed/Drops practice controls, boss/Blitz/Breather-mode state, audio, DOM updates, login/results/stats popups, event listeners, touch keypad wiring, and `?test=1` hooks for Playwright.
+- `script.js` — browser state, animation loop, canvas drawing, Speed/Drops/Adaptive practice controls, boss/Blitz/Breather-mode state, audio, DOM updates, login/stats/session-report popups, event listeners, touch keypad wiring, and `?test=1` hooks for Playwright. In test mode it re-exposes core/progress APIs on `window` for browser instrumentation.
 - `tests/unit/game-core.test.js` — unit coverage for core rules.
 - `tests/unit/player-progress.test.js` — unit coverage for local profile persistence and readiness scoring.
 - `tests/e2e/rain-math.spec.js` — Playwright desktop/mobile browser coverage.

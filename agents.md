@@ -23,6 +23,10 @@ Vanilla browser game (falling math drops). **Native ES modules, no bundler, no r
 - `npm run typecheck` — `tsc --checkJs` over the typed core (`src/game-core.js`, `src/player-progress.js`, `src/types.js`); **must stay at 0 errors** (part of `test:ci`; GitHub test CI is manual-only, so run this locally before pushing).
 - `npm run coverage` — c8 (unit) + monocart (e2e) coverage.
 
+## Deployment
+- GitHub Pages deploys `main` to `rainmath.com` via `.github/workflows/pages.yml` on every push.
+- `.github/workflows/tests.yml` is manual-only (`workflow_dispatch`); do not expect GitHub test CI to run on push/PR.
+
 ## Where code goes (see ARCHITECTURE for detail)
 - Pure rules / game-logic / formatters → `src/game-core.js` (unit-tested + type-checked).
 - Profile / persistence / readiness → `src/player-progress.js` (unit-tested + type-checked).
