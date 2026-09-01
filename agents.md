@@ -27,6 +27,9 @@ Vanilla browser game (falling math drops). **Native ES modules, no bundler, no r
 - GitHub Pages deploys `main` to `rainmath.com` via `.github/workflows/pages.yml` on every push.
 - `.github/workflows/tests.yml` is manual-only (`workflow_dispatch`); do not expect GitHub test CI to run on push/PR.
 
+## Finding code
+`script.js` is ~8k lines and `styles.css` ~3k — don't read them whole. `docs/Ai/CODE_MAP.md` is a generated `symbol:line` index of those two plus `game-core.js` / `player-progress.js`; start there, then read the specific range. Regenerate with `npm run codemap` (the pre-commit hook does it automatically — never hand-edit it). Everything else in `src/` is small enough to read whole. `src/types.js` is the data model — read it instead of reverse-engineering object shapes.
+
 ## Where code goes (see ARCHITECTURE for detail)
 - Pure rules / game-logic / formatters → `src/game-core.js` (unit-tested + type-checked).
 - Profile / persistence / readiness → `src/player-progress.js` (unit-tested + type-checked).

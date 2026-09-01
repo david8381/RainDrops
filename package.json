@@ -1,12 +1,13 @@
 {
   "name": "rain-math",
-  "version": "0.3.165",
+  "version": "0.3.166",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node tests/support/static-server.mjs 4173",
     "dev": "LIVERELOAD=1 node tests/support/static-server.mjs 4173",
     "typecheck": "tsc --noEmit",
+    "codemap": "node scripts/gen-code-map.mjs",
     "stamp": "scripts/stamp-version.sh",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "node --test tests/unit/*.test.js",

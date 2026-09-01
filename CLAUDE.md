@@ -33,6 +33,20 @@ GitHub Pages deploys via `.github/workflows/pages.yml` on pushes to `main`. Test
 
 Versioning is stamped automatically: `core.hooksPath` is `.githooks`, and `.githooks/pre-commit` runs `scripts/stamp-version.sh` and stages `index.html` + `package.json`, so every commit bumps the patch and refreshes the `?v=` cache-busters. To set an explicit version, run `npm run stamp 0.4.0` (or `npm run stamp` to bump the patch manually). Do not hand-edit the version strings — let the hook own them.
 
+## Finding code
+
+`script.js` is ~8k lines and `styles.css` ~3k. Do not read them whole.
+
+- `docs/Ai/CODE_MAP.md` is a generated `symbol:line` index of `script.js`,
+  `src/game-core.js`, `src/player-progress.js`, and `styles.css` sections. Start
+  there, then `Read` the specific range. Regenerate with `npm run codemap`
+  (the pre-commit hook does this automatically — never hand-edit it).
+- `grep -n` for a symbol beats reading a file; line numbers in the map drift
+  between commits, so confirm before trusting an exact number.
+- Everything else in `src/` is small — read those files whole.
+- `src/types.js` is the data model (`Drop`, `BossMode`, `StoredProfile`, …).
+  Read it instead of reverse-engineering object shapes.
+
 ## Documentation
 
 Read these before making changes:
@@ -41,6 +55,11 @@ Read these before making changes:
 3. `docs/Ai/CHANGELOG.md` — recent changes and reasons
 4. `docs/Ai/TESTING.md` — test setup and commands
 5. `docs/Ai/CODEBASE_REVIEW.md` — current review findings and residual risks
+
+Read-budget notes: `CHANGELOG.md` is long and newest-first — read the top of it,
+not the whole file. `DIALOGUE.md` is gitignored turn-coordination scratch; skip it
+unless coordinating with another agent. For feature context prefer the one
+relevant file in `docs/Ai/FEATURE_REQUESTS/` over a broad sweep.
 
 ## Architecture
 

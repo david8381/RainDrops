@@ -3,6 +3,10 @@
 ## Purpose
 This file records meaningful project changes so future collaborators (including AI agents) can quickly understand what changed, when, and why without rereading every file.
 
+## 2026-08-31
+- Added a generated **code map** for AI/human navigation: `npm run codemap` (`scripts/gen-code-map.mjs`) writes `docs/Ai/CODE_MAP.md`, a compact `symbol:line` index of `script.js` (grouped by its numbered section banners), `src/game-core.js` and `src/player-progress.js` (all top-level definitions, exports marked `*`), and the `styles.css` section line ranges. The pre-commit hook regenerates and stages it alongside the version stamp, so line numbers stay honest and the file is never hand-edited. Motivation: `script.js` is ~8k lines with no symbol index, so finding one function previously meant reading large chunks of it. `CLAUDE.md` / `agents.md` gained a matching "Finding code" section plus read-budget notes for the long docs (`CHANGELOG` newest-first, skip gitignored `DIALOGUE.md`).
+- Added `.claude/commands/verify.md`, an on-demand Claude Code slash command that runs the local pre-push gate (typecheck + unit + e2e) and encodes the two known non-regression e2e failure modes (stale `:4173` server, Firefox cannon-overload flake) so they get triaged before the diff is blamed.
+
 ## 2026-07-06
 - Changed GitHub test CI to manual-only while keeping GitHub Pages deployment on pushes to `main`, so pushing still updates `rainmath.com` without automatic test-workflow email noise. Local `typecheck`/unit/e2e verification remains the expected gate before pushing.
 - Fixed Times Tables Test Me placement/reporting at the mixed review level. Accepting a Level 13 placement now marks every 1s-12s table fact as placed out (144 cells) instead of only the 12s row, and session reports/shared report view models preserve L11/L12/L13 rows instead of clamping them into repeated L10 lines. Missing start-of-session level rows now inherit the level's denominator, so reports show `0/144 -> ...` rather than `0/0 -> ...`.
