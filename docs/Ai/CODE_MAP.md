@@ -11,7 +11,7 @@ Small files are omitted on purpose: read them whole (`src/curriculum.js`,
 `src/engine/*`, `src/audio.js`, `src/text/english.js`, `src/tracks/*`,
 `src/types.js`, `src/popups/login-popup.js`, `index.html`).
 
-## script.js (8357 lines)
+## script.js (8361 lines)
 
 DOM, canvas, game loop, boss mode, popups. Sections:
 
@@ -19,85 +19,85 @@ DOM, canvas, game loop, boss mode, popups. Sections:
 
 canvas:173, ctx:174, scoreEl:183, scoreLabelEl:184, answerInput:185, pauseBtn:186, restartBtn:187, finishBtn:188, challengeExitBtn:189, speedSlider:190, speedValueEl:191, dropLimitSlider:192, dropLimitValueEl:193, adaptivePressureToggle:194, adaptivePressureLabel:195, adaptivePressureValueEl:196, textSizeSelect:197, textSizeValueEl:198, bossHudEl:199, bossHudTitleEl:200, bossHudStatusEl:201, bossHudMetaEl:202, breatherHudEl:203, opConfig:206, BOSS_ANNOUNCE_MS:208, BOSS_STUN_MS:209, BOSS_VICTORY_MS:210, DEFAULT_MAX_FALL_TIME_SEC:211, BLITZ_RAMP_MS:216, BLITZ_START_SPEED:217, BLITZ_START_DROP_SECONDS:218, BLITZ_BASELINE_DROP_SECONDS:219, BLITZ_MIN_DROP_SECONDS:220, BLITZ_START_DROPS:221, IS_TEST_MODE:225, WAVE_TWO_BASE_SPEED:226, CHALLENGE_TRANSITION_MS:227, BOSS_HUD_FRESH_MS:228, BLITZ_SHIELD_START:229, BLITZ_SHIELD_MAX:230, BLITZ_CORRECT_SHIELD_GAIN:231, BLITZ_MISTAKE_SHIELD_LOSS:232, BLITZ_SHIELD_PULSE_MS:233, BLITZ_SHIELD_HIT_MS:234, WAVE_TWO_SPAWN_STAGGER_MS:235, WAVE_TWO_ROUND_GAP_MS:236, WAVE_TWO_MAX_LOAD:237, CANNON_OVERLOAD_THRESHOLD:238, CANNON_OVERLOAD_WINDOW_MS:239, CANNON_OVERLOAD_BASE_MS:240, CANNON_OVERLOAD_STEP_MS:241, CANNON_OVERLOAD_MAX_MS:242, CANNON_OVERLOAD_REPEAT_WINDOW_MS:243, MAX_VISIBLE_BOSS_NODES:244, FINISH_LEVEL_FOCUS_CHANCE:245, SESSION_RESUME_GRACE_MS:246, WELCOME_SEEN_KEY:247, SUPPORT_URL:248, TEXT_SIZE_ORDER:249, TEXT_SIZE_LABELS:250, TEXT_SIZE_SCALE:255, PLACEMENT_DROP_SECONDS:260, PLACEMENT_DROP_SECONDS_BY_OP:263, PLACEMENT_NEXT_DROP_MS:264, PLACEMENT_RETRY_COUNT:265, PLACEMENT_SHIELD_START:270, PLACEMENT_SHIELD_MAX:271, PLACEMENT_SHIELD_GAIN:272, PLACEMENT_SHIELD_LOSS:273, PLACEMENT_LEVEL_ATTEMPT_CAP:274, ADAPTIVE_WINDOW_LIMIT:275, ADAPTIVE_EVALUATE_MS:276, ADAPTIVE_LOAD_SAMPLE_MS:277, ADAPTIVE_MIN_DROPS:278, ADAPTIVE_MIN_SPEED:279, placementDropSeconds:281, NUMPAD_INPUT_BY_CODE:284, LOCK_AND_MODIFIER_KEYS:301, LOCK_KEY_CODES:319, BOSS_PART_DEFS:320, AMBIGUOUS_DELAY_MS:328, bossOfferShown:331, TUTORIAL_STEPS:337, problemStats:343, createSessionId:346, getRecentResumableSessionId:351, startVisitSession:358, getActiveSession:370, recordActiveSessionOutcome:375, recordActiveSessionChallenge:389, heartbeatActiveSession:396, applyProfileSettingsToControls:402, resetRunState:430, activateProfile:468, recordProblemResult:486, isAssessmentTarget:490, getDropResponseMs:494, recordLearningResult:499, getUnclearedDrops:526, updateBreatherHud:530, maybeExitBreatherMode:541, enterBreatherMode:553, exitBreatherMode:562, syncProgressSettings:568
 
-### 2. Utility Functions — L583-784
+### 2. Utility Functions — L583-788
 
-getSearchParams:587, storageGet:591, storageSet:599, storageRemove:607, getText:615, formatText:622, normalizeTextSizeSetting:628, getTextSizeLabel:632, getTextScale:636, getScaledFontSize:640, shouldShowWelcomeOnLoad:644, markWelcomeSeen:651, clearWelcomeSeenFlag:655, isLockOrModifierKey:659, isNumLockKey:663, refocusAnswerInputSoon:667, getKeyboardText:674, getNumpadTextForLockedState:680, isCannonOverloaded:686, getCannonOverloadText:690, clearCurrentAnswerInput:694, resetCannonOverload:702, triggerCannonOverload:713, getActiveAnswerSpace:730, registerWrongSubmission:752, updateCannonOverload:764, appendTypedText:771
+getSearchParams:587, storageGet:591, storageSet:599, storageRemove:607, getText:615, formatText:622, normalizeTextSizeSetting:628, getTextSizeLabel:632, getTextScale:636, getScaledFontSize:640, shouldShowWelcomeOnLoad:644, markWelcomeSeen:651, clearWelcomeSeenFlag:655, isLockOrModifierKey:659, isNumLockKey:663, refocusAnswerInputSoon:671, getKeyboardText:678, getNumpadTextForLockedState:684, isCannonOverloaded:690, getCannonOverloadText:694, clearCurrentAnswerInput:698, resetCannonOverload:706, triggerCannonOverload:717, getActiveAnswerSpace:734, registerWrongSubmission:756, updateCannonOverload:768, appendTypedText:775
 
-### 3. Practice Controls — L785-1058
+### 3. Practice Controls — L789-1062
 
-getCurrentPressure:789, getActivePressure:807, resetAdaptivePressureRuntime:811, isAdaptivePracticeActive:819, getAdaptivePressureMemory:830, seedAdaptivePressureTarget:840, ensureAdaptiveTargetsForEnabledOps:857, getAdaptivePressureScore:862, getConservativeAdaptiveTarget:866, applyAdaptivePressureTarget:879, setAdaptivePressureEnabled:891, getAdaptiveLoadRatio:909, getDropResponseRatio:917, rememberAdaptivePressure:927, maybeEvaluateAdaptivePressure:937, recordAdaptivePressureEvent:961, recordAdaptiveOverloadForVisibleOps:981, maybeSampleAdaptiveLoad:993, setPracticeControls:1009, setTextSize:1019, cycleTextSize:1026, getMaxFallTime:1035, getRandomBaseSpeed:1039, getSpeedMultiplier:1043, getBossSpeedMultiplier:1047, getSpawnInterval:1051, getMaxDrops:1055
+getCurrentPressure:793, getActivePressure:811, resetAdaptivePressureRuntime:815, isAdaptivePracticeActive:823, getAdaptivePressureMemory:834, seedAdaptivePressureTarget:844, ensureAdaptiveTargetsForEnabledOps:861, getAdaptivePressureScore:866, getConservativeAdaptiveTarget:870, applyAdaptivePressureTarget:883, setAdaptivePressureEnabled:895, getAdaptiveLoadRatio:913, getDropResponseRatio:921, rememberAdaptivePressure:931, maybeEvaluateAdaptivePressure:941, recordAdaptivePressureEvent:965, recordAdaptiveOverloadForVisibleOps:985, maybeSampleAdaptiveLoad:997, setPracticeControls:1013, setTextSize:1023, cycleTextSize:1030, getMaxFallTime:1039, getRandomBaseSpeed:1043, getSpeedMultiplier:1047, getBossSpeedMultiplier:1051, getSpawnInterval:1055, getMaxDrops:1059
 
-### 4. Difficulty Mapping — L1059-1062
-
-_(no top-level definitions)_
-
-### 5. Operation Toggle Functions — L1063-1253
-
-getTrackOps:1070, isOpAllowedByTrack:1075, applyTrackOpGating:1083, getEnabledOps:1094, OP_SETS:1101, getOpSet:1115, toggleOp:1119, returnToReadyGateIfIdleWithoutOps:1150, getProgressSkill:1164, getLevelGateReason:1168, showLevelGateFeedback:1172, showMasteryGateFeedback:1185, canAdvanceDifficulty:1195, markReadyForBoss:1203, recordMasteryAdvance:1215, advanceMasteredLevel:1223, setDifficulty:1236
-
-### 6. Problem Generation — L1254-1300
-
-getCurriculumTrack:1260, getOpMaxLevel:1266, getProfileMasteryForGeneration:1270, generateFinishLevelProblem:1275, generateWeightedProblem:1289, pickRandomEnabledOp:1295
-
-### 6b. Boss Mode — L1301-2488
-
-copyProblemToTarget:1307, copyReduceFields:1329, isReduceProblem:1345, REDUCE_FLASH_MS:1349, REDUCE_AUTO_MS:1350, reduceAutoTimer:1353, clearReduceAutoTimer:1354, startReduceFlash:1363, getReduceDisplayText:1368, refreshReduceTarget:1381, setReducePreview:1389, commitReducePreview:1398, getProblemAnswerKey:1408, getProblemIdentityKey:1413, makeProblemFromUniverseEntry:1418, getRankedLevelProblems:1479, getBossProblemPool:1493, makeBossProblem:1502, makeBossProblemFromPool:1520, makeBossDrop:1535, shuffleArray:1558, splitIntoGroups:1567, buildBossParts:1578, collapseEmptyBossParts:1635, refillBossReveals:1654, startBossMode:1677, getSelectedReplayLevel:1771, startBlitzMode:1776, startWaveMode:1783, startBossReplayMode:1790, startChallenge:1797, startBossFight:1828, updateBossPartLocks:1842, updateBossPartPositions:1857, positionBossProblems:1876, getActiveBossParts:1907, getBlitzProgress:1916, getBlitzElapsedRampUnits:1921, getBlitzRampProgress:1926, getBlitzScore:1930, getBlitzSurvivalMs:1936, getBlitzDropSeconds:1940, getBlitzSpeedPercent:1948, getBlitzDropLimit:1955, getBlitzShieldRatio:1962, changeBlitzShield:1969, getBossPartCount:1995, getBossWorksheetElapsedMs:2007, createBossDebris:2012, updateBossDebris:2031, getBossBombFallSeconds:2055, getBossBombIntervalMs:2067, findBossProblemById:2081, getBossMissileSourceNode:2087, spawnBossBomb:2101, recordActiveChallengeAttempt:2124, completeChallengeFailure:2190, applyBossStun:2213, updateWaveTwoRound:2229, updateBossMode:2248, handleBossProblemDestroyed:2342, completeBossVictory:2368, updateBossHud:2430
-
-### 7. Drop Management — L2489-3352
-
-getActiveAnswers:2493, createDrop:2497, updateDrops:2553, getDropStats:2616, getDropAccuracyVisual:2622, resetCanvasPaintState:2658, clearCanvasFrame:2666, drawDrops:2678, drawChallengeStatus:2821, fillRoundRect:2873, strokeRoundRect:2883, ensureStarfield:2895, updateStarfield:2907, drawStarfield:2919, drawLoomingBoss:2937, drawBossShip:2981, drawChallengeBurst:3064, drawBossPart:3142, drawBossDebris:3212, drawBossDebrisPiece:3217, drawBossProblemNode:3284, drawBossStunOverlay:3336
-
-### 8. Splash Effects — L3353-3358
+### 4. Difficulty Mapping — L1063-1066
 
 _(no top-level definitions)_
 
-### 8b. Laser and Player Ship — L3359-3384
+### 5. Operation Toggle Functions — L1067-1257
 
-getShieldRenderState:3365
+getTrackOps:1074, isOpAllowedByTrack:1079, applyTrackOpGating:1087, getEnabledOps:1098, OP_SETS:1105, getOpSet:1119, toggleOp:1123, returnToReadyGateIfIdleWithoutOps:1154, getProgressSkill:1168, getLevelGateReason:1172, showLevelGateFeedback:1176, showMasteryGateFeedback:1189, canAdvanceDifficulty:1199, markReadyForBoss:1207, recordMasteryAdvance:1219, advanceMasteredLevel:1227, setDifficulty:1240
 
-### 9. Input Handling — L3385-3884
+### 6. Problem Generation — L1258-1304
 
-isDropVisible:3389, isAnswerTargetVisible:3393, getAnswerTargets:3400, isDropClickable:3404, hitTestDrop:3408, revealDrop:3416, findDropMatch:3424, isInputPossible:3457, getScoreReadout:3492, updateScoreDisplay:3527, handleCorrectAnswer:3537, getMostUrgentVisibleTarget:3571, getWrongSubmissionTargets:3577, handleWrongInput:3585, hasLongerMatch:3620, clearAmbiguousTimer:3634, processInput:3641, applyReduceCancel:3702, handleReduceTargetInput:3717, commitTargetedReduceAnswer:3748, couldMatchTargetedFactor:3780, advanceFactorDrop:3792, isInFactorTargetMode:3799, getTargetedFactorDrop:3803, clearTargetStepPreview:3820, isTargetableStepProblem:3829, getTargetableFactorProblems:3838, getVisibleFactorDrops:3847, getNextFactorDrop:3851, getPrevFactorDrop:3860, enterFactorTargeting:3869, exitFactorTargeting:3877
+getCurriculumTrack:1264, getOpMaxLevel:1270, getProfileMasteryForGeneration:1274, generateFinishLevelProblem:1279, generateWeightedProblem:1293, pickRandomEnabledOp:1299
 
-### 10. Game Loop — L3885-3979
+### 6b. Boss Mode — L1305-2492
 
-maybeAutoTargetFactor:3892, tick:3907, isGameplayOverlayOpen:3962
+copyProblemToTarget:1311, copyReduceFields:1333, isReduceProblem:1349, REDUCE_FLASH_MS:1353, REDUCE_AUTO_MS:1354, reduceAutoTimer:1357, clearReduceAutoTimer:1358, startReduceFlash:1367, getReduceDisplayText:1372, refreshReduceTarget:1385, setReducePreview:1393, commitReducePreview:1402, getProblemAnswerKey:1412, getProblemIdentityKey:1417, makeProblemFromUniverseEntry:1422, getRankedLevelProblems:1483, getBossProblemPool:1497, makeBossProblem:1506, makeBossProblemFromPool:1524, makeBossDrop:1539, shuffleArray:1562, splitIntoGroups:1571, buildBossParts:1582, collapseEmptyBossParts:1639, refillBossReveals:1658, startBossMode:1681, getSelectedReplayLevel:1775, startBlitzMode:1780, startWaveMode:1787, startBossReplayMode:1794, startChallenge:1801, startBossFight:1832, updateBossPartLocks:1846, updateBossPartPositions:1861, positionBossProblems:1880, getActiveBossParts:1911, getBlitzProgress:1920, getBlitzElapsedRampUnits:1925, getBlitzRampProgress:1930, getBlitzScore:1934, getBlitzSurvivalMs:1940, getBlitzDropSeconds:1944, getBlitzSpeedPercent:1952, getBlitzDropLimit:1959, getBlitzShieldRatio:1966, changeBlitzShield:1973, getBossPartCount:1999, getBossWorksheetElapsedMs:2011, createBossDebris:2016, updateBossDebris:2035, getBossBombFallSeconds:2059, getBossBombIntervalMs:2071, findBossProblemById:2085, getBossMissileSourceNode:2091, spawnBossBomb:2105, recordActiveChallengeAttempt:2128, completeChallengeFailure:2194, applyBossStun:2217, updateWaveTwoRound:2233, updateBossMode:2252, handleBossProblemDestroyed:2346, completeBossVictory:2372, updateBossHud:2434
 
-### 11. Audio — L3980-3985
+### 7. Drop Management — L2493-3356
+
+getActiveAnswers:2497, createDrop:2501, updateDrops:2557, getDropStats:2620, getDropAccuracyVisual:2626, resetCanvasPaintState:2662, clearCanvasFrame:2670, drawDrops:2682, drawChallengeStatus:2825, fillRoundRect:2877, strokeRoundRect:2887, ensureStarfield:2899, updateStarfield:2911, drawStarfield:2923, drawLoomingBoss:2941, drawBossShip:2985, drawChallengeBurst:3068, drawBossPart:3146, drawBossDebris:3216, drawBossDebrisPiece:3221, drawBossProblemNode:3288, drawBossStunOverlay:3340
+
+### 8. Splash Effects — L3357-3362
 
 _(no top-level definitions)_
 
-### 12. Canvas Resize — L3986-4002
+### 8b. Laser and Player Ship — L3363-3388
 
-resizeCanvas:3990
+getShieldRenderState:3369
 
-### 13. UI Updates and Event Listeners — L4003-4935
+### 9. Input Handling — L3389-3888
 
-opDisplayLabels:4007, opDisplayNames:4021, maybeOfferBoss:4038, closeBossOffer:4048, showBossOffer:4053, closeBossVictoryPopup:4125, closeShareBadgePopup:4132, cloneRecapBest:4137, hasBossClearForLevel:4148, getShareBadgeData:4154, getRecapDisplayData:4177, buildRecapPayload:4203, getRecapShareCode:4221, getRecapShareLink:4225, getShareBadgeText:4230, copyShareBadge:4245, shareBadge:4250, buildRecapCard:4265, showShareBadge:4297, showBossVictoryPopup:4362, getBossButtonTitle:4435, getReplayChallengeLevel:4443, getChallengeLockReason:4456, formatBlitzText:4468, formatWaveText:4474, formatBossReplayText:4480, formatBadgeText:4486, formatOpChitTip:4491, updateOpChitProgress:4505, updateOpChits:4523, updateInputHint:4541, canReplayChallenges:4591, buildDiffCards:4595, updateReadinessDisplays:4815
+isDropVisible:3393, isAnswerTargetVisible:3397, getAnswerTargets:3404, isDropClickable:3408, hitTestDrop:3412, revealDrop:3420, findDropMatch:3428, isInputPossible:3461, getScoreReadout:3496, updateScoreDisplay:3531, handleCorrectAnswer:3541, getMostUrgentVisibleTarget:3575, getWrongSubmissionTargets:3581, handleWrongInput:3589, hasLongerMatch:3624, clearAmbiguousTimer:3638, processInput:3645, applyReduceCancel:3706, handleReduceTargetInput:3721, commitTargetedReduceAnswer:3752, couldMatchTargetedFactor:3784, advanceFactorDrop:3796, isInFactorTargetMode:3803, getTargetedFactorDrop:3807, clearTargetStepPreview:3824, isTargetableStepProblem:3833, getTargetableFactorProblems:3842, getVisibleFactorDrops:3851, getNextFactorDrop:3855, getPrevFactorDrop:3864, enterFactorTargeting:3873, exitFactorTargeting:3881
 
-### 13b. Stats Popup — L4936-5818
+### 10. Game Loop — L3889-3983
 
-getVisualAccuracy:4940, isProblemPlacedOut:4948, mixRGB:4952, getAccuracyRGB:4957, getEvidenceRatio:4968, getConfidenceAlpha:4973, getAccuracyColor:4978, getAccuracyText:4987, getProgressProblem:4991, getStatsTooltip:4995, closeStatsTooltip:5000, positionStatsTooltip:5005, showStatsTooltip:5016, attachStatsTooltip:5031, showStatsPopup:5044, closeStatsPopup:5114, formatSessionStartedAt:5121, getReportSessions:5132, getSessionSummaryById:5139, getReportProfile:5147, isViewingSharedReport:5151, isViewingSharedRecap:5155, copyTextToClipboard:5161, SHARE_SALT:5192, BACKUP_CODE_PREFIX:5193, makeShareId:5200, isShareChecksumValid:5204, buildSharedReportPayload:5208, deflateRawToB64url:5220, inflateRawFromB64url:5229, encodeSharePayload:5241, getShareReportCode:5252, decodeShareReportCode:5256, getSharedReportLink:5272, buildProfileBackupPayload:5277, getProfileBackupCode:5288, decodeProfileBackupCode:5292, getBackupProfileConflict:5310, restoreProfileBackupCode:5319, getBackupFileName:5338, shareReportWithParent:5349, openSharedReportView:5364, exitSharedReportView:5395, recapDataFromPayload:5406, openSharedRecapView:5424, exitSharedRecapView:5470, getReportHashCode:5479, getRecapHashCode:5484, showSharedReportError:5491, openSharedReportFromCode:5514, openSharedRecapFromCode:5525, buildSessionLogPopup:5545, closeSessionLogPopup:5640, buildSessionReportPopup:5645, closeSessionReportPopup:5814
+maybeAutoTargetFactor:3896, tick:3911, isGameplayOverlayOpen:3966
 
-### 13d. Welcome Menu and Tutorial — L5819-6589
+### 11. Audio — L3984-3989
 
-closeWelcomeMenu:5823, rebuildWelcomeMenu:5830, buildWelcomeMenu:5835, removePlacementOverlay:5992, closePlacementOverlay:5997, makePlacementProblem:6011, getPlacementCorrectAnswer:6021, isPlacementAnswerCorrect:6027, getPlacementFrontierProblems:6038, makePlacementDrop:6047, preparePlacementLevel:6074, startPlacementRun:6093, startPlacementForOp:6137, queuePlacementRetry:6141, recordPlacementLevelSummary:6157, climbPlacementLevel:6178, handlePlacementDropFinished:6190, spawnNextPlacementDrop:6236, updatePlacementMode:6251, finishPlacementRun:6262, acceptPlacementLevel:6288, submitPlacementAnswer:6320, renderPlacementHeader:6331, renderPlacementSelect:6340, renderPlacementResult:6365, showPlacementResultOverlay:6400, renderPlacementOverlay:6406, showPlacementOverlay:6429, closeTutorialOverlay:6443, getTutorialTargetRect:6450, positionTutorialSpotlight:6459, startTutorial:6472, renderTutorialStep:6481, showNextTutorialStep:6578, showPreviousTutorialStep:6584
+_(no top-level definitions)_
 
-### 13e. Login Popup — L6590-7502
+### 12. Canvas Resize — L3990-4006
 
-getActiveProfileName:6594, getLoginLinkText:6598, updateLoginLink:6603, updateStaticText:6615, formatProfileUpdatedAt:6639, setActiveTrackForProfile:6650, openLoginPopup:6669, buildGridStats:6696, buildSIReferenceTable:6761, buildListStats:6811, updateDifficultyDisplays:6859, updateControlDisplay:6871, getRunControlState:6929, setControlDisabled:6945, updatePauseControlLabels:6957, startRun:6975, togglePauseOrStart:6993, togglePause:7001, restartGame:7011, finishCurrentSession:7020, quitChallenge:7339, feedbackOverlay:7432, menuLink:7433, testMeLink:7434, loginLink:7435, sessionLogLink:7436, feedbackLink:7437, fbCancel:7438, syncTouchViewportHeight:7490
+resizeCanvas:3994
 
-### 14. Touch Keypad — L7503-7837
+### 13. UI Updates and Event Listeners — L4007-4939
 
-isTouchDevice:7507, touchKeypad:7511, kpDisplay:7513, kpHint:7514, kpPauseBtn:7515, kpRestartBtn:7516, wireKpButton:7518, setupTouchKeypad:7525, buildKpDiffStrip:7633, updateKpDisplay:7762, handleKeypadPress:7771
+opDisplayLabels:4011, opDisplayNames:4025, maybeOfferBoss:4042, closeBossOffer:4052, showBossOffer:4057, closeBossVictoryPopup:4129, closeShareBadgePopup:4136, cloneRecapBest:4141, hasBossClearForLevel:4152, getShareBadgeData:4158, getRecapDisplayData:4181, buildRecapPayload:4207, getRecapShareCode:4225, getRecapShareLink:4229, getShareBadgeText:4234, copyShareBadge:4249, shareBadge:4254, buildRecapCard:4269, showShareBadge:4301, showBossVictoryPopup:4366, getBossButtonTitle:4439, getReplayChallengeLevel:4447, getChallengeLockReason:4460, formatBlitzText:4472, formatWaveText:4478, formatBossReplayText:4484, formatBadgeText:4490, formatOpChitTip:4495, updateOpChitProgress:4509, updateOpChits:4527, updateInputHint:4545, canReplayChallenges:4595, buildDiffCards:4599, updateReadinessDisplays:4819
 
-### 14b. Test Hooks — L7838-8314
+### 13b. Stats Popup — L4940-5822
 
-cloneForTest:7842, getTestState:7846, resetSettingsForTest:7886, makeTestDrop:7893, installTestHooks:7942
+getVisualAccuracy:4944, isProblemPlacedOut:4952, mixRGB:4956, getAccuracyRGB:4961, getEvidenceRatio:4972, getConfidenceAlpha:4977, getAccuracyColor:4982, getAccuracyText:4991, getProgressProblem:4995, getStatsTooltip:4999, closeStatsTooltip:5004, positionStatsTooltip:5009, showStatsTooltip:5020, attachStatsTooltip:5035, showStatsPopup:5048, closeStatsPopup:5118, formatSessionStartedAt:5125, getReportSessions:5136, getSessionSummaryById:5143, getReportProfile:5151, isViewingSharedReport:5155, isViewingSharedRecap:5159, copyTextToClipboard:5165, SHARE_SALT:5196, BACKUP_CODE_PREFIX:5197, makeShareId:5204, isShareChecksumValid:5208, buildSharedReportPayload:5212, deflateRawToB64url:5224, inflateRawFromB64url:5233, encodeSharePayload:5245, getShareReportCode:5256, decodeShareReportCode:5260, getSharedReportLink:5276, buildProfileBackupPayload:5281, getProfileBackupCode:5292, decodeProfileBackupCode:5296, getBackupProfileConflict:5314, restoreProfileBackupCode:5323, getBackupFileName:5342, shareReportWithParent:5353, openSharedReportView:5368, exitSharedReportView:5399, recapDataFromPayload:5410, openSharedRecapView:5428, exitSharedRecapView:5474, getReportHashCode:5483, getRecapHashCode:5488, showSharedReportError:5495, openSharedReportFromCode:5518, openSharedRecapFromCode:5529, buildSessionLogPopup:5549, closeSessionLogPopup:5644, buildSessionReportPopup:5649, closeSessionReportPopup:5818
 
-### 15. Initialization — L8315-8357
+### 13d. Welcome Menu and Tutorial — L5823-6593
 
-init:8319
+closeWelcomeMenu:5827, rebuildWelcomeMenu:5834, buildWelcomeMenu:5839, removePlacementOverlay:5996, closePlacementOverlay:6001, makePlacementProblem:6015, getPlacementCorrectAnswer:6025, isPlacementAnswerCorrect:6031, getPlacementFrontierProblems:6042, makePlacementDrop:6051, preparePlacementLevel:6078, startPlacementRun:6097, startPlacementForOp:6141, queuePlacementRetry:6145, recordPlacementLevelSummary:6161, climbPlacementLevel:6182, handlePlacementDropFinished:6194, spawnNextPlacementDrop:6240, updatePlacementMode:6255, finishPlacementRun:6266, acceptPlacementLevel:6292, submitPlacementAnswer:6324, renderPlacementHeader:6335, renderPlacementSelect:6344, renderPlacementResult:6369, showPlacementResultOverlay:6404, renderPlacementOverlay:6410, showPlacementOverlay:6433, closeTutorialOverlay:6447, getTutorialTargetRect:6454, positionTutorialSpotlight:6463, startTutorial:6476, renderTutorialStep:6485, showNextTutorialStep:6582, showPreviousTutorialStep:6588
+
+### 13e. Login Popup — L6594-7506
+
+getActiveProfileName:6598, getLoginLinkText:6602, updateLoginLink:6607, updateStaticText:6619, formatProfileUpdatedAt:6643, setActiveTrackForProfile:6654, openLoginPopup:6673, buildGridStats:6700, buildSIReferenceTable:6765, buildListStats:6815, updateDifficultyDisplays:6863, updateControlDisplay:6875, getRunControlState:6933, setControlDisabled:6949, updatePauseControlLabels:6961, startRun:6979, togglePauseOrStart:6997, togglePause:7005, restartGame:7015, finishCurrentSession:7024, quitChallenge:7343, feedbackOverlay:7436, menuLink:7437, testMeLink:7438, loginLink:7439, sessionLogLink:7440, feedbackLink:7441, fbCancel:7442, syncTouchViewportHeight:7494
+
+### 14. Touch Keypad — L7507-7841
+
+isTouchDevice:7511, touchKeypad:7515, kpDisplay:7517, kpHint:7518, kpPauseBtn:7519, kpRestartBtn:7520, wireKpButton:7522, setupTouchKeypad:7529, buildKpDiffStrip:7637, updateKpDisplay:7766, handleKeypadPress:7775
+
+### 14b. Test Hooks — L7842-8318
+
+cloneForTest:7846, getTestState:7850, resetSettingsForTest:7890, makeTestDrop:7897, installTestHooks:7946
+
+### 15. Initialization — L8319-8361
+
+init:8323
 
 ## src/game-core.js (2626 lines)
 

@@ -462,7 +462,7 @@ function resetRunState({ resume = true, focus = true } = {}) {
   updateControlDisplay();
   updatePauseControlLabels();
   drawDrops();
-  if (focus) answerInput.focus();
+  if (focus) answerInput.focus({ preventScroll: true });
 }
 
 function activateProfile(nextProfile, { resetRun = true } = {}) {
@@ -554,7 +554,7 @@ function enterBreatherMode() {
   if (state.isPaused || isBossActive() || state.isBreatherMode || getUnclearedDrops().length === 0) return false;
   state.isBreatherMode = true;
   clearAmbiguousTimer();
-  answerInput.focus();
+  answerInput.focus({ preventScroll: true });
   updateBreatherHud();
   return true;
 }
@@ -664,10 +664,14 @@ function isNumLockKey(event) {
   return event.key === "NumLock" || event.code === "NumLock";
 }
 
+// Every answerInput.focus() passes `preventScroll: true`. The input sits below
+// the canvas, so a plain focus() scrolls it into view — on a short desktop
+// window (e.g. 1280x720) that scrolled the page ~120px on load and pushed the
+// whole header, including the Menu/Test Me/Login/Log nav, above the fold.
 function refocusAnswerInputSoon() {
   if (document.getElementById("welcomeOverlay") || document.getElementById("tutorialOverlay")) return;
   setTimeout(() => {
-    if (!state.isPaused && !isBossStunned()) answerInput.focus();
+    if (!state.isPaused && !isBossStunned()) answerInput.focus({ preventScroll: true });
   }, 0);
 }
 
@@ -775,7 +779,7 @@ function appendTypedText(text) {
     updateInputHint();
     return;
   }
-  answerInput.focus();
+  answerInput.focus({ preventScroll: true });
   answerInput.value = state.currentInput + text;
   state.currentInput = answerInput.value;
   processInput(state.currentInput);
@@ -1763,7 +1767,7 @@ function startBossMode(opKey, { mode = "full", level = opConfig[opKey]?.difficul
   updateControlDisplay();
   updateDifficultyDisplays();
   updatePauseControlLabels();
-  answerInput.focus();
+  answerInput.focus({ preventScroll: true });
   drawDrops();
   return true;
 }
@@ -3870,7 +3874,7 @@ function enterFactorTargeting(drop) {
   state.factorTargetId = drop ? drop.id : null;
   answerInput.value = "";
   state.currentInput = "";
-  answerInput.focus();
+  answerInput.focus({ preventScroll: true });
   updateKpDisplay();
 }
 
@@ -3878,7 +3882,7 @@ function exitFactorTargeting() {
   state.factorTargetId = null;
   answerInput.value = "";
   state.currentInput = "";
-  answerInput.focus();
+  answerInput.focus({ preventScroll: true });
   updateKpDisplay();
 }
 
@@ -4410,7 +4414,7 @@ function showBossVictoryPopup(info) {
   next.textContent = info.advanced ? "Next Level →" : "Continue";
   next.addEventListener("click", () => {
     closeBossVictoryPopup();
-    answerInput.focus();
+    answerInput.focus({ preventScroll: true });
   });
   const grid = document.createElement("button");
   grid.type = "button";
@@ -5400,7 +5404,7 @@ function exitSharedReportView() {
   if (window.location.hash) {
     history.replaceState(null, "", window.location.pathname + window.location.search);
   }
-  answerInput.focus();
+  answerInput.focus({ preventScroll: true });
 }
 
 function recapDataFromPayload(payload) {
@@ -5473,7 +5477,7 @@ function exitSharedRecapView() {
   if (window.location.hash) {
     history.replaceState(null, "", window.location.pathname + window.location.search);
   }
-  answerInput.focus();
+  answerInput.focus({ preventScroll: true });
 }
 
 function getReportHashCode() {
@@ -5824,7 +5828,7 @@ function closeWelcomeMenu({ markSeen = false, focus = true } = {}) {
   const existing = document.getElementById("welcomeOverlay");
   if (existing) existing.remove();
   if (markSeen) markWelcomeSeen();
-  if (focus) answerInput.focus();
+  if (focus) answerInput.focus({ preventScroll: true });
 }
 
 function rebuildWelcomeMenu() {
@@ -6005,7 +6009,7 @@ function closePlacementOverlay({ focus = true } = {}) {
   updateInputHint();
   updateOpChits();
   updateControlDisplay();
-  if (focus) answerInput.focus();
+  if (focus) answerInput.focus({ preventScroll: true });
 }
 
 function makePlacementProblem(opKey, level) {
@@ -6131,7 +6135,7 @@ function startPlacementRun(opKey, level = 1) {
   updateOpChits();
   updateControlDisplay();
   drawDrops();
-  answerInput.focus();
+  answerInput.focus({ preventScroll: true });
 }
 
 function startPlacementForOp(opKey, level = 1) {
@@ -6444,7 +6448,7 @@ function closeTutorialOverlay({ markSeen = false, focus = true } = {}) {
   const existing = document.getElementById("tutorialOverlay");
   if (existing) existing.remove();
   if (markSeen) markWelcomeSeen();
-  if (focus) answerInput.focus();
+  if (focus) answerInput.focus({ preventScroll: true });
 }
 
 function getTutorialTargetRect(selector) {
@@ -6977,7 +6981,7 @@ function startRun() {
   if (controls.pauseLabel === "Start" && controls.pauseDisabled) {
     updateInputHint();
     updatePauseControlLabels();
-    answerInput.focus();
+    answerInput.focus({ preventScroll: true });
     return false;
   }
   state.hasStarted = true;
@@ -6985,7 +6989,7 @@ function startRun() {
   state.lastTime = 0;
   updateInputHint();
   updatePauseControlLabels();
-  answerInput.focus();
+  answerInput.focus({ preventScroll: true });
   return true;
 }
 
@@ -7004,7 +7008,7 @@ function togglePause() {
   updatePauseControlLabels();
   if (!state.isPaused) {
     state.lastTime = 0;
-    answerInput.focus();
+    answerInput.focus({ preventScroll: true });
   }
 }
 
@@ -7351,7 +7355,7 @@ function quitChallenge() {
   updateDifficultyDisplays();
   updateOpChits();
   drawDrops();
-  answerInput.focus();
+  answerInput.focus({ preventScroll: true });
 }
 if (challengeExitBtn) {
   challengeExitBtn.tabIndex = -1;
@@ -7401,7 +7405,7 @@ document.querySelectorAll(".op-chit").forEach((btn) => {
     initAudio();
     const opKey = btn.dataset.op;
     if (opKey) toggleOp(opKey);
-    answerInput.focus();
+    answerInput.focus({ preventScroll: true });
   });
 });
 
@@ -8348,7 +8352,7 @@ function init() {
   } else if (shouldShowWelcomeOnLoad()) {
     buildWelcomeMenu({ firstVisit: true });
   } else {
-    answerInput.focus();
+    answerInput.focus({ preventScroll: true });
   }
   requestAnimationFrame(tick);
 }

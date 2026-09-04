@@ -1,9 +1,10 @@
-// TEMP scratch spec — cross-platform layout screenshots for visual review.
-// Writes PNGs to test-results/shots/<project>-<state>.png.
-// Safe to delete: `rm tests/e2e/_platform-shots.spec.js`
+// Cross-platform layout screenshots for visual review — a review tool, not a
+// regression test. Captures seven states per device profile as
+// /tmp/rainmath-shots/<project>-<state>.png, then read the PNGs to eyeball
+// each platform. Useful for catching layout breaks that assertions miss.
 //
-// Run: npx playwright test _platform-shots --project=chromium --project=webkit \
-//        --project=mobile-chrome --project=mobile-safari --project=ipad
+// SHOTS=1 npx playwright test _platform-shots --project=chromium \
+//   --project=webkit --project=mobile-chrome --project=mobile-safari --project=ipad
 import { test } from "../support/fixtures.js";
 
 // Opt-in: this is a review tool, not a regression test, so it stays out of the
@@ -77,11 +78,12 @@ test("stats grid popup", async ({ page }, info) => {
   const call = await open(page);
   await call("reset");
   await call("enableOps", ["mul"]);
-  await call("seedStats", "mul", [
-    { key: "3,4", asked: 6, correct: 6 },
-    { key: "5,6", asked: 4, correct: 1 },
-    { key: "7,8", asked: 3, correct: 2 },
-  ]);
+  // seedStats assigns problemStats[opKey] directly, so it wants a keyed map.
+  await call("seedStats", "mul", {
+    "3,4": { asked: 6, correct: 6 },
+    "5,6": { asked: 4, correct: 1 },
+    "7,8": { asked: 3, correct: 2 },
+  });
   await page.waitForTimeout(250);
   // Desktop: the "Grid" hint on a diff card. Touch: tapping the diff-strip item.
   const grid = (await isTouch(page))
@@ -112,7 +114,7 @@ test("boss fight", async ({ page }, info) => {
   await call("reset");
   await call("enableOps", ["add"]);
   await call("markReady", "add");
-  await call("startBoss");
+  await call("startBoss", "add");
   await call("skipToBossFight");
   await page.waitForTimeout(600);
   await shot(page, info.project.name, "7-boss");

@@ -293,6 +293,28 @@ test.describe("curriculum tracks", () => {
 test.describe("desktop gameplay", () => {
   test.skip(({ isMobile }) => isMobile, "desktop-only input bar flows");
 
+  // Regression: the answer input sits below the canvas, so focusing it without
+  // `preventScroll` scrolled the page on load and pushed the header (and its
+  // Menu/Test Me/Login/Log nav) above the fold on a short window.
+  test("autofocus does not scroll the header out of view", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await openApp(page);
+
+    const view = await page.evaluate(() => {
+      const bar = document.querySelector(".top-bar").getBoundingClientRect();
+      return {
+        scrollY: Math.round(window.scrollY),
+        topBarTop: Math.round(bar.top),
+        focused: document.activeElement?.id,
+      };
+    });
+
+    expect(view.scrollY).toBe(0);
+    expect(view.topBarTop).toBeGreaterThanOrEqual(0);
+    // Still focused, so typing works immediately -- that is the point of the autofocus.
+    expect(view.focused).toBe("answer");
+  });
+
   test("toggles operation chits and builds difficulty controls", async ({ page }) => {
     await openApp(page);
 
