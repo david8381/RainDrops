@@ -2782,6 +2782,10 @@ button.primary:hover {
   gap: 6px;
   flex: 1 1 100%;
   min-width: 0;
+  /* The links are flex-shrink:0, so on a narrow phone the row must wrap or the
+     last item ("?") gets clipped off the right edge. */
+  flex-wrap: wrap;
+  row-gap: 4px;
 }
 
 .touch-brand .logo {
@@ -2823,10 +2827,14 @@ button.primary:hover {
   flex-shrink: 0;
 }
 
+/* Every text link needs auto width — only `.touch-fb` ("?") stays a circle.
+   `.touch-finish` was missing here, so "Finish" overflowed a 22px circle and
+   collided with the Log pill. */
 .touch-login,
 .touch-menu,
 .touch-test,
 .touch-results,
+.touch-finish,
 .touch-log,
 .touch-support {
   border-radius: 6px;
@@ -2887,11 +2895,20 @@ button.primary:hover {
   flex: 1;
   min-height: 0;
   gap: 0;
+  /* The desktop grid sets `align-items: start`. Here the container is a COLUMN
+     flex, so that same value applies to the cross (horizontal) axis and makes
+     `.play-col` size to fit-content instead of the viewport — the widest
+     descendant (the max-content diff strip, one item per enabled op) then drags
+     the keypad and canvas hundreds of px off-screen, with no scrollbar because
+     body is overflow-x:hidden. Stretch keeps the column viewport-width so
+     `.kp-diff-scroll` can actually scroll as intended. */
+  align-items: stretch;
 }
 
 .touch-device .play-col {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   gap: 0;
 }
 

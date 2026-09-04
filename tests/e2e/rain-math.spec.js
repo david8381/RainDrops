@@ -2412,6 +2412,98 @@ test.describe("mobile gameplay", () => {
     expect(state.drops).toHaveLength(0);
   });
 
+  // Regression: the touch header links are flex-shrink:0, so the row has to wrap
+  // rather than clip its last item; and "Finish" used to be stuck at the 22px
+  // circle width, overflowing into the Log pill.
+  test("touch header links all fit without clipping", async ({ page }) => {
+    await openApp(page);
+
+    const nav = await page.evaluate(() => {
+      const brand = document.querySelector(".touch-brand");
+      const box = brand.getBoundingClientRect();
+      const clipped = [...brand.children]
+        .filter((el) => {
+          const r = el.getBoundingClientRect();
+          return r.right > box.right + 1 || r.left < box.left - 1;
+        })
+        .map((el) => (el.textContent || "").trim());
+      const finish = document.querySelector(".touch-finish");
+      return {
+        clipped,
+        overflow: brand.scrollWidth - brand.clientWidth,
+        finishWidth: Math.round(finish.getBoundingClientRect().width),
+      };
+    });
+
+    expect(nav.clipped).toEqual([]);
+    expect(nav.overflow).toBeLessThanOrEqual(1);
+    // A text pill, not the 22px icon circle.
+    expect(nav.finishWidth).toBeGreaterThan(30);
+  });
+
+  // Regression: the touch column used to inherit `align-items: start` from the
+  // desktop grid, so it sized to fit-content on the cross axis. Each enabled op
+  // adds a max-content diff-strip item, so with several ops the keypad/canvas
+  // were dragged hundreds of px past the viewport — silently, since body is
+  // overflow-x:hidden. Every key must stay on screen and tappable, and the diff
+  // strip must scroll instead of growing.
+  test("keypad stays on screen and tappable with many ops enabled", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add", "sub", "mul", "div"]);
+    await freezeAutoSpawns(page);
+
+    const layout = await page.evaluate(() => {
+      const vw = window.innerWidth;
+      const width = (sel) => Math.round(document.querySelector(sel).getBoundingClientRect().width);
+      const strip = document.querySelector(".kp-diff-scroll");
+      const offScreen = [...document.querySelectorAll(".kp-key")]
+        .map((key) => {
+          const r = key.getBoundingClientRect();
+          const cx = r.left + r.width / 2;
+          const cy = r.top + r.height / 2;
+          return {
+            label: key.dataset.key ?? key.textContent.trim(),
+            onScreen: r.right <= vw + 1 && r.left >= -1,
+            // Hit-testing the centre catches "laid out on screen but covered".
+            tappable:
+              cx >= 0 && cx <= vw && cy >= 0 && cy <= window.innerHeight
+                ? document.elementFromPoint(cx, cy) === key
+                : false,
+          };
+        })
+        .filter((key) => !key.onScreen || !key.tappable)
+        .map((key) => key.label);
+
+      return {
+        vw,
+        playCol: width(".play-col"),
+        keypad: width("#touchKeypad"),
+        canvas: width("#canvas"),
+        stripOverflow: strip.scrollWidth - strip.clientWidth,
+        offScreen,
+      };
+    });
+
+    expect(layout.offScreen).toEqual([]);
+    expect(layout.playCol).toBeLessThanOrEqual(layout.vw);
+    expect(layout.keypad).toBeLessThanOrEqual(layout.vw);
+    expect(layout.canvas).toBeLessThanOrEqual(layout.vw);
+    // The strip is meant to absorb the extra width by scrolling.
+    expect(layout.stripOverflow).toBeGreaterThan(0);
+
+    // And a key in the far column actually works end to end.
+    await invoke(page, "addDrop", {
+      opKey: "add",
+      text: "4 + 5",
+      answer: 9,
+      answerText: "9",
+      statsKey: "4,5",
+      y: 120,
+    });
+    await page.locator('.kp-key[data-key="9"]').click();
+    await expect(page.locator("#touchScore")).toHaveText("1");
+  });
+
   test("landscape touch layout preserves playfield height", async ({ page }) => {
     await page.setViewportSize({ width: 844, height: 390 });
     await openApp(page);
