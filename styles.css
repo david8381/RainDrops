@@ -3049,6 +3049,14 @@ button.primary:hover {
   width: max-content;
 }
 
+/* Two or more ops cannot fit a phone row, so the strip scrolls. Fade the
+   trailing edge (only while it actually overflows) so the hidden controls read
+   as "swipe for more" rather than as nothing at all. */
+.kp-diff-scroll.is-scrollable {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+}
+
 .kp-diff-item {
   display: flex;
   align-items: center;

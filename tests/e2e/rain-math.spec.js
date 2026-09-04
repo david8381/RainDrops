@@ -2434,6 +2434,51 @@ test.describe("mobile gameplay", () => {
     expect(state.drops).toHaveLength(0);
   });
 
+  // Regression: the touch diff strip is one short row holding a whole op's
+  // controls. Verbose labels (a 227px lock sentence, "L<n>" repeated on every
+  // challenge pill) overflowed it, pushing Recap fully off-screen with no
+  // scroll affordance -- so those controls were simply unreachable.
+  test("a single op's controls are fully on screen in the diff strip", async ({ page }) => {
+    await openApp(page);
+    await invoke(page, "enableOps", ["add"]);
+
+    const read = () =>
+      page.evaluate(() => {
+        const sc = document.querySelector(".kp-diff-scroll");
+        const box = sc.getBoundingClientRect();
+        const hidden = [...sc.querySelectorAll("*")]
+          .filter((el) => !el.children.length && el.getBoundingClientRect().width)
+          .filter((el) => el.getBoundingClientRect().right > box.right + 1)
+          .map((el) => (el.textContent || "").trim());
+        return {
+          hidden,
+          overflow: sc.scrollWidth - sc.clientWidth,
+          scrollableClass: sc.classList.contains("is-scrollable"),
+        };
+      });
+
+    // Locked state: the compact lock chip must fit.
+    const locked = await read();
+    expect(locked.hidden).toEqual([]);
+    expect(locked.overflow).toBe(0);
+
+    // Boss-ready swaps the lock chip for four challenge pills -- still must fit.
+    await invoke(page, "markReady", "add");
+    const ready = await read();
+    expect(ready.hidden).toEqual([]);
+    expect(ready.overflow).toBe(0);
+    // Recap is the last pill and was the one previously lost entirely.
+    await expect(page.locator(".kp-diff-badge")).toBeVisible();
+    // Nothing is hidden, so no swipe affordance should be advertised.
+    expect(ready.scrollableClass).toBe(false);
+
+    // Several ops genuinely cannot fit; then the fade must appear.
+    await invoke(page, "enableOps", ["add", "sub", "mul"]);
+    const many = await read();
+    expect(many.overflow).toBeGreaterThan(0);
+    expect(many.scrollableClass).toBe(true);
+  });
+
   // Regression: the touch header links are flex-shrink:0, so the row has to wrap
   // rather than clip its last item; and "Finish" used to be stuck at the 22px
   // circle width, overflowing into the Log pill.
@@ -2560,7 +2605,11 @@ test.describe("mobile gameplay", () => {
     await expect(page.locator("#kpSpeedVal")).toHaveText("40%");
     await expect(page.locator("#kpDropsVal")).toHaveText("4");
     await expect(page.locator(".kp-grid-hint").first()).toHaveText("Grid");
-    await expect(page.locator('.kp-diff-lock[data-op="add"]')).toContainText("Master this level");
+    // The touch chip shows a compact label so the row fits a phone; the full
+    // sentence stays on the title for hover / screen readers.
+    const touchLock = page.locator('.kp-diff-lock[data-op="add"]');
+    await expect(touchLock).toHaveText("\u{1F512} Master to unlock");
+    await expect(touchLock).toHaveAttribute("title", "Locked: Master this level to unlock its challenges.");
 
     await page.locator("#kpAdaptiveBtn").click();
     await expect(page.locator("#kpAdaptiveBtn")).toHaveText("On");

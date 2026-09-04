@@ -4492,6 +4492,40 @@ function formatBadgeText(opKey, skill) {
   return level ? `Recap L${level}` : "";
 }
 
+// --- Touch strip label compaction ------------------------------------------
+// The touch diff strip is a single ~24px row that must hold one op's whole set
+// of controls inside a ~378px phone viewport. Two label habits made that
+// impossible, pushing real controls (notably Recap) off-screen:
+//   * challenge pills repeat "L<n>", which is always the level already shown in
+//     the same row -- getReplayChallengeLevel() returns either selectedLevel or
+//     0, so a visible pill's level can never differ from `.kp-diff-val`; and
+//   * the lock chip spelled out a full sentence at 227px, over half the row.
+// Compact both for touch only. Desktop cards keep the long form (they wrap in a
+// vertical panel), and the full wording stays available via title/aria-label.
+function compactChallengeLabel(text) {
+  return String(text || "").replace(/ L\d+\b/, "");
+}
+
+function compactLockLabel(reason) {
+  if (!reason) return "";
+  const reach = /^Reach Level (\d+)/.exec(reason);
+  return reach ? `\u{1F512} Reach L${reach[1]}` : "\u{1F512} Master to unlock";
+}
+
+// "Mastered: 12%" -> "12%". The row already sits beside the level stepper and
+// taps through to the full accuracy grid, so the prefix is the first thing to
+// go when the row has to fit a phone.
+function compactReadyLabel(text) {
+  return String(text || "").replace(/^Mastered:\s*/, "");
+}
+
+// Compact visible text, full text for hover/screen readers.
+function setCompactLabel(el, full) {
+  el.textContent = compactChallengeLabel(full);
+  el.title = full;
+  if (full) el.setAttribute("aria-label", full);
+}
+
 function formatOpChitTip(opKey, baseTip) {
   const level = opConfig[opKey]?.difficulty || 1;
   const maxLevel = getOpMaxLevel(opKey);
@@ -4887,7 +4921,9 @@ function updateReadinessDisplays() {
 
   document.querySelectorAll(".kp-diff-ready[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
-    el.textContent = formatReadyText(skill);
+    const readyText = formatReadyText(skill);
+    el.textContent = compactReadyLabel(readyText);
+    el.title = readyText;
     el.classList.toggle("is-qualified", Boolean(skill?.bossAttemptedForLevel));
     el.classList.toggle("is-locked", !canOpenLevelChoices(skill));
     el.classList.toggle("is-ready-attention", shouldPromptBossAttempt(skill));
@@ -4900,7 +4936,7 @@ function updateReadinessDisplays() {
   document.querySelectorAll(".kp-diff-blitz[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     const lockReason = getChallengeLockReason(el.dataset.op, skill);
-    el.textContent = formatBlitzText(el.dataset.op, skill);
+    setCompactLabel(el, formatBlitzText(el.dataset.op, skill));
     el.hidden = Boolean(lockReason);
     el.disabled = isControlLocked();
   });
@@ -4908,7 +4944,7 @@ function updateReadinessDisplays() {
   document.querySelectorAll(".kp-diff-wave[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     const lockReason = getChallengeLockReason(el.dataset.op, skill);
-    el.textContent = formatWaveText(el.dataset.op, skill);
+    setCompactLabel(el, formatWaveText(el.dataset.op, skill));
     el.hidden = Boolean(lockReason);
     el.disabled = isControlLocked();
   });
@@ -4916,7 +4952,7 @@ function updateReadinessDisplays() {
   document.querySelectorAll(".kp-diff-boss[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     const lockReason = getChallengeLockReason(el.dataset.op, skill);
-    el.textContent = formatBossReplayText(el.dataset.op, skill);
+    setCompactLabel(el, formatBossReplayText(el.dataset.op, skill));
     el.hidden = Boolean(lockReason);
     el.disabled = isControlLocked();
   });
@@ -4924,7 +4960,7 @@ function updateReadinessDisplays() {
   document.querySelectorAll(".kp-diff-badge[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     const lockReason = getChallengeLockReason(el.dataset.op, skill);
-    el.textContent = formatBadgeText(el.dataset.op, skill);
+    setCompactLabel(el, formatBadgeText(el.dataset.op, skill));
     el.hidden = Boolean(lockReason);
     el.disabled = isControlLocked();
   });
@@ -4932,9 +4968,14 @@ function updateReadinessDisplays() {
   document.querySelectorAll(".kp-diff-lock[data-op]").forEach((el) => {
     const skill = progressSummary.skills[el.dataset.op];
     const lockReason = getChallengeLockReason(el.dataset.op, skill);
-    el.textContent = lockReason ? `Locked: ${lockReason}` : "";
+    el.textContent = compactLockLabel(lockReason);
+    el.title = lockReason ? `Locked: ${lockReason}` : "";
     el.hidden = !lockReason;
   });
+
+  // Labels just changed width (lock chip <-> challenge pills), so the strip may
+  // have started or stopped overflowing.
+  updateDiffStripAffordance();
 }
 
 // ============================================================
@@ -7675,7 +7716,8 @@ function buildKpDiffStrip() {
     ready.type = "button";
     ready.className = "kp-diff-ready";
     ready.dataset.op = opKey;
-    ready.textContent = formatReadyText(skill);
+    ready.textContent = compactReadyLabel(formatReadyText(skill));
+    ready.title = formatReadyText(skill);
     ready.classList.toggle("is-qualified", Boolean(skill.bossAttemptedForLevel));
     ready.classList.toggle("is-locked", !canOpenLevelChoices(skill));
     ready.disabled = isControlLocked();
@@ -7693,7 +7735,7 @@ function buildKpDiffStrip() {
     blitz.type = "button";
     blitz.className = "kp-diff-challenge kp-diff-blitz";
     blitz.dataset.op = opKey;
-    blitz.textContent = formatBlitzText(opKey, skill);
+    setCompactLabel(blitz, formatBlitzText(opKey, skill));
     blitz.hidden = Boolean(replayLockReason);
     blitz.disabled = isControlLocked();
     wireKpButton(blitz, () => startBlitzMode(opKey));
@@ -7702,7 +7744,7 @@ function buildKpDiffStrip() {
     wave.type = "button";
     wave.className = "kp-diff-challenge kp-diff-wave";
     wave.dataset.op = opKey;
-    wave.textContent = formatWaveText(opKey, skill);
+    setCompactLabel(wave, formatWaveText(opKey, skill));
     wave.hidden = Boolean(replayLockReason);
     wave.disabled = isControlLocked();
     wireKpButton(wave, () => startWaveMode(opKey));
@@ -7711,7 +7753,7 @@ function buildKpDiffStrip() {
     bossReplay.type = "button";
     bossReplay.className = "kp-diff-challenge kp-diff-boss";
     bossReplay.dataset.op = opKey;
-    bossReplay.textContent = formatBossReplayText(opKey, skill);
+    setCompactLabel(bossReplay, formatBossReplayText(opKey, skill));
     bossReplay.hidden = Boolean(replayLockReason);
     bossReplay.disabled = isControlLocked();
     wireKpButton(bossReplay, () => startBossReplayMode(opKey));
@@ -7720,7 +7762,7 @@ function buildKpDiffStrip() {
     badge.type = "button";
     badge.className = "kp-diff-challenge kp-diff-badge";
     badge.dataset.op = opKey;
-    badge.textContent = formatBadgeText(opKey, skill);
+    setCompactLabel(badge, formatBadgeText(opKey, skill));
     badge.hidden = Boolean(replayLockReason);
     badge.disabled = isControlLocked();
     wireKpButton(badge, () => {
@@ -7731,7 +7773,8 @@ function buildKpDiffStrip() {
     const challengeLock = document.createElement("span");
     challengeLock.className = "kp-diff-lock";
     challengeLock.dataset.op = opKey;
-    challengeLock.textContent = replayLockReason ? `Locked: ${replayLockReason}` : "";
+    challengeLock.textContent = compactLockLabel(replayLockReason);
+    challengeLock.title = replayLockReason ? `Locked: ${replayLockReason}` : "";
     challengeLock.hidden = !replayLockReason;
 
     const upBtn = document.createElement("button");
@@ -7761,6 +7804,18 @@ function buildKpDiffStrip() {
 
     strip.appendChild(item);
   });
+  updateDiffStripAffordance();
+}
+
+// With two or more ops enabled the strip cannot fit a phone no matter how short
+// the labels are, so it has to scroll -- but a scroller with no visual edge
+// reads as "there is nothing more". Flag the overflow case so CSS can fade the
+// trailing edge.
+function updateDiffStripAffordance() {
+  const scroller = document.getElementById("kpDiffScroll");
+  if (!scroller) return;
+  const overflowing = scroller.scrollWidth - scroller.clientWidth > 2;
+  scroller.classList.toggle("is-scrollable", overflowing);
 }
 
 function updateKpDisplay() {
